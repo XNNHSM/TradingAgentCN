@@ -51,6 +51,7 @@ export class NewsAnalystAgent extends BaseAgent {
       AgentType.NEWS_ANALYST,
       '专业的新闻情绪分析师，专注于市场新闻和情绪趋势分析',
       llmService,
+      undefined, // dataToolkit 暂时不需要
       config
     );
   }

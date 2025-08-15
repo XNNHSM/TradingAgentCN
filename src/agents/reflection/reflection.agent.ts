@@ -59,6 +59,7 @@ export class ReflectionAgent extends BaseAgent {
       AgentType.REFLECTION_AGENT,
       '专业的反思分析师，负责质量控制和决策优化',
       llmService,
+      undefined, // dataToolkit 暂时不需要
       config
     );
   }

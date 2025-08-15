@@ -27,7 +27,10 @@ export enum AgentType {
   NEWS_ANALYST = 'news_analyst',            // 新闻分析师
   BULL_RESEARCHER = 'bull_researcher',      // 多头研究员
   BEAR_RESEARCHER = 'bear_researcher',      // 空头研究员
+  RESEARCH_MANAGER = 'research_manager',    // 研究管理员
   TRADER = 'trader',                        // 交易员
+  CONSERVATIVE_TRADER = 'conservative_trader', // 保守型交易员
+  AGGRESSIVE_TRADER = 'aggressive_trader',  // 激进型交易员
   RISK_MANAGER = 'risk_manager',           // 风险管理员
   REFLECTION_AGENT = 'reflection_agent',    // 反思智能体
 }

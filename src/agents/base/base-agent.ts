@@ -8,7 +8,8 @@ import {
   AgentConfig,
   TradingRecommendation 
 } from '../interfaces/agent.interface';
-import { LLMService, LLMConfig } from '../services/llm.service';
+import { LLMService, LLMConfig, LLMResponse } from '../services/llm.service';
+import { DataToolkitService } from '../services/data-toolkit.service';
 
 /**
  * 智能体基础抽象类
@@ -23,6 +24,7 @@ export abstract class BaseAgent implements IAgent {
     public readonly type: AgentType,
     public readonly role: string,
     protected readonly llmService: LLMService,
+    protected readonly dataToolkit?: DataToolkitService,
     config: Partial<AgentConfig> = {}
   ) {
     this.logger = new Logger(this.constructor.name);
@@ -38,7 +40,7 @@ export abstract class BaseAgent implements IAgent {
   }
 
   /**
-   * 执行分析任务
+   * 执行分析任务（支持 function calling）
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = Date.now();
@@ -53,8 +55,24 @@ export abstract class BaseAgent implements IAgent {
       // 构建提示词
       const prompt = await this.buildPrompt(processedContext);
       
-      // 调用LLM进行分析
-      const analysis = await this.callLLM(prompt);
+      let analysis: string;
+      
+      // 如果有数据工具包，使用 function calling
+      if (this.dataToolkit) {
+        // 获取可用工具
+        const tools = this.dataToolkit.getToolDefinitions();
+        
+        // 调用LLM进行分析（支持工具调用）
+        const llmResponse = await this.callLLMWithTools(prompt, tools);
+        
+        // 处理工具调用
+        const enhancedResponse = await this.processToolCalls(llmResponse, processedContext);
+        
+        analysis = enhancedResponse.content;
+      } else {
+        // 传统方式调用LLM
+        analysis = await this.callLLM(prompt);
+      }
       
       // 后处理分析结果
       const result = await this.postprocessResult(analysis, processedContext);
@@ -143,6 +161,70 @@ export abstract class BaseAgent implements IAgent {
     }
 
     throw lastError;
+  }
+
+  /**
+   * 调用LLM（支持工具调用）
+   */
+  protected async callLLMWithTools(prompt: string, tools: any[]): Promise<LLMResponse> {
+    const fullPrompt = this.config.systemPrompt 
+      ? `${this.config.systemPrompt}\n\n${prompt}`
+      : prompt;
+
+    const llmConfig = {
+      model: this.config.model,
+      temperature: this.config.temperature,
+      maxTokens: this.config.maxTokens,
+      timeout: this.config.timeout * 1000,
+      tools,
+      toolChoice: 'auto', // 让模型自动决定是否调用工具
+    };
+
+    this.logger.debug('开始LLM调用，支持以下工具：', tools.map(t => t.function.name));
+    
+    return await this.llmService.generateWithTools(fullPrompt, llmConfig);
+  }
+
+  /**
+   * 处理工具调用
+   */
+  protected async processToolCalls(llmResponse: LLMResponse, _context: AgentContext): Promise<LLMResponse> {
+    if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
+      return llmResponse;
+    }
+
+    if (!this.dataToolkit) {
+      this.logger.warn('收到工具调用请求，但数据工具包不可用');
+      return llmResponse;
+    }
+
+    this.logger.debug(`处理 ${llmResponse.toolCalls.length} 个工具调用`);
+    
+    let enhancedContent = llmResponse.content;
+    
+    // 执行所有工具调用
+    for (const toolCall of llmResponse.toolCalls) {
+      try {
+        const functionName = toolCall.function.name;
+        const arguments_ = JSON.parse(toolCall.function.arguments);
+        
+        this.logger.debug(`执行工具: ${functionName}`, arguments_);
+        
+        const toolResult = await this.dataToolkit.executeTool(functionName, arguments_);
+        
+        // 将工具结果添加到内容中
+        enhancedContent += `\n\n## 数据获取结果 - ${functionName}\n\n${toolResult}`;
+        
+      } catch (error) {
+        this.logger.error(`工具调用失败: ${toolCall.function.name}`, error);
+        enhancedContent += `\n\n工具调用失败 (${toolCall.function.name}): ${error.message}`;
+      }
+    }
+
+    return {
+      ...llmResponse,
+      content: enhancedContent,
+    };
   }
 
   /**

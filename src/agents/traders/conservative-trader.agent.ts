@@ -52,9 +52,10 @@ export class ConservativeTraderAgent extends BaseAgent {
 
     super(
       '保守型交易员',
-      AgentType.TRADER,
+      AgentType.CONSERVATIVE_TRADER,
       '专业的保守型交易员，以风险控制和资本保护为核心',
       llmService,
+      undefined, // dataToolkit 暂时不需要
       config
     );
   }

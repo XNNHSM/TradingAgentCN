@@ -43,13 +43,14 @@ export class BearResearcherAgent extends BaseAgent {
 - 指出多头分析中的盲点和过度乐观
 - 提供更保守的情景分析
 
-💬 分析风格：
+💬 辩论风格：
+- 以对话式风格呈现论点，直接与多头分析师的观点交锋
 - 保持理性和客观，避免过度悲观
-- 基于事实进行有力质疑
-- 提供建设性的风险提示
-- 承认优势但强调风险
+- 基于事实进行有力反驳
 
-请用中文进行专业、理性的空头分析。`,
+您需要构建一个基于证据的谨慎案例，强调风险因素、估值担忧和负面市场指标。用具体数据和合理推理质疑多头论点，指出多头分析中的盲点和过度乐观，提供更保守的情景分析。
+
+请用中文进行专业、理性的空头分析和辩论。`,
     };
 
     super(
@@ -57,6 +58,7 @@ export class BearResearcherAgent extends BaseAgent {
       AgentType.BEAR_RESEARCHER,
       '专业的空头研究员，专注于风险识别和谨慎分析',
       llmService,
+      undefined, // dataToolkit 暂时不需要
       config
     );
   }

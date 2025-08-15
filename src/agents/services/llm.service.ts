@@ -2,11 +2,33 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
+ * LLM响应结果接口
+ */
+export interface LLMResponse {
+  content: string;
+  toolCalls?: ToolCall[];
+  finishReason?: string;
+}
+
+/**
+ * 工具调用接口
+ */
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+/**
  * LLM服务提供商接口
  */
 export interface LLMProvider {
   name: string;
   generate(prompt: string, config?: LLMConfig): Promise<string>;
+  generateWithTools?(prompt: string, config?: LLMConfig): Promise<LLMResponse>;
 }
 
 /**
@@ -17,6 +39,8 @@ export interface LLMConfig {
   temperature?: number;
   maxTokens?: number;
   timeout?: number;
+  tools?: any[]; // Function calling 工具定义
+  toolChoice?: string; // 工具选择策略
 }
 
 /**
@@ -42,6 +66,11 @@ export class DashScopeProvider implements LLMProvider {
   }
 
   async generate(prompt: string, config?: LLMConfig): Promise<string> {
+    const response = await this.generateWithTools(prompt, config);
+    return response.content;
+  }
+
+  async generateWithTools(prompt: string, config?: LLMConfig): Promise<LLMResponse> {
     if (!this.apiKey) {
       throw new Error('DASHSCOPE_API_KEY 未配置');
     }
@@ -53,7 +82,7 @@ export class DashScopeProvider implements LLMProvider {
       ...config,
     };
 
-    const requestBody = {
+    const requestBody: any = {
       model: requestConfig.model,
       input: {
         messages: [
@@ -68,6 +97,14 @@ export class DashScopeProvider implements LLMProvider {
         max_tokens: requestConfig.max_tokens,
       },
     };
+
+    // 添加工具调用支持
+    if (config?.tools && config.tools.length > 0) {
+      requestBody.input.tools = config.tools;
+      if (config.toolChoice) {
+        requestBody.parameters.tool_choice = config.toolChoice;
+      }
+    }
 
     try {
       this.logger.debug(`发送请求到百炼API: ${requestConfig.model}`);
@@ -89,9 +126,27 @@ export class DashScopeProvider implements LLMProvider {
 
       const result = await response.json();
       
-      if (result.output?.text) {
+      if (result.output) {
         this.logger.debug('百炼API响应成功');
-        return result.output.text;
+        
+        const llmResponse: LLMResponse = {
+          content: result.output.text || '',
+          finishReason: result.output.finish_reason,
+        };
+
+        // 处理工具调用
+        if (result.output.tool_calls && result.output.tool_calls.length > 0) {
+          llmResponse.toolCalls = result.output.tool_calls.map((call: any) => ({
+            id: call.id || `call_${Date.now()}`,
+            type: 'function',
+            function: {
+              name: call.function?.name || '',
+              arguments: call.function?.arguments || '{}',
+            },
+          }));
+        }
+
+        return llmResponse;
       } else {
         throw new Error(`百炼API响应格式错误: ${JSON.stringify(result)}`);
       }
@@ -158,6 +213,35 @@ export class LLMService {
     
     try {
       const result = await provider.generate(prompt, config);
+      const duration = Date.now() - startTime;
+      
+      this.logger.debug(`文本生成完成，耗时: ${duration}ms`);
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error(`文本生成失败，耗时: ${duration}ms, 错误: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 使用工具生成文本
+   */
+  async generateWithTools(
+    prompt: string,
+    config?: LLMConfig & { provider?: string }
+  ): Promise<LLMResponse> {
+    const provider = this.getProvider(config?.provider);
+    
+    if (!provider.generateWithTools) {
+      throw new Error(`提供商 ${provider.name} 不支持工具调用`);
+    }
+    
+    const startTime = Date.now();
+    this.logger.debug(`使用 ${provider.name} 生成文本（支持工具调用）...`);
+    
+    try {
+      const result = await provider.generateWithTools(prompt, config);
       const duration = Date.now() - startTime;
       
       this.logger.debug(`文本生成完成，耗时: ${duration}ms`);

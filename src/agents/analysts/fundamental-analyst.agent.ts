@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { BaseAgent } from '../base/base-agent';
 import { AgentType, AgentContext, AgentConfig } from '../interfaces/agent.interface';
 import { LLMService } from '../services/llm.service';
+import { DataToolkitService } from '../services/data-toolkit.service';
 
 /**
  * 基本面分析师智能体 - 专门进行基本面分析
@@ -12,6 +13,7 @@ export class FundamentalAnalystAgent extends BaseAgent {
   constructor(
     llmService: LLMService,
     configService: ConfigService,
+    dataToolkit: DataToolkitService,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>('FUNDAMENTAL_ANALYST_MODEL', configService.get<string>('DASHSCOPE_PREMIUM_MODEL', 'qwen-max')),
@@ -36,7 +38,8 @@ export class FundamentalAnalystAgent extends BaseAgent {
 4. 分析内部人士行为的潜在含义
 5. 评估公司的财务健康状况和未来前景
 6. 在报告末尾添加Markdown表格来组织关键要点，使其有条理且易于阅读
-7. 必须给出明确的评分（0-100分）和投资建议
+
+您是一位乐于助人的AI助手，与其他助手协作。使用提供的工具来逐步回答问题。如果您无法完全回答，没关系；另一位拥有不同工具的助手会从您停下的地方继续。尽您所能来取得进展。如果您或其他任何助手有最终交易建议：**买入/持有/卖出** 或可交付成果，请在您的回复前加上最终交易建议：**买入/持有/卖出**，以便团队知道停止。
 
 请用中文撰写专业、全面的基本面分析报告。`,
     };
@@ -46,12 +49,13 @@ export class FundamentalAnalystAgent extends BaseAgent {
       AgentType.FUNDAMENTAL_ANALYST,
       '专业的基本面分析师，专注于公司财务和基本面研究',
       llmService,
+      dataToolkit,
       config
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
-    const { stockCode, stockName, financialData, timeRange } = context;
+    const { stockCode, stockName, timeRange } = context;
     
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {
@@ -64,109 +68,79 @@ export class FundamentalAnalystAgent extends BaseAgent {
       prompt += `分析时间范围: ${timeRange.startDate.toLocaleDateString()} 到 ${timeRange.endDate.toLocaleDateString()}\n\n`;
     }
 
-    // 添加财务数据信息
-    if (financialData) {
-      prompt += `财务数据概要:\n`;
-      if (financialData.financialRatios) {
-        prompt += `- 财务比率: ${JSON.stringify(financialData.financialRatios, null, 2)}\n`;
-      }
-      if (financialData.incomeStatement) {
-        prompt += `- 利润表摘要: ${JSON.stringify(financialData.incomeStatement, null, 2)}\n`;
-      }
-      if (financialData.balanceSheet) {
-        prompt += `- 资产负债表摘要: ${JSON.stringify(financialData.balanceSheet, null, 2)}\n`;
-      }
-      if (financialData.cashFlow) {
-        prompt += `- 现金流量表摘要: ${JSON.stringify(financialData.cashFlow, null, 2)}\n`;
-      }
-      prompt += `\n`;
-    }
+    prompt += `## 分析任务
 
-    prompt += `请按照以下结构进行基本面分析:
+**第一步：数据收集**
+请根据需要主动调用以下工具获取分析所需的数据：
+1. \`get_china_stock_data\` - 获取股票历史数据和技术指标
+2. \`get_financial_data\` - 获取公司财务报表数据
+3. \`get_company_info\` - 获取公司基本信息和业务概况
+4. \`get_industry_data\` - 获取行业数据和同行比较
+5. \`get_china_market_overview\` - 获取市场整体情况（如需要）
 
-## 基本面分析报告
+**第二步：深度分析**
+基于获取的真实数据，按以下框架进行分析：
 
-### 1. 公司概况分析
-- 主营业务分析
-- 行业地位评估
-- 竞争优势识别
-- 商业模式评价
+### 1. 📊 数据概览
+- 展示获取到的关键数据
+- 数据质量和完整性评估
 
-### 2. 财务状况分析
+### 2. 🏢 公司基本面分析
+#### 2.1 业务模式与竞争优势
+- 主营业务和商业模式
+- 核心竞争优势和护城河
+- 行业地位和市场份额
 
-#### 2.1 盈利能力分析
-- 营业收入趋势
-- 净利润变化
-- 毛利率分析
-- 净利率分析
-- ROE (净资产收益率)
-- ROA (总资产收益率)
+#### 2.2 财务健康度评估
+- **盈利能力**：ROE、ROA、毛利率、净利率
+- **偿债能力**：资产负债率、流动比率、速动比率
+- **营运能力**：应收账款周转率、存货周转率
+- **成长能力**：收入增长率、利润增长率
 
-#### 2.2 财务健康度分析
-- 资产负债结构
-- 流动比率
-- 速动比率
-- 资产负债率
-- 现金流状况
+#### 2.3 估值水平分析
+- **绝对估值**：PE、PB、PS、PEG分析
+- **相对估值**：与行业平均水平和同行企业对比
+- **估值合理性**：基于业务前景的估值评估
 
-#### 2.3 成长性分析
-- 收入增长率
-- 利润增长率
-- 资产增长率
-- 研发投入情况
+### 3. 📈 行业与市场环境
+- 所处行业发展阶段和前景
+- 行业竞争格局和发展趋势
+- 宏观经济和政策环境影响
 
-#### 2.4 估值分析
-- PE市盈率分析
-- PB市净率分析
-- PS市销率分析
-- PEG增长率调整市盈率
-- 与行业平均比较
+### 4. 🔍 风险识别与评估
+- 业务风险（市场、技术、竞争）
+- 财务风险（债务、现金流、盈利波动）
+- 外部风险（政策、行业、宏观）
 
-### 3. 重大事件影响
-- 最新财报解读
-- 重大公告影响
-- 政策影响分析
-- 行业趋势影响
-
-### 4. 内部人士交易分析
-- 高管增减持情况
-- 机构投资者变化
-- 股东结构分析
-
-### 5. 未来前景评估
-- 业务发展前景
-- 行业增长潜力
-- 风险因素识别
-- 催化剂因素
-
-### 6. 综合评估
-- **基本面评分**: [0-100分]
+### 5. 🎯 投资评估结论
+- **基本面评分**: [0-100分，必须给出具体分数]
 - **投资建议**: [强烈买入/买入/持有/卖出/强烈卖出]
-- **目标价格**: [具体价格]
-- **投资理由**: [3-5个核心理由]
+- **关键投资逻辑**: [3-5个核心论证点]
+- **目标价位**: [基于估值分析的合理价位区间]
 
-### 7. 关键财务指标总结表格
+### 6. 📋 关键指标汇总表
 
-| 财务指标 | 当前值 | 行业平均 | 评估 | 趋势 |
-|----------|--------|----------|------|------|
-| PE市盈率 | | | | |
-| PB市净率 | | | | |
+| 核心指标 | 数值 | 行业均值 | 评级 | 说明 |
+|----------|------|----------|------|------|
+| 营收增长率 | | | | |
+| 净利润增长率 | | | | |
 | ROE | | | | |
 | ROA | | | | |
+| PE 市盈率 | | | | |
+| PB 市净率 | | | | |
 | 毛利率 | | | | |
 | 净利率 | | | | |
 | 资产负债率 | | | | |
-| 流动比率 | | | | |
 
-### 8. 风险提示
-- 主要风险因素
-- 不确定性分析
-- 投资注意事项
-
-请提供深入、专业的基本面分析，重点关注影响股价的核心基本面因素。`;
+**重要提醒**：
+- 请务必先调用工具获取真实数据，再基于数据进行分析
+- 避免空泛的描述，要提供具体的数字和比较
+- 必须给出明确的评分（0-100分）和投资建议
+- 所有结论都要有数据支撑`;
 
     return prompt;
   }
+
 
   protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
     // 确保有基本的时间范围

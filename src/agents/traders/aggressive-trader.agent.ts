@@ -52,9 +52,10 @@ export class AggressiveTraderAgent extends BaseAgent {
 
     super(
       '激进型交易员',
-      AgentType.TRADER,
+      AgentType.AGGRESSIVE_TRADER,
       '专业的激进型交易员，专注于高收益机会和趋势捕捉',
       llmService,
+      undefined, // dataToolkit 暂时不需要
       config
     );
   }

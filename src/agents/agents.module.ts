@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { StockDataModule } from '../services/stock-data/stock-data.module';
 
 // 服务
 import { LLMService, DashScopeProvider } from './services/llm.service';
 import { AgentOrchestratorService } from './services/agent-orchestrator.service';
+import { DataToolkitService } from './services/data-toolkit.service';
 
 // 分析师
 import { MarketAnalystAgent } from './analysts/market-analyst.agent';
@@ -13,6 +15,10 @@ import { NewsAnalystAgent } from './analysts/news-analyst.agent';
 // 研究员
 import { BullResearcherAgent } from './researchers/bull-researcher.agent';
 import { BearResearcherAgent } from './researchers/bear-researcher.agent';
+
+// 管理员
+import { ResearchManagerAgent } from './managers/research-manager.agent';
+import { RiskManagerAgent } from './managers/risk-manager.agent';
 
 // 交易员
 import { ConservativeTraderAgent } from './traders/conservative-trader.agent';
@@ -25,11 +31,12 @@ import { ReflectionAgent } from './reflection/reflection.agent';
  * 智能体模块 - 集成所有AI智能体
  */
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, StockDataModule],
   providers: [
     // 核心服务
     DashScopeProvider,
     LLMService,
+    DataToolkitService,
     AgentOrchestratorService,
     
     // 分析师团队
@@ -40,6 +47,10 @@ import { ReflectionAgent } from './reflection/reflection.agent';
     // 研究员团队
     BullResearcherAgent,
     BearResearcherAgent,
+    
+    // 管理员团队
+    ResearchManagerAgent,
+    RiskManagerAgent,
     
     // 交易员团队
     ConservativeTraderAgent,
@@ -52,6 +63,7 @@ import { ReflectionAgent } from './reflection/reflection.agent';
     // 对外暴露主要服务
     AgentOrchestratorService,
     LLMService,
+    DataToolkitService,
     
     // 导出所有智能体供其他模块使用
     MarketAnalystAgent,
@@ -59,6 +71,8 @@ import { ReflectionAgent } from './reflection/reflection.agent';
     NewsAnalystAgent,
     BullResearcherAgent,
     BearResearcherAgent,
+    ResearchManagerAgent,
+    RiskManagerAgent,
     ConservativeTraderAgent,
     AggressiveTraderAgent,
     ReflectionAgent,

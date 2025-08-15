@@ -60,6 +60,7 @@ export class MarketAnalystAgent extends BaseAgent {
       AgentType.MARKET_ANALYST,
       '专业的技术分析师，专注于股票市场技术指标分析',
       llmService,
+      undefined, // dataToolkit 暂时不需要
       config
     );
   }
