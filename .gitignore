@@ -1,0 +1,92 @@
+# 编译输出
+/dist
+/node_modules
+
+# 日志
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# 运行时数据
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# 覆盖率报告
+coverage
+*.lcov
+
+# nyc测试覆盖率
+.nyc_output
+
+# node-waf配置
+.lock-wscript
+
+# 依赖目录
+node_modules/
+jspm_packages/
+
+# TypeScript缓存
+*.tsbuildinfo
+
+# 可选npm缓存目录
+.npm
+
+# 可选eslint缓存
+.eslintcache
+
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# parcel-bundler缓存
+.cache
+.parcel-cache
+
+# next.js构建输出
+.next
+
+# nuxt.js构建输出
+.nuxt
+
+# vuepress构建输出
+.vuepress/dist
+
+# Serverless目录
+.serverless
+
+# FuseBox缓存
+.fusebox/
+
+# DynamoDB Local文件
+.dynamodb/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时文件
+temp/
+tmp/
+
+# 数据库文件
+*.sqlite
+*.db
+
+# 密钥文件
+*.pem
+*.key
