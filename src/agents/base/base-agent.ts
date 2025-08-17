@@ -1,15 +1,15 @@
-import { Logger } from '@nestjs/common';
-import { 
-  IAgent, 
-  AgentType, 
-  AgentStatus, 
-  AgentContext, 
-  AgentResult, 
+import { Logger } from "@nestjs/common";
+import {
+  IAgent,
+  AgentType,
+  AgentStatus,
+  AgentContext,
+  AgentResult,
   AgentConfig,
-  TradingRecommendation 
-} from '../interfaces/agent.interface';
-import { LLMService, LLMConfig, LLMResponse } from '../services/llm.service';
-import { DataToolkitService } from '../services/data-toolkit.service';
+  TradingRecommendation,
+} from "../interfaces/agent.interface";
+import { LLMService, LLMConfig, LLMResponse } from "../services/llm.service";
+import { DataToolkitService } from "../services/data-toolkit.service";
 
 /**
  * 智能体基础抽象类
@@ -25,16 +25,16 @@ export abstract class BaseAgent implements IAgent {
     public readonly role: string,
     protected readonly llmService: LLMService,
     protected readonly dataToolkit?: DataToolkitService,
-    config: Partial<AgentConfig> = {}
+    config: Partial<AgentConfig> = {},
   ) {
     this.logger = new Logger(this.constructor.name);
     this.config = {
-      model: 'qwen-plus',
+      model: "qwen-plus",
       temperature: 0.7,
       maxTokens: 2000,
       timeout: 30,
       retryCount: 3,
-      systemPrompt: '',
+      systemPrompt: "",
       ...config,
     };
   }
@@ -45,38 +45,43 @@ export abstract class BaseAgent implements IAgent {
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = Date.now();
     this.status = AgentStatus.ANALYZING;
-    
-    this.logger.log(`开始分析股票: ${context.stockCode} - ${context.stockName || 'Unknown'}`);
+
+    this.logger.log(
+      `开始分析股票: ${context.stockCode} - ${context.stockName || "Unknown"}`,
+    );
 
     try {
       // 预处理上下文
       const processedContext = await this.preprocessContext(context);
-      
+
       // 构建提示词
       const prompt = await this.buildPrompt(processedContext);
-      
+
       let analysis: string;
-      
+
       // 如果有数据工具包，使用 function calling
       if (this.dataToolkit) {
         // 获取可用工具
         const tools = this.dataToolkit.getToolDefinitions();
-        
+
         // 调用LLM进行分析（支持工具调用）
         const llmResponse = await this.callLLMWithTools(prompt, tools);
-        
+
         // 处理工具调用
-        const enhancedResponse = await this.processToolCalls(llmResponse, processedContext);
-        
+        const enhancedResponse = await this.processToolCalls(
+          llmResponse,
+          processedContext,
+        );
+
         analysis = enhancedResponse.content;
       } else {
         // 传统方式调用LLM
         analysis = await this.callLLM(prompt);
       }
-      
+
       // 后处理分析结果
       const result = await this.postprocessResult(analysis, processedContext);
-      
+
       // 记录处理时间
       result.processingTime = Date.now() - startTime;
       result.timestamp = new Date();
@@ -85,12 +90,12 @@ export abstract class BaseAgent implements IAgent {
 
       this.status = AgentStatus.COMPLETED;
       this.logger.log(`分析完成，耗时: ${result.processingTime}ms`);
-      
+
       return result;
     } catch (error) {
       this.status = AgentStatus.ERROR;
       this.logger.error(`分析失败: ${error.message}`, error.stack);
-      
+
       // 返回错误结果
       return {
         agentName: this.name,
@@ -117,7 +122,9 @@ export abstract class BaseAgent implements IAgent {
   /**
    * 预处理上下文信息 - 子类可以重写
    */
-  protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
+  protected async preprocessContext(
+    context: AgentContext,
+  ): Promise<AgentContext> {
     return context;
   }
 
@@ -130,7 +137,7 @@ export abstract class BaseAgent implements IAgent {
    * 调用LLM进行分析
    */
   protected async callLLM(prompt: string): Promise<string> {
-    const fullPrompt = this.config.systemPrompt 
+    const fullPrompt = this.config.systemPrompt
       ? `${this.config.systemPrompt}\n\n${prompt}`
       : prompt;
 
@@ -142,7 +149,7 @@ export abstract class BaseAgent implements IAgent {
     };
 
     let lastError: Error;
-    
+
     // 重试机制
     for (let attempt = 1; attempt <= this.config.retryCount; attempt++) {
       try {
@@ -150,12 +157,14 @@ export abstract class BaseAgent implements IAgent {
         return await this.llmService.generate(fullPrompt, llmConfig);
       } catch (error) {
         lastError = error;
-        this.logger.warn(`LLM调用失败 (尝试 ${attempt}/${this.config.retryCount}): ${error.message}`);
-        
+        this.logger.warn(
+          `LLM调用失败 (尝试 ${attempt}/${this.config.retryCount}): ${error.message}`,
+        );
+
         if (attempt < this.config.retryCount) {
           // 指数退避延迟
           const delay = Math.pow(2, attempt - 1) * 1000;
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
@@ -166,8 +175,11 @@ export abstract class BaseAgent implements IAgent {
   /**
    * 调用LLM（支持工具调用）
    */
-  protected async callLLMWithTools(prompt: string, tools: any[]): Promise<LLMResponse> {
-    const fullPrompt = this.config.systemPrompt 
+  protected async callLLMWithTools(
+    prompt: string,
+    tools: any[],
+  ): Promise<LLMResponse> {
+    const fullPrompt = this.config.systemPrompt
       ? `${this.config.systemPrompt}\n\n${prompt}`
       : prompt;
 
@@ -177,44 +189,52 @@ export abstract class BaseAgent implements IAgent {
       maxTokens: this.config.maxTokens,
       timeout: this.config.timeout * 1000,
       tools,
-      toolChoice: 'auto', // 让模型自动决定是否调用工具
+      toolChoice: "auto", // 让模型自动决定是否调用工具
     };
 
-    this.logger.debug('开始LLM调用，支持以下工具：', tools.map(t => t.function.name));
-    
+    this.logger.debug(
+      "开始LLM调用，支持以下工具：",
+      tools.map((t) => t.function.name),
+    );
+
     return await this.llmService.generateWithTools(fullPrompt, llmConfig);
   }
 
   /**
    * 处理工具调用
    */
-  protected async processToolCalls(llmResponse: LLMResponse, _context: AgentContext): Promise<LLMResponse> {
+  protected async processToolCalls(
+    llmResponse: LLMResponse,
+    _context: AgentContext,
+  ): Promise<LLMResponse> {
     if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
       return llmResponse;
     }
 
     if (!this.dataToolkit) {
-      this.logger.warn('收到工具调用请求，但数据工具包不可用');
+      this.logger.warn("收到工具调用请求，但数据工具包不可用");
       return llmResponse;
     }
 
     this.logger.debug(`处理 ${llmResponse.toolCalls.length} 个工具调用`);
-    
+
     let enhancedContent = llmResponse.content;
-    
+
     // 执行所有工具调用
     for (const toolCall of llmResponse.toolCalls) {
       try {
         const functionName = toolCall.function.name;
         const arguments_ = JSON.parse(toolCall.function.arguments);
-        
+
         this.logger.debug(`执行工具: ${functionName}`, arguments_);
-        
-        const toolResult = await this.dataToolkit.executeTool(functionName, arguments_);
-        
+
+        const toolResult = await this.dataToolkit.executeTool(
+          functionName,
+          arguments_,
+        );
+
         // 将工具结果添加到内容中
         enhancedContent += `\n\n## 数据获取结果 - ${functionName}\n\n${toolResult}`;
-        
       } catch (error) {
         this.logger.error(`工具调用失败: ${toolCall.function.name}`, error);
         enhancedContent += `\n\n工具调用失败 (${toolCall.function.name}): ${error.message}`;
@@ -230,7 +250,10 @@ export abstract class BaseAgent implements IAgent {
   /**
    * 后处理分析结果 - 子类可以重写
    */
-  protected async postprocessResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+  protected async postprocessResult(
+    analysis: string,
+    context: AgentContext,
+  ): Promise<AgentResult> {
     // 基础结果结构
     const result: AgentResult = {
       agentName: this.name,
@@ -260,12 +283,12 @@ export abstract class BaseAgent implements IAgent {
     // 查找评分模式，如 "评分: 85" 或 "得分：75分"
     const scorePattern = /(?:评分|得分)[:：]\s*(\d+)/i;
     const match = analysis.match(scorePattern);
-    
+
     if (match) {
       const score = parseInt(match[1], 10);
       return Math.max(0, Math.min(100, score)); // 限制在0-100范围内
     }
-    
+
     return 50; // 默认中性评分
   }
 
@@ -278,21 +301,21 @@ export abstract class BaseAgent implements IAgent {
       /(?:置信度|可信度)[:：]\s*([0-9.]+)/i,
       /(?:置信度|可信度)[:：]\s*(\d+)%/i,
     ];
-    
+
     for (const pattern of confidencePatterns) {
       const match = analysis.match(pattern);
       if (match) {
         let confidence = parseFloat(match[1]);
-        
+
         // 如果是百分比形式，转换为0-1范围
-        if (pattern.source.includes('%')) {
+        if (pattern.source.includes("%")) {
           confidence = confidence / 100;
         }
-        
+
         return Math.max(0, Math.min(1, confidence));
       }
     }
-    
+
     return 0.7; // 默认置信度
   }
 
@@ -301,14 +324,14 @@ export abstract class BaseAgent implements IAgent {
    */
   protected extractRecommendation(analysis: string): TradingRecommendation {
     const text = analysis.toLowerCase();
-    
-    if (text.includes('强烈买入') || text.includes('强买')) {
+
+    if (text.includes("强烈买入") || text.includes("强买")) {
       return TradingRecommendation.STRONG_BUY;
-    } else if (text.includes('买入') || text.includes('建议购买')) {
+    } else if (text.includes("买入") || text.includes("建议购买")) {
       return TradingRecommendation.BUY;
-    } else if (text.includes('强烈卖出') || text.includes('强卖')) {
+    } else if (text.includes("强烈卖出") || text.includes("强卖")) {
       return TradingRecommendation.STRONG_SELL;
-    } else if (text.includes('卖出') || text.includes('建议出售')) {
+    } else if (text.includes("卖出") || text.includes("建议出售")) {
       return TradingRecommendation.SELL;
     } else {
       return TradingRecommendation.HOLD;
@@ -320,28 +343,30 @@ export abstract class BaseAgent implements IAgent {
    */
   protected extractKeyInsights(analysis: string): string[] {
     const insights: string[] = [];
-    
+
     // 查找关键洞察部分
     const insightPatterns = [
       /(?:关键洞察|核心观点|重要发现)[:：]\s*([^。]+)/gi,
       /(?:主要观点|核心结论)[:：]\s*([^。]+)/gi,
     ];
-    
+
     for (const pattern of insightPatterns) {
       let match;
       while ((match = pattern.exec(analysis)) !== null) {
         insights.push(match[1].trim());
       }
     }
-    
+
     // 如果没有找到明确的洞察标记，尝试提取要点
     if (insights.length === 0) {
       const bulletPoints = analysis.match(/[•·-]\s*([^。\n]+)/g);
       if (bulletPoints) {
-        insights.push(...bulletPoints.map(point => point.replace(/^[•·-]\s*/, '').trim()));
+        insights.push(
+          ...bulletPoints.map((point) => point.replace(/^[•·-]\s*/, "").trim()),
+        );
       }
     }
-    
+
     return insights.slice(0, 5); // 限制数量
   }
 
@@ -350,20 +375,20 @@ export abstract class BaseAgent implements IAgent {
    */
   protected extractRisks(analysis: string): string[] {
     const risks: string[] = [];
-    
+
     // 查找风险相关内容
     const riskPatterns = [
       /(?:风险|注意|警告|风险提示)[:：]\s*([^。]+)/gi,
       /(?:需要注意|存在风险)[:：]\s*([^。]+)/gi,
     ];
-    
+
     for (const pattern of riskPatterns) {
       let match;
       while ((match = pattern.exec(analysis)) !== null) {
         risks.push(match[1].trim());
       }
     }
-    
+
     return risks.slice(0, 3); // 限制数量
   }
 
@@ -372,15 +397,15 @@ export abstract class BaseAgent implements IAgent {
    */
   protected validateResult(result: AgentResult): boolean {
     if (!result.analysis || result.analysis.trim().length === 0) {
-      this.logger.warn('分析结果为空');
+      this.logger.warn("分析结果为空");
       return false;
     }
-    
+
     if (result.analysis.length < 50) {
-      this.logger.warn('分析结果过短，可能不完整');
+      this.logger.warn("分析结果过短，可能不完整");
       return false;
     }
-    
+
     return true;
   }
 
@@ -392,28 +417,28 @@ export abstract class BaseAgent implements IAgent {
       `## ${this.name} 分析报告`,
       `**股票代码**: ${result.agentName}`,
       `**分析时间**: ${result.timestamp.toLocaleString()}`,
-      `**评分**: ${result.score || 'N/A'}`,
+      `**评分**: ${result.score || "N/A"}`,
       `**置信度**: ${((result.confidence || 0) * 100).toFixed(1)}%`,
-      `**建议**: ${result.recommendation || 'HOLD'}`,
-      '',
-      '### 分析内容',
+      `**建议**: ${result.recommendation || "HOLD"}`,
+      "",
+      "### 分析内容",
       result.analysis,
     ];
 
     if (result.keyInsights && result.keyInsights.length > 0) {
-      sections.push('', '### 关键洞察');
-      result.keyInsights.forEach(insight => {
+      sections.push("", "### 关键洞察");
+      result.keyInsights.forEach((insight) => {
         sections.push(`- ${insight}`);
       });
     }
 
     if (result.risks && result.risks.length > 0) {
-      sections.push('', '### 风险提示');
-      result.risks.forEach(risk => {
+      sections.push("", "### 风险提示");
+      result.risks.forEach((risk) => {
         sections.push(`- ${risk}`);
       });
     }
 
-    return sections.join('\n');
+    return sections.join("\n");
   }
 }

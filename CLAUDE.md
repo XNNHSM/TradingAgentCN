@@ -68,6 +68,29 @@ npm run lint
 npm run format
 ```
 
+### 智能体测试 (重要)
+```bash
+# 运行智能体功能测试 (使用真实数据)
+npm test -- --testPathPattern="agents/.*\.spec\.ts"
+
+# 运行数据工具包测试
+npm test -- --testPathPattern=agents/services/data-toolkit.service.spec.ts
+
+# 运行LLM服务测试
+npm test -- --testPathPattern=agents/services/llm.service.spec.ts
+
+# 运行基础智能体测试
+npm test -- --testPathPattern=agents/base/base-agent.spec.ts
+```
+
+⚠️ **测试重要说明**:
+- **真实数据测试**: 所有智能体测试均使用真实API数据，不使用mock
+- **API密钥要求**: 需要配置有效的 `DASHSCOPE_API_KEY` 才能运行完整测试
+- **网络依赖**: 测试依赖外部API (阿里云百炼、通达信股票数据)
+- **测试时长**: 真实API调用测试需要较长时间 (30-60秒)
+- **日期格式**: 统一使用 `YYYY-MM-dd` 格式 (如: 2025-08-16)
+- **时间格式**: 统一使用 `YYYY-MM-dd HH:mm:ss` 格式 (如: 2025-08-16 14:30:25)
+
 ### 数据库管理
 ```bash
 # 生成数据库迁移文件
@@ -158,7 +181,7 @@ src/
 
 ### 存储策略
 - **MySQL**: 所有业务数据的主要持久化存储，包含核心业务数据、股票市场数据和系统运营数据
-- **Redis**: 仅作为缓存层 - 所有数据必须落盘到MySQL，包含实时数据缓存、计算结果缓存和会话缓存
+- **Redis**: ⚠️ **现阶段暂时禁用缓存** - 开发阶段为确保数据一致性，暂时关闭所有缓存功能
 - **软删除**: 所有实体使用逻辑删除(deletedAt字段)
 
 ### 实体标准
@@ -175,22 +198,29 @@ src/
 - 禁止跨模块联表查询，由相应模块service提供方法进行数据聚合
 - 禁止跨模块直接注入repository
 
-### 缓存命名规范
-- 模式: `模块:方法:参数`
-- 示例: `watchlist:list:userId123`
-- 所有缓存键必须设置TTL过期时间
+### 缓存管理策略
+⚠️ **开发阶段缓存配置**:
+- **当前状态**: 所有缓存功能暂时禁用
+- **配置方式**: 环境变量 `ENABLE_CACHE=false`
+- **数据源**: 直接访问MySQL和外部API，不使用缓存层
+- **性能考虑**: 开发阶段优先保证数据一致性，后续优化性能
 
-### 数据流向设计
+### 数据流向设计 (无缓存模式)
 
 #### 数据写入流程
 ```
-1. 数据源 → 2. 业务处理 → 3. MySQL落盘 → 4. Redis缓存
+1. 数据源 → 2. 业务处理 → 3. MySQL落盘
 ```
 
 #### 数据读取流程
 ```
-1. 查询Redis缓存 → 2. 缓存命中返回 → 3. 缓存未命中查MySQL → 4. 回写Redis
+1. 直接查询MySQL → 2. 返回结果
 ```
+
+### 缓存配置规范 (后续启用时)
+- 模式: `模块:方法:参数`
+- 示例: `watchlist:list:userId123`
+- 所有缓存键必须设置TTL过期时间
 
 ## 🔧 API 标准
 
@@ -292,11 +322,147 @@ src/
 - 实现适当的错误处理和日志记录
 - 使用DTOs配合 `class-validator` 进行输入验证
 
+### 日期时间格式标准 (重要)
+⚠️ **统一格式规范**:
+```typescript
+// 日期格式
+const dateFormat = 'YYYY-MM-dd';
+// 示例: '2025-08-16'
+
+// 日期时间格式  
+const dateTimeFormat = 'YYYY-MM-dd HH:mm:ss';
+// 示例: '2025-08-16 14:30:25'
+```
+
+**应用场景**:
+- **API接口**: 所有日期参数使用 `YYYY-MM-dd` 格式
+- **数据库存储**: 日期时间字段使用 `YYYY-MM-dd HH:mm:ss` 格式
+- **日志记录**: 时间戳使用 `YYYY-MM-dd HH:mm:ss` 格式
+- **前端显示**: 统一使用标准格式，避免歧义
+- **股票数据**: start_date, end_date 等参数使用 `YYYY-MM-dd` 格式
+
+**格式处理原则**:
+- 输入验证: 严格校验日期格式
+- 统一工具: 使用 `DateTimeUtil` 工具类进行处理
+- 错误处理: 无效日期返回明确错误信息
+- 装饰器验证: 使用 `@IsDateFormat` 和 `@IsDateTimeFormat` 进行DTO验证
+- 日志优化: 测试环境中使用debug级别，避免干扰测试输出
+
+**使用示例**:
+```typescript
+import { DateTimeUtil } from '../common/utils/date-time.util';
+import { IsDateFormat, IsDateTimeFormat } from '../common/decorators/date-format.decorator';
+
+// 解析日期
+const date = DateTimeUtil.parseDate('2025-08-16');
+
+// 格式化日期
+const dateString = DateTimeUtil.formatDate(new Date());
+
+// DTO验证
+class QueryDto {
+  @IsDateFormat()
+  startDate: string; // 必须是 YYYY-MM-dd 格式
+  
+  @IsDateTimeFormat()
+  timestamp: string; // 必须是 YYYY-MM-dd HH:mm:ss 格式
+}
+```
+
+### 缓存管理策略 (重要)
+⚠️ **当前开发阶段策略**:
+```bash
+# 在 .env 文件中设置
+ENABLE_CACHE=false
+STOCK_ENABLE_FILE_CACHE=false
+```
+
+**缓存禁用原因**:
+- **数据一致性**: 开发阶段需要确保获取最新的真实数据
+- **测试准确性**: 单元测试使用真实API数据，避免缓存影响测试结果
+- **调试便利**: 便于跟踪数据流和问题排查
+- **性能权衡**: 开发阶段优先数据准确性，后续优化性能
+
+**影响的服务**:
+- `StockDataService`: 股票数据直接从通达信API获取
+- `DataToolkitService`: 工具调用使用实时数据
+- 所有智能体分析: 基于最新数据进行决策
+
+### 日志记录规范 (重要)
+⚠️ **统一日志格式**:
+```typescript
+// 标准日志格式
+{
+  "category": "分类标识",  // 如: HTTP_REQUEST, HTTP_RESPONSE, SERVICE_ERROR, SERVICE_INFO
+  "message": "日志内容",   // JSON格式的详细信息
+  "url": "相关URL"        // 可选，HTTP请求相关时必填
+}
+```
+
+**HTTP请求日志规范**:
+```typescript
+// HTTP请求日志
+this.logger.log(JSON.stringify({
+  category: "HTTP_REQUEST",
+  message: JSON.stringify({
+    method: "GET",
+    url: requestUrl,
+    params: requestParams,
+    headers: sanitizedHeaders  // 隐藏敏感信息
+  }),
+  url: requestUrl
+}));
+
+// HTTP响应日志
+this.logger.log(JSON.stringify({
+  category: "HTTP_RESPONSE", 
+  message: JSON.stringify({
+    status: response.status,
+    data: responseData,
+    duration: `${endTime - startTime}ms`
+  }),
+  url: requestUrl
+}));
+
+// 错误日志
+this.logger.error(JSON.stringify({
+  category: "HTTP_ERROR",
+  message: JSON.stringify({
+    error: error.message,
+    stack: error.stack,
+    context: contextData
+  }),
+  url: errorUrl
+}));
+```
+
+**使用示例**:
+```typescript
+// 服务信息日志
+this.logger.log(JSON.stringify({
+  category: "SERVICE_INFO",
+  message: "智兔数服API已就绪",
+  url: ""
+}));
+
+// 业务错误日志  
+this.logger.error(JSON.stringify({
+  category: "BUSINESS_ERROR",
+  message: JSON.stringify({
+    operation: "获取股票数据",
+    stockCode: "000001", 
+    error: "数据解析失败"
+  }),
+  url: ""
+}));
+```
+
 ### 安全最佳实践
 - 永远不要在代码中暴露API密钥或机密信息
 - 使用环境变量进行配置
 - 实现适当的身份验证和授权
 - 验证所有输入数据
+- 日志中不记录敏感信息(API密钥、密码等)
 
 ### 模块设计
 - 每个模块应该是自包含的

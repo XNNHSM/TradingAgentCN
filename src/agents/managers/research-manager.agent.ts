@@ -1,24 +1,34 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 研究管理员智能体 - 协调和评估辩论结果
  */
 @Injectable()
 export class ResearchManagerAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('RESEARCH_MANAGER_MODEL', configService.get<string>('DASHSCOPE_PREMIUM_MODEL', 'qwen-max')),
-      temperature: configService.get<number>('RESEARCH_MANAGER_TEMPERATURE', 0.7),
-      maxTokens: configService.get<number>('RESEARCH_MANAGER_MAX_TOKENS', 3000),
-      timeout: configService.get<number>('RESEARCH_MANAGER_TIMEOUT', 60),
-      retryCount: configService.get<number>('RESEARCH_MANAGER_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "RESEARCH_MANAGER_MODEL",
+        configService.get<string>("DASHSCOPE_PREMIUM_MODEL", "qwen-max"),
+      ),
+      temperature: configService.get<number>(
+        "RESEARCH_MANAGER_TEMPERATURE",
+        0.7,
+      ),
+      maxTokens: configService.get<number>("RESEARCH_MANAGER_MAX_TOKENS", 3000),
+      timeout: configService.get<number>("RESEARCH_MANAGER_TIMEOUT", 60),
+      retryCount: configService.get<number>(
+        "RESEARCH_MANAGER_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `作为投资组合经理和辩论协调员，您的角色是批判性地评估这一轮辩论并做出明确的决定：与看跌分析师保持一致，与看涨分析师保持一致，或者只有在基于所呈现的论据有充分理由的情况下才选择持有。
 
 简洁地总结双方的关键点，重点关注最令人信服的证据或推理。您的建议——买入、卖出或持有——必须明确且可操作。避免仅仅因为双方都有有效观点就默认选择持有；要致力于基于辩论中最有力论据的立场。
@@ -34,18 +44,18 @@ export class ResearchManagerAgent extends BaseAgent {
     };
 
     super(
-      '研究管理员',
+      "研究管理员",
       AgentType.RESEARCH_MANAGER,
-      '专业的投资组合经理和辩论协调员，负责评估多空辩论并制定投资计划',
+      "专业的投资组合经理和辩论协调员，负责评估多空辩论并制定投资计划",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -55,13 +65,24 @@ export class ResearchManagerAgent extends BaseAgent {
     // 添加分析师报告
     if (previousResults && previousResults.length > 0) {
       prompt += `## 分析师报告汇总\n\n`;
-      
+
       // 分类整理各种报告
-      const marketReport = previousResults.find(r => r.agentType === AgentType.MARKET_ANALYST)?.analysis || '';
-      const fundamentalsReport = previousResults.find(r => r.agentType === AgentType.FUNDAMENTAL_ANALYST)?.analysis || '';
-      const newsReport = previousResults.find(r => r.agentType === AgentType.NEWS_ANALYST)?.analysis || '';
-      const bullReport = previousResults.find(r => r.agentType === AgentType.BULL_RESEARCHER)?.analysis || '';
-      const bearReport = previousResults.find(r => r.agentType === AgentType.BEAR_RESEARCHER)?.analysis || '';
+      const marketReport =
+        previousResults.find((r) => r.agentType === AgentType.MARKET_ANALYST)
+          ?.analysis || "";
+      const fundamentalsReport =
+        previousResults.find(
+          (r) => r.agentType === AgentType.FUNDAMENTAL_ANALYST,
+        )?.analysis || "";
+      const newsReport =
+        previousResults.find((r) => r.agentType === AgentType.NEWS_ANALYST)
+          ?.analysis || "";
+      const bullReport =
+        previousResults.find((r) => r.agentType === AgentType.BULL_RESEARCHER)
+          ?.analysis || "";
+      const bearReport =
+        previousResults.find((r) => r.agentType === AgentType.BEAR_RESEARCHER)
+          ?.analysis || "";
 
       if (marketReport) {
         prompt += `### 市场研究报告\n${marketReport}\n\n`;
@@ -112,13 +133,15 @@ export class ResearchManagerAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
+  protected async preprocessContext(
+    context: AgentContext,
+  ): Promise<AgentContext> {
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 7); // 默认一周
-      
+
       context.timeRange = { startDate, endDate };
     }
 

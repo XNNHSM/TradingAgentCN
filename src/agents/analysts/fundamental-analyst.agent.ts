@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
-import { DataToolkitService } from '../services/data-toolkit.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
+import { DataToolkitService } from "../services/data-toolkit.service";
 
 /**
  * 基本面分析师智能体 - 专门进行基本面分析
@@ -16,11 +20,23 @@ export class FundamentalAnalystAgent extends BaseAgent {
     dataToolkit: DataToolkitService,
   ) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('FUNDAMENTAL_ANALYST_MODEL', configService.get<string>('DASHSCOPE_PREMIUM_MODEL', 'qwen-max')),
-      temperature: configService.get<number>('FUNDAMENTAL_ANALYST_TEMPERATURE', 0.6),
-      maxTokens: configService.get<number>('FUNDAMENTAL_ANALYST_MAX_TOKENS', 3000),
-      timeout: configService.get<number>('FUNDAMENTAL_ANALYST_TIMEOUT', 60),
-      retryCount: configService.get<number>('FUNDAMENTAL_ANALYST_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "FUNDAMENTAL_ANALYST_MODEL",
+        configService.get<string>("DASHSCOPE_PREMIUM_MODEL", "qwen-max"),
+      ),
+      temperature: configService.get<number>(
+        "FUNDAMENTAL_ANALYST_TEMPERATURE",
+        0.6,
+      ),
+      maxTokens: configService.get<number>(
+        "FUNDAMENTAL_ANALYST_MAX_TOKENS",
+        3000,
+      ),
+      timeout: configService.get<number>("FUNDAMENTAL_ANALYST_TIMEOUT", 60),
+      retryCount: configService.get<number>(
+        "FUNDAMENTAL_ANALYST_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的基本面研究分析师，专门分析公司的基本面信息。您的任务是撰写一份关于公司过去一周基本面信息的综合报告。
 
 分析范围包括：
@@ -45,18 +61,18 @@ export class FundamentalAnalystAgent extends BaseAgent {
     };
 
     super(
-      '基本面分析师',
+      "基本面分析师",
       AgentType.FUNDAMENTAL_ANALYST,
-      '专业的基本面分析师，专注于公司财务和基本面研究',
+      "专业的基本面分析师，专注于公司财务和基本面研究",
       llmService,
       dataToolkit,
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, timeRange } = context;
-    
+
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -141,14 +157,15 @@ export class FundamentalAnalystAgent extends BaseAgent {
     return prompt;
   }
 
-
-  protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
+  protected async preprocessContext(
+    context: AgentContext,
+  ): Promise<AgentContext> {
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
       const startDate = new Date();
       startDate.setMonth(endDate.getMonth() - 3); // 默认3个月
-      
+
       context.timeRange = { startDate, endDate };
     }
 

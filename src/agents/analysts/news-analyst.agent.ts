@@ -1,24 +1,34 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 新闻分析师智能体 - 专门进行新闻和情绪分析
  */
 @Injectable()
 export class NewsAnalystAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('NEWS_ANALYST_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('NEWS_ANALYST_TEMPERATURE', 0.7),
-      maxTokens: configService.get<number>('NEWS_ANALYST_MAX_TOKENS', 2500),
-      timeout: configService.get<number>('NEWS_ANALYST_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 45)),
-      retryCount: configService.get<number>('NEWS_ANALYST_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "NEWS_ANALYST_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>("NEWS_ANALYST_TEMPERATURE", 0.7),
+      maxTokens: configService.get<number>("NEWS_ANALYST_MAX_TOKENS", 2500),
+      timeout: configService.get<number>(
+        "NEWS_ANALYST_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+      ),
+      retryCount: configService.get<number>(
+        "NEWS_ANALYST_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的新闻研究分析师，专门分析过去一周的新闻和趋势。您的任务是撰写一份关于当前世界状况的综合报告，重点关注与交易和宏观经济相关的内容。
 
 分析范围：
@@ -47,18 +57,18 @@ export class NewsAnalystAgent extends BaseAgent {
     };
 
     super(
-      '新闻分析师',
+      "新闻分析师",
       AgentType.NEWS_ANALYST,
-      '专业的新闻情绪分析师，专注于市场新闻和情绪趋势分析',
+      "专业的新闻情绪分析师，专注于市场新闻和情绪趋势分析",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, newsData, timeRange } = context;
-    
+
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -76,31 +86,31 @@ export class NewsAnalystAgent extends BaseAgent {
       if (newsData.companyNews && newsData.companyNews.length > 0) {
         prompt += `\n公司相关新闻 (${newsData.companyNews.length}条):\n`;
         newsData.companyNews.slice(0, 5).forEach((news, index) => {
-          prompt += `${index + 1}. ${news.title} - ${news.summary || '暂无摘要'}\n`;
+          prompt += `${index + 1}. ${news.title} - ${news.summary || "暂无摘要"}\n`;
         });
       }
-      
+
       if (newsData.industryNews && newsData.industryNews.length > 0) {
         prompt += `\n行业相关新闻 (${newsData.industryNews.length}条):\n`;
         newsData.industryNews.slice(0, 3).forEach((news, index) => {
-          prompt += `${index + 1}. ${news.title} - ${news.summary || '暂无摘要'}\n`;
+          prompt += `${index + 1}. ${news.title} - ${news.summary || "暂无摘要"}\n`;
         });
       }
-      
+
       if (newsData.marketNews && newsData.marketNews.length > 0) {
         prompt += `\n市场宏观新闻 (${newsData.marketNews.length}条):\n`;
         newsData.marketNews.slice(0, 3).forEach((news, index) => {
-          prompt += `${index + 1}. ${news.title} - ${news.summary || '暂无摘要'}\n`;
+          prompt += `${index + 1}. ${news.title} - ${news.summary || "暂无摘要"}\n`;
         });
       }
-      
+
       if (newsData.sentiment) {
         prompt += `\n情绪数据:`;
-        prompt += `\n- 正面情绪: ${newsData.sentiment.positive || 'N/A'}`;
-        prompt += `\n- 中性情绪: ${newsData.sentiment.neutral || 'N/A'}`;
-        prompt += `\n- 负面情绪: ${newsData.sentiment.negative || 'N/A'}`;
+        prompt += `\n- 正面情绪: ${newsData.sentiment.positive || "N/A"}`;
+        prompt += `\n- 中性情绪: ${newsData.sentiment.neutral || "N/A"}`;
+        prompt += `\n- 负面情绪: ${newsData.sentiment.negative || "N/A"}`;
       }
-      
+
       prompt += `\n\n`;
     }
 
@@ -188,13 +198,15 @@ export class NewsAnalystAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
+  protected async preprocessContext(
+    context: AgentContext,
+  ): Promise<AgentContext> {
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 7); // 默认7天
-      
+
       context.timeRange = { startDate, endDate };
     }
 

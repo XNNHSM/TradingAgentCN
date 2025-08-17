@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 
 /**
  * LLM响应结果接口
@@ -15,7 +15,7 @@ export interface LLMResponse {
  */
 export interface ToolCall {
   id: string;
-  type: 'function';
+  type: "function";
   function: {
     name: string;
     arguments: string;
@@ -48,20 +48,20 @@ export interface LLMConfig {
  */
 @Injectable()
 export class DashScopeProvider implements LLMProvider {
-  name = 'dashscope';
+  name = "dashscope";
   private readonly logger = new Logger(DashScopeProvider.name);
   private readonly apiKey: string;
   private readonly baseUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.apiKey = this.configService.get<string>('DASHSCOPE_API_KEY');
+    this.apiKey = this.configService.get<string>("DASHSCOPE_API_KEY");
     this.baseUrl = this.configService.get<string>(
-      'DASHSCOPE_BASE_URL', 
-      'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
+      "DASHSCOPE_BASE_URL",
+      "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
     );
-    
+
     if (!this.apiKey) {
-      this.logger.warn('DASHSCOPE_API_KEY 未配置，百炼服务将不可用');
+      this.logger.warn("DASHSCOPE_API_KEY 未配置，百炼服务将不可用");
     }
   }
 
@@ -70,15 +70,24 @@ export class DashScopeProvider implements LLMProvider {
     return response.content;
   }
 
-  async generateWithTools(prompt: string, config?: LLMConfig): Promise<LLMResponse> {
+  async generateWithTools(
+    prompt: string,
+    config?: LLMConfig,
+  ): Promise<LLMResponse> {
     if (!this.apiKey) {
-      throw new Error('DASHSCOPE_API_KEY 未配置');
+      throw new Error("DASHSCOPE_API_KEY 未配置");
     }
 
     const requestConfig = {
-      model: config?.model || this.configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus'),
-      temperature: config?.temperature || this.configService.get<number>('LLM_DEFAULT_TEMPERATURE', 0.7),
-      max_tokens: config?.maxTokens || this.configService.get<number>('LLM_DEFAULT_MAX_TOKENS', 2000),
+      model:
+        config?.model ||
+        this.configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      temperature:
+        config?.temperature ||
+        this.configService.get<number>("LLM_DEFAULT_TEMPERATURE", 0.7),
+      max_tokens:
+        config?.maxTokens ||
+        this.configService.get<number>("LLM_DEFAULT_MAX_TOKENS", 2000),
       ...config,
     };
 
@@ -87,7 +96,7 @@ export class DashScopeProvider implements LLMProvider {
       input: {
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: prompt,
           },
         ],
@@ -108,15 +117,18 @@ export class DashScopeProvider implements LLMProvider {
 
     try {
       this.logger.debug(`发送请求到百炼API: ${requestConfig.model}`);
-      
+
       const response = await fetch(this.baseUrl, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(config?.timeout || this.configService.get<number>('LLM_DEFAULT_TIMEOUT', 30) * 1000),
+        signal: AbortSignal.timeout(
+          config?.timeout ||
+            this.configService.get<number>("LLM_DEFAULT_TIMEOUT", 30) * 1000,
+        ),
       });
 
       if (!response.ok) {
@@ -125,12 +137,12 @@ export class DashScopeProvider implements LLMProvider {
       }
 
       const result = await response.json();
-      
+
       if (result.output) {
-        this.logger.debug('百炼API响应成功');
-        
+        this.logger.debug("百炼API响应成功");
+
         const llmResponse: LLMResponse = {
-          content: result.output.text || '',
+          content: result.output.text || "",
           finishReason: result.output.finish_reason,
         };
 
@@ -138,10 +150,10 @@ export class DashScopeProvider implements LLMProvider {
         if (result.output.tool_calls && result.output.tool_calls.length > 0) {
           llmResponse.toolCalls = result.output.tool_calls.map((call: any) => ({
             id: call.id || `call_${Date.now()}`,
-            type: 'function',
+            type: "function",
             function: {
-              name: call.function?.name || '',
-              arguments: call.function?.arguments || '{}',
+              name: call.function?.name || "",
+              arguments: call.function?.arguments || "{}",
             },
           }));
         }
@@ -172,9 +184,12 @@ export class LLMService {
   ) {
     // 注册可用的LLM提供商
     this.registerProvider(dashScopeProvider);
-    
+
     // 从环境变量获取默认提供商
-    this.defaultProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'dashscope');
+    this.defaultProvider = this.configService.get<string>(
+      "LLM_PRIMARY_PROVIDER",
+      "dashscope",
+    );
   }
 
   /**
@@ -191,11 +206,11 @@ export class LLMService {
   private getProvider(providerName?: string): LLMProvider {
     const name = providerName || this.defaultProvider;
     const provider = this.providers.get(name);
-    
+
     if (!provider) {
       throw new Error(`未找到LLM提供商: ${name}`);
     }
-    
+
     return provider;
   }
 
@@ -203,23 +218,25 @@ export class LLMService {
    * 生成文本
    */
   async generate(
-    prompt: string, 
-    config?: LLMConfig & { provider?: string }
+    prompt: string,
+    config?: LLMConfig & { provider?: string },
   ): Promise<string> {
     const provider = this.getProvider(config?.provider);
-    
+
     const startTime = Date.now();
     this.logger.debug(`使用 ${provider.name} 生成文本...`);
-    
+
     try {
       const result = await provider.generate(prompt, config);
       const duration = Date.now() - startTime;
-      
+
       this.logger.debug(`文本生成完成，耗时: ${duration}ms`);
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error(`文本生成失败，耗时: ${duration}ms, 错误: ${error.message}`);
+      this.logger.error(
+        `文本生成失败，耗时: ${duration}ms, 错误: ${error.message}`,
+      );
       throw error;
     }
   }
@@ -229,26 +246,28 @@ export class LLMService {
    */
   async generateWithTools(
     prompt: string,
-    config?: LLMConfig & { provider?: string }
+    config?: LLMConfig & { provider?: string },
   ): Promise<LLMResponse> {
     const provider = this.getProvider(config?.provider);
-    
+
     if (!provider.generateWithTools) {
       throw new Error(`提供商 ${provider.name} 不支持工具调用`);
     }
-    
+
     const startTime = Date.now();
     this.logger.debug(`使用 ${provider.name} 生成文本（支持工具调用）...`);
-    
+
     try {
       const result = await provider.generateWithTools(prompt, config);
       const duration = Date.now() - startTime;
-      
+
       this.logger.debug(`文本生成完成，耗时: ${duration}ms`);
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error(`文本生成失败，耗时: ${duration}ms, 错误: ${error.message}`);
+      this.logger.error(
+        `文本生成失败，耗时: ${duration}ms, 错误: ${error.message}`,
+      );
       throw error;
     }
   }
@@ -258,30 +277,32 @@ export class LLMService {
    */
   async generateBatch(
     prompts: string[],
-    config?: LLMConfig & { provider?: string }
+    config?: LLMConfig & { provider?: string },
   ): Promise<string[]> {
     const provider = this.getProvider(config?.provider);
-    
+
     this.logger.debug(`批量生成 ${prompts.length} 个文本...`);
-    
+
     const results = await Promise.allSettled(
-      prompts.map(prompt => provider.generate(prompt, config))
+      prompts.map((prompt) => provider.generate(prompt, config)),
     );
 
     const successResults: string[] = [];
     const errors: string[] = [];
 
     results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         successResults.push(result.value);
       } else {
         errors.push(`Prompt ${index}: ${result.reason}`);
-        successResults.push(''); // 保持数组长度一致
+        successResults.push(""); // 保持数组长度一致
       }
     });
 
     if (errors.length > 0) {
-      this.logger.warn(`批量生成中有 ${errors.length} 个失败: ${errors.join('; ')}`);
+      this.logger.warn(
+        `批量生成中有 ${errors.length} 个失败: ${errors.join("; ")}`,
+      );
     }
 
     return successResults;
@@ -293,13 +314,13 @@ export class LLMService {
   async checkHealth(providerName?: string): Promise<boolean> {
     try {
       const testPrompt = '你好，请回复"测试成功"';
-      const result = await this.generate(testPrompt, { 
+      const result = await this.generate(testPrompt, {
         provider: providerName,
         maxTokens: 10,
         temperature: 0.1,
       });
-      
-      return result.includes('测试') || result.includes('成功');
+
+      return result.includes("测试") || result.includes("成功");
     } catch (error) {
       this.logger.error(`LLM健康检查失败: ${error.message}`);
       return false;

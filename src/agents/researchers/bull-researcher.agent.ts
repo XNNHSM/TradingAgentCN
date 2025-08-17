@@ -1,24 +1,38 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig, AgentResult } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+  AgentResult,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 多头研究员智能体 - 专门构建看涨论据
  */
 @Injectable()
 export class BullResearcherAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('BULL_RESEARCHER_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('BULL_RESEARCHER_TEMPERATURE', 0.8),
-      maxTokens: configService.get<number>('BULL_RESEARCHER_MAX_TOKENS', 2500),
-      timeout: configService.get<number>('BULL_RESEARCHER_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 45)),
-      retryCount: configService.get<number>('BULL_RESEARCHER_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "BULL_RESEARCHER_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>(
+        "BULL_RESEARCHER_TEMPERATURE",
+        0.8,
+      ),
+      maxTokens: configService.get<number>("BULL_RESEARCHER_MAX_TOKENS", 2500),
+      timeout: configService.get<number>(
+        "BULL_RESEARCHER_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+      ),
+      retryCount: configService.get<number>(
+        "BULL_RESEARCHER_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的多头分析师，负责为投资该股票建立强有力的论证。您的任务是构建一个基于证据的强有力案例，强调增长潜力、竞争优势和积极的市场指标。
 
 🎯 重点关注领域：
@@ -54,18 +68,18 @@ export class BullResearcherAgent extends BaseAgent {
     };
 
     super(
-      '多头研究员',
+      "多头研究员",
       AgentType.BULL_RESEARCHER,
-      '专业的多头研究员，专注于挖掘投资机会和看涨因素',
+      "专业的多头研究员，专注于挖掘投资机会和看涨因素",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `作为专业的多头研究员，请为股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -77,11 +91,11 @@ export class BullResearcherAgent extends BaseAgent {
       prompt += `参考其他分析师的分析结果:\n\n`;
       previousResults.forEach((result, index) => {
         prompt += `### ${result.agentName}分析摘要:\n`;
-        prompt += `- 评分: ${result.score || 'N/A'}\n`;
-        prompt += `- 建议: ${result.recommendation || 'N/A'}\n`;
+        prompt += `- 评分: ${result.score || "N/A"}\n`;
+        prompt += `- 建议: ${result.recommendation || "N/A"}\n`;
         prompt += `- 核心观点: ${result.analysis.substring(0, 200)}...\n`;
         if (result.keyInsights && result.keyInsights.length > 0) {
-          prompt += `- 关键洞察: ${result.keyInsights.join(', ')}\n`;
+          prompt += `- 关键洞察: ${result.keyInsights.join(", ")}\n`;
         }
         prompt += `\n`;
       });
@@ -187,14 +201,17 @@ export class BullResearcherAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async postprocessResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+  protected async postprocessResult(
+    analysis: string,
+    context: AgentContext,
+  ): Promise<AgentResult> {
     const result = await super.postprocessResult(analysis, context);
-    
+
     // 多头研究员的评分倾向于乐观，但基于事实
     if (result.score && result.score < 60) {
       result.score = Math.max(60, result.score + 10); // 适度提升评分以体现乐观倾向
     }
-    
+
     // 提升置信度如果分析详细
     if (result.confidence && analysis.length > 1000) {
       result.confidence = Math.min(0.95, result.confidence + 0.1);

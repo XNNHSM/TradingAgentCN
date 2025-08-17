@@ -1,18 +1,23 @@
-import { Injectable, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Inject,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { Cache } from "cache-manager";
 
-import { Watchlist } from './entities/watchlist.entity';
-import { CreateWatchlistDto } from './dto/create-watchlist.dto';
-import { UpdateWatchlistDto } from './dto/update-watchlist.dto';
-import { GetWatchlistDto } from './dto/get-watchlist.dto';
-import { PaginatedResult } from '@/common/dto/result.dto';
+import { Watchlist } from "./entities/watchlist.entity";
+import { CreateWatchlistDto } from "./dto/create-watchlist.dto";
+import { UpdateWatchlistDto } from "./dto/update-watchlist.dto";
+import { GetWatchlistDto } from "./dto/get-watchlist.dto";
+import { PaginatedResult } from "@/common/dto/result.dto";
 
 @Injectable()
 export class WatchlistService {
-  private readonly CACHE_PREFIX = 'watchlist:';
+  private readonly CACHE_PREFIX = "watchlist:";
   private readonly CACHE_TTL = 300; // 5分钟缓存
 
   constructor(
@@ -30,14 +35,15 @@ export class WatchlistService {
     const cacheKey = `${this.CACHE_PREFIX}list:${page}:${limit}`;
 
     // 尝试从缓存获取
-    const cached = await this.cacheManager.get<PaginatedResult<Watchlist>>(cacheKey);
+    const cached =
+      await this.cacheManager.get<PaginatedResult<Watchlist>>(cacheKey);
     if (cached) {
       return cached;
     }
 
     // 从数据库查询
     const [items, total] = await this.watchlistRepository.findAndCount({
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
       skip: (page - 1) * limit,
       take: limit,
     });
@@ -82,12 +88,16 @@ export class WatchlistService {
     // 检查股票代码是否已存在
     const existing = await this.findByStockCode(dto.stockCode);
     if (existing) {
-      throw new BadRequestException(`股票代码 ${dto.stockCode} 已存在于自选股中`);
+      throw new BadRequestException(
+        `股票代码 ${dto.stockCode} 已存在于自选股中`,
+      );
     }
 
     // 验证股票代码格式
     if (!this.isValidStockCode(dto.stockCode)) {
-      throw new BadRequestException('股票代码格式不正确，必须是6位数字且符合A股规范');
+      throw new BadRequestException(
+        "股票代码格式不正确，必须是6位数字且符合A股规范",
+      );
     }
 
     // 设置交易所信息
@@ -97,7 +107,7 @@ export class WatchlistService {
 
     // 验证持仓信息的一致性
     if (dto.isHolding && (dto.holdingQuantity <= 0 || dto.holdingPrice <= 0)) {
-      throw new BadRequestException('持仓状态下，持仓数量和价格必须大于0');
+      throw new BadRequestException("持仓状态下，持仓数量和价格必须大于0");
     }
 
     // 创建新记录
@@ -120,12 +130,17 @@ export class WatchlistService {
     }
 
     // 验证持仓信息的一致性
-    const isHolding = dto.isHolding !== undefined ? dto.isHolding : existing.isHolding;
-    const holdingQuantity = dto.holdingQuantity !== undefined ? dto.holdingQuantity : existing.holdingQuantity;
-    const holdingPrice = dto.holdingPrice !== undefined ? dto.holdingPrice : existing.holdingPrice;
+    const isHolding =
+      dto.isHolding !== undefined ? dto.isHolding : existing.isHolding;
+    const holdingQuantity =
+      dto.holdingQuantity !== undefined
+        ? dto.holdingQuantity
+        : existing.holdingQuantity;
+    const holdingPrice =
+      dto.holdingPrice !== undefined ? dto.holdingPrice : existing.holdingPrice;
 
     if (isHolding && (holdingQuantity <= 0 || holdingPrice <= 0)) {
-      throw new BadRequestException('持仓状态下，持仓数量和价格必须大于0');
+      throw new BadRequestException("持仓状态下，持仓数量和价格必须大于0");
     }
 
     // 更新记录
@@ -180,7 +195,7 @@ export class WatchlistService {
     // 从数据库查询
     const holdings = await this.watchlistRepository.find({
       where: { isHolding: true },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
     });
 
     // 缓存结果
@@ -206,12 +221,12 @@ export class WatchlistService {
    * 根据股票代码判断交易所
    */
   private getExchangeByStockCode(stockCode: string): string {
-    if (stockCode.startsWith('6')) {
-      return 'SSE'; // 上海证券交易所
-    } else if (stockCode.startsWith('0') || stockCode.startsWith('3')) {
-      return 'SZSE'; // 深圳证券交易所
+    if (stockCode.startsWith("6")) {
+      return "SSE"; // 上海证券交易所
+    } else if (stockCode.startsWith("0") || stockCode.startsWith("3")) {
+      return "SZSE"; // 深圳证券交易所
     }
-    return 'UNKNOWN';
+    return "UNKNOWN";
   }
 
   /**
@@ -219,7 +234,7 @@ export class WatchlistService {
    */
   private async clearCache(stockCode?: string): Promise<void> {
     const keys = [`${this.CACHE_PREFIX}holdings`];
-    
+
     if (stockCode) {
       keys.push(`${this.CACHE_PREFIX}${stockCode}`);
     }
@@ -232,6 +247,6 @@ export class WatchlistService {
       }
     }
 
-    await Promise.all(keys.map(key => this.cacheManager.del(key)));
+    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
   }
 }

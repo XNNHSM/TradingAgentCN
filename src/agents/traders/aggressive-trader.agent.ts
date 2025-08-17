@@ -1,24 +1,42 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig, AgentResult, TradingRecommendation } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+  AgentResult,
+  TradingRecommendation,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 激进型交易员智能体 - 专注于捕捉高收益机会
  */
 @Injectable()
 export class AggressiveTraderAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('AGGRESSIVE_TRADER_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('AGGRESSIVE_TRADER_TEMPERATURE', 0.8),
-      maxTokens: configService.get<number>('AGGRESSIVE_TRADER_MAX_TOKENS', 2500),
-      timeout: configService.get<number>('AGGRESSIVE_TRADER_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 45)),
-      retryCount: configService.get<number>('AGGRESSIVE_TRADER_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "AGGRESSIVE_TRADER_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>(
+        "AGGRESSIVE_TRADER_TEMPERATURE",
+        0.8,
+      ),
+      maxTokens: configService.get<number>(
+        "AGGRESSIVE_TRADER_MAX_TOKENS",
+        2500,
+      ),
+      timeout: configService.get<number>(
+        "AGGRESSIVE_TRADER_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+      ),
+      retryCount: configService.get<number>(
+        "AGGRESSIVE_TRADER_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的激进型交易智能体，专注于捕捉高收益机会。基于团队分析师的综合分析，您需要做出积极的投资决策。
 
 🚀 增长导向原则：
@@ -51,18 +69,18 @@ export class AggressiveTraderAgent extends BaseAgent {
     };
 
     super(
-      '激进型交易员',
+      "激进型交易员",
       AgentType.AGGRESSIVE_TRADER,
-      '专业的激进型交易员，专注于高收益机会和趋势捕捉',
+      "专业的激进型交易员，专注于高收益机会和趋势捕捉",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `作为激进型交易员，请基于团队分析师的综合研究，对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -72,7 +90,7 @@ export class AggressiveTraderAgent extends BaseAgent {
     // 整合所有分析师的结果
     if (previousResults && previousResults.length > 0) {
       prompt += `## 团队分析师研究汇总\n\n`;
-      
+
       let totalScore = 0;
       let scoreCount = 0;
       const recommendations: string[] = [];
@@ -81,15 +99,15 @@ export class AggressiveTraderAgent extends BaseAgent {
 
       previousResults.forEach((result) => {
         prompt += `### ${result.agentName} (${result.agentType})\n`;
-        prompt += `- **评分**: ${result.score || 'N/A'}\n`;
-        prompt += `- **建议**: ${result.recommendation || 'N/A'}\n`;
-        prompt += `- **置信度**: ${result.confidence ? (result.confidence * 100).toFixed(1) + '%' : 'N/A'}\n`;
-        
+        prompt += `- **评分**: ${result.score || "N/A"}\n`;
+        prompt += `- **建议**: ${result.recommendation || "N/A"}\n`;
+        prompt += `- **置信度**: ${result.confidence ? (result.confidence * 100).toFixed(1) + "%" : "N/A"}\n`;
+
         if (result.keyInsights && result.keyInsights.length > 0) {
-          prompt += `- **关键洞察**: ${result.keyInsights.join(', ')}\n`;
+          prompt += `- **关键洞察**: ${result.keyInsights.join(", ")}\n`;
           allInsights.push(...result.keyInsights);
         }
-        
+
         prompt += `- **分析亮点**: ${result.analysis.substring(0, 150)}...\n\n`;
 
         // 收集评分和建议
@@ -102,8 +120,13 @@ export class AggressiveTraderAgent extends BaseAgent {
         }
 
         // 提取催化剂因素
-        if (result.analysis.includes('催化剂') || result.analysis.includes('驱动因素')) {
-          const catalystMatches = result.analysis.match(/(?:催化剂|驱动因素)[:：][^。]*[。]/g);
+        if (
+          result.analysis.includes("催化剂") ||
+          result.analysis.includes("驱动因素")
+        ) {
+          const catalystMatches = result.analysis.match(
+            /(?:催化剂|驱动因素)[:：][^。]*[。]/g,
+          );
           if (catalystMatches) {
             catalysts.push(...catalystMatches);
           }
@@ -111,10 +134,11 @@ export class AggressiveTraderAgent extends BaseAgent {
       });
 
       // 计算平均评分
-      const avgScore = scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : 'N/A';
+      const avgScore =
+        scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : "N/A";
       prompt += `**团队平均评分**: ${avgScore}\n`;
-      prompt += `**建议分布**: ${recommendations.join(', ')}\n`;
-      prompt += `**关键机会**: ${allInsights.slice(0, 5).join(', ')}\n\n`;
+      prompt += `**建议分布**: ${recommendations.join(", ")}\n`;
+      prompt += `**关键机会**: ${allInsights.slice(0, 5).join(", ")}\n\n`;
     }
 
     prompt += `## 请进行激进型交易决策分析
@@ -220,11 +244,14 @@ export class AggressiveTraderAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async postprocessResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+  protected async postprocessResult(
+    analysis: string,
+    context: AgentContext,
+  ): Promise<AgentResult> {
     const result = await super.postprocessResult(analysis, context);
-    
+
     // 激进交易员的特殊处理
-    
+
     // 1. 调整评分 - 更加乐观
     if (result.score) {
       if (result.score > 60) {
@@ -235,9 +262,17 @@ export class AggressiveTraderAgent extends BaseAgent {
     }
 
     // 2. 调整交易建议 - 倾向于积极
-    if (result.recommendation === TradingRecommendation.BUY && result.score && result.score > 75) {
+    if (
+      result.recommendation === TradingRecommendation.BUY &&
+      result.score &&
+      result.score > 75
+    ) {
       result.recommendation = TradingRecommendation.STRONG_BUY;
-    } else if (result.recommendation === TradingRecommendation.HOLD && result.score && result.score > 65) {
+    } else if (
+      result.recommendation === TradingRecommendation.HOLD &&
+      result.score &&
+      result.score > 65
+    ) {
       result.recommendation = TradingRecommendation.BUY;
     }
 
@@ -248,15 +283,17 @@ export class AggressiveTraderAgent extends BaseAgent {
 
     // 4. 提取交易相关信息
     result.supportingData = result.supportingData || {};
-    
+
     // 提取目标价位
     const targetMatches = analysis.match(/目标位?[:：]\s*([0-9.]+)/gi);
     if (targetMatches && targetMatches.length > 0) {
-      const targets = targetMatches.map(match => {
-        const price = match.match(/([0-9.]+)/);
-        return price ? parseFloat(price[1]) : null;
-      }).filter(Boolean);
-      
+      const targets = targetMatches
+        .map((match) => {
+          const price = match.match(/([0-9.]+)/);
+          return price ? parseFloat(price[1]) : null;
+        })
+        .filter(Boolean);
+
       if (targets.length > 0) {
         result.supportingData.targetPrices = targets;
         result.supportingData.primaryTarget = Math.max(...targets);
@@ -274,7 +311,9 @@ export class AggressiveTraderAgent extends BaseAgent {
     if (catalystSection) {
       const catalysts = catalystSection[0].match(/- \[[x ]\] ([^\\n]+)/g);
       if (catalysts) {
-        result.supportingData.catalysts = catalysts.map(c => c.replace(/- \[[x ]\] /, ''));
+        result.supportingData.catalysts = catalysts.map((c) =>
+          c.replace(/- \[[x ]\] /, ""),
+        );
       }
     }
 

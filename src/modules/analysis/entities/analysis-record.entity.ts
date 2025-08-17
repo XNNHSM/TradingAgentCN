@@ -1,114 +1,114 @@
-import { Entity, Column, Index } from 'typeorm';
-import { BaseEntity } from '../../../common/entities/base.entity';
-import { TradingRecommendation } from '../../../agents/interfaces/agent.interface';
+import { Entity, Column, Index } from "typeorm";
+import { BaseEntity } from "../../../common/entities/base.entity";
+import { TradingRecommendation } from "../../../agents/interfaces/agent.interface";
 
 /**
  * 分析记录实体
  */
-@Entity('analysis_records')
-@Index(['stockCode', 'createdAt'])
-@Index(['analysisType', 'createdAt'])
+@Entity("analysis_records")
+@Index(["stockCode", "createdAt"])
+@Index(["analysisType", "createdAt"])
 export class AnalysisRecord extends BaseEntity {
-  @Column({ 
-    type: 'varchar', 
-    length: 10, 
-    comment: '股票代码' 
+  @Column({
+    type: "varchar",
+    length: 10,
+    comment: "股票代码",
   })
   stockCode: string;
 
-  @Column({ 
-    type: 'varchar', 
-    length: 100, 
+  @Column({
+    type: "varchar",
+    length: 100,
     nullable: true,
-    comment: '股票名称' 
+    comment: "股票名称",
   })
   stockName?: string;
 
-  @Column({ 
-    type: 'enum',
-    enum: ['full', 'quick'],
-    default: 'full',
-    comment: '分析类型' 
+  @Column({
+    type: "enum",
+    enum: ["full", "quick"],
+    default: "full",
+    comment: "分析类型",
   })
-  analysisType: 'full' | 'quick';
+  analysisType: "full" | "quick";
 
-  @Column({ 
-    type: 'json',
-    comment: '分析上下文信息' 
+  @Column({
+    type: "json",
+    comment: "分析上下文信息",
   })
   context: Record<string, any>;
 
-  @Column({ 
-    type: 'json',
-    comment: '完整分析结果' 
+  @Column({
+    type: "json",
+    comment: "完整分析结果",
   })
   results: Record<string, any>;
 
-  @Column({ 
-    type: 'decimal',
+  @Column({
+    type: "decimal",
     precision: 5,
     scale: 2,
     nullable: true,
-    comment: '综合评分(0-100)' 
+    comment: "综合评分(0-100)",
   })
   averageScore?: number;
 
-  @Column({ 
-    type: 'enum',
+  @Column({
+    type: "enum",
     enum: TradingRecommendation,
     nullable: true,
-    comment: '最终交易建议' 
+    comment: "最终交易建议",
   })
   finalRecommendation?: TradingRecommendation;
 
-  @Column({ 
-    type: 'decimal',
+  @Column({
+    type: "decimal",
     precision: 3,
     scale: 2,
     nullable: true,
-    comment: '置信度(0-1)' 
+    comment: "置信度(0-1)",
   })
   confidence?: number;
 
-  @Column({ 
-    type: 'json',
+  @Column({
+    type: "json",
     nullable: true,
-    comment: '关键洞察' 
+    comment: "关键洞察",
   })
   keyInsights?: string[];
 
-  @Column({ 
-    type: 'json',
+  @Column({
+    type: "json",
     nullable: true,
-    comment: '主要风险' 
+    comment: "主要风险",
   })
   majorRisks?: string[];
 
-  @Column({ 
-    type: 'int',
-    comment: '执行时长(毫秒)' 
+  @Column({
+    type: "int",
+    comment: "执行时长(毫秒)",
   })
   executionTime: number;
 
-  @Column({ 
-    type: 'enum',
-    enum: ['success', 'partial', 'failed'],
-    default: 'success',
-    comment: '执行状态' 
+  @Column({
+    type: "enum",
+    enum: ["success", "partial", "failed"],
+    default: "success",
+    comment: "执行状态",
   })
-  status: 'success' | 'partial' | 'failed';
+  status: "success" | "partial" | "failed";
 
-  @Column({ 
-    type: 'text',
+  @Column({
+    type: "text",
     nullable: true,
-    comment: '错误信息' 
+    comment: "错误信息",
   })
   errorMessage?: string;
 
-  @Column({ 
-    type: 'json',
+  @Column({
+    type: "json",
     nullable: true,
-    comment: '扩展元数据' 
+    comment: "扩展元数据",
   })
   metadata?: Record<string, any>;
 }

@@ -1,24 +1,42 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig, AgentResult, TradingRecommendation } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+  AgentResult,
+  TradingRecommendation,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 保守型交易员智能体 - 以风险控制为第一要务
  */
 @Injectable()
 export class ConservativeTraderAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('CONSERVATIVE_TRADER_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('CONSERVATIVE_TRADER_TEMPERATURE', 0.5),
-      maxTokens: configService.get<number>('CONSERVATIVE_TRADER_MAX_TOKENS', 2500),
-      timeout: configService.get<number>('CONSERVATIVE_TRADER_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 45)),
-      retryCount: configService.get<number>('CONSERVATIVE_TRADER_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "CONSERVATIVE_TRADER_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>(
+        "CONSERVATIVE_TRADER_TEMPERATURE",
+        0.5,
+      ),
+      maxTokens: configService.get<number>(
+        "CONSERVATIVE_TRADER_MAX_TOKENS",
+        2500,
+      ),
+      timeout: configService.get<number>(
+        "CONSERVATIVE_TRADER_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+      ),
+      retryCount: configService.get<number>(
+        "CONSERVATIVE_TRADER_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的保守型交易智能体，以风险控制为第一要务。基于团队分析师的综合分析，您需要做出谨慎的投资决策。
 
 🛡️ 风险控制原则：
@@ -51,18 +69,18 @@ export class ConservativeTraderAgent extends BaseAgent {
     };
 
     super(
-      '保守型交易员',
+      "保守型交易员",
       AgentType.CONSERVATIVE_TRADER,
-      '专业的保守型交易员，以风险控制和资本保护为核心',
+      "专业的保守型交易员，以风险控制和资本保护为核心",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `作为保守型交易员，请基于团队分析师的综合研究，对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -72,7 +90,7 @@ export class ConservativeTraderAgent extends BaseAgent {
     // 整合所有分析师的结果
     if (previousResults && previousResults.length > 0) {
       prompt += `## 团队分析师研究汇总\n\n`;
-      
+
       let totalScore = 0;
       let scoreCount = 0;
       const recommendations: string[] = [];
@@ -81,20 +99,20 @@ export class ConservativeTraderAgent extends BaseAgent {
 
       previousResults.forEach((result) => {
         prompt += `### ${result.agentName} (${result.agentType})\n`;
-        prompt += `- **评分**: ${result.score || 'N/A'}\n`;
-        prompt += `- **建议**: ${result.recommendation || 'N/A'}\n`;
-        prompt += `- **置信度**: ${result.confidence ? (result.confidence * 100).toFixed(1) + '%' : 'N/A'}\n`;
-        
+        prompt += `- **评分**: ${result.score || "N/A"}\n`;
+        prompt += `- **建议**: ${result.recommendation || "N/A"}\n`;
+        prompt += `- **置信度**: ${result.confidence ? (result.confidence * 100).toFixed(1) + "%" : "N/A"}\n`;
+
         if (result.keyInsights && result.keyInsights.length > 0) {
-          prompt += `- **关键洞察**: ${result.keyInsights.join(', ')}\n`;
+          prompt += `- **关键洞察**: ${result.keyInsights.join(", ")}\n`;
           allInsights.push(...result.keyInsights);
         }
-        
+
         if (result.risks && result.risks.length > 0) {
-          prompt += `- **风险提示**: ${result.risks.join(', ')}\n`;
+          prompt += `- **风险提示**: ${result.risks.join(", ")}\n`;
           allRisks.push(...result.risks);
         }
-        
+
         prompt += `- **分析摘要**: ${result.analysis.substring(0, 150)}...\n\n`;
 
         // 收集评分和建议
@@ -108,10 +126,11 @@ export class ConservativeTraderAgent extends BaseAgent {
       });
 
       // 计算平均评分
-      const avgScore = scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : 'N/A';
+      const avgScore =
+        scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : "N/A";
       prompt += `**团队平均评分**: ${avgScore}\n`;
-      prompt += `**建议分布**: ${recommendations.join(', ')}\n`;
-      prompt += `**主要风险**: ${allRisks.slice(0, 5).join(', ')}\n\n`;
+      prompt += `**建议分布**: ${recommendations.join(", ")}\n`;
+      prompt += `**主要风险**: ${allRisks.slice(0, 5).join(", ")}\n\n`;
     }
 
     prompt += `## 请进行保守型交易决策分析
@@ -210,11 +229,14 @@ export class ConservativeTraderAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async postprocessResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+  protected async postprocessResult(
+    analysis: string,
+    context: AgentContext,
+  ): Promise<AgentResult> {
     const result = await super.postprocessResult(analysis, context);
-    
+
     // 保守交易员的特殊处理
-    
+
     // 1. 调整评分 - 更加保守
     if (result.score) {
       if (result.score > 80) {
@@ -233,12 +255,12 @@ export class ConservativeTraderAgent extends BaseAgent {
 
     // 3. 确保有风险提示
     if (!result.risks || result.risks.length === 0) {
-      result.risks = ['市场波动风险', '流动性风险', '基本面变化风险'];
+      result.risks = ["市场波动风险", "流动性风险", "基本面变化风险"];
     }
 
     // 4. 提取止损和仓位信息
     result.supportingData = result.supportingData || {};
-    
+
     // 提取止损位
     const stopLossMatch = analysis.match(/止损位?[:：]\s*([0-9.]+)/i);
     if (stopLossMatch) {

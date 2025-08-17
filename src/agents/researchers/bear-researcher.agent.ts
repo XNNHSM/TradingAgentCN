@@ -1,24 +1,39 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig, AgentResult, TradingRecommendation } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+  AgentResult,
+  TradingRecommendation,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 空头研究员智能体 - 专门识别风险和问题
  */
 @Injectable()
 export class BearResearcherAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('BEAR_RESEARCHER_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('BEAR_RESEARCHER_TEMPERATURE', 0.7),
-      maxTokens: configService.get<number>('BEAR_RESEARCHER_MAX_TOKENS', 2500),
-      timeout: configService.get<number>('BEAR_RESEARCHER_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 45)),
-      retryCount: configService.get<number>('BEAR_RESEARCHER_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "BEAR_RESEARCHER_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>(
+        "BEAR_RESEARCHER_TEMPERATURE",
+        0.7,
+      ),
+      maxTokens: configService.get<number>("BEAR_RESEARCHER_MAX_TOKENS", 2500),
+      timeout: configService.get<number>(
+        "BEAR_RESEARCHER_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+      ),
+      retryCount: configService.get<number>(
+        "BEAR_RESEARCHER_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的空头分析师，负责识别投资该股票的风险和潜在问题。您的任务是构建一个基于证据的谨慎案例，强调风险因素、估值担忧和负面市场指标。
 
 🎯 重点关注领域：
@@ -54,18 +69,18 @@ export class BearResearcherAgent extends BaseAgent {
     };
 
     super(
-      '空头研究员',
+      "空头研究员",
       AgentType.BEAR_RESEARCHER,
-      '专业的空头研究员，专注于风险识别和谨慎分析',
+      "专业的空头研究员，专注于风险识别和谨慎分析",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `作为专业的空头研究员，请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -77,14 +92,14 @@ export class BearResearcherAgent extends BaseAgent {
       prompt += `参考其他分析师的分析结果:\n\n`;
       previousResults.forEach((result, index) => {
         prompt += `### ${result.agentName}分析摘要:\n`;
-        prompt += `- 评分: ${result.score || 'N/A'}\n`;
-        prompt += `- 建议: ${result.recommendation || 'N/A'}\n`;
+        prompt += `- 评分: ${result.score || "N/A"}\n`;
+        prompt += `- 建议: ${result.recommendation || "N/A"}\n`;
         prompt += `- 核心观点: ${result.analysis.substring(0, 200)}...\n`;
         if (result.keyInsights && result.keyInsights.length > 0) {
-          prompt += `- 关键洞察: ${result.keyInsights.join(', ')}\n`;
+          prompt += `- 关键洞察: ${result.keyInsights.join(", ")}\n`;
         }
         if (result.risks && result.risks.length > 0) {
-          prompt += `- 风险提示: ${result.risks.join(', ')}\n`;
+          prompt += `- 风险提示: ${result.risks.join(", ")}\n`;
         }
         prompt += `\n`;
       });
@@ -221,14 +236,17 @@ export class BearResearcherAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async postprocessResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+  protected async postprocessResult(
+    analysis: string,
+    context: AgentContext,
+  ): Promise<AgentResult> {
     const result = await super.postprocessResult(analysis, context);
-    
+
     // 空头研究员的评分倾向于保守，但基于客观分析
     if (result.score && result.score > 50) {
       result.score = Math.min(50, result.score - 5); // 适度降低评分以体现谨慎态度
     }
-    
+
     // 确保交易建议更加保守
     if (result.recommendation === TradingRecommendation.BUY) {
       result.recommendation = TradingRecommendation.HOLD;

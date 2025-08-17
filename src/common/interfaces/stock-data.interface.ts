@@ -8,7 +8,7 @@
 export enum Exchange {
   /** 深圳证券交易所 */
   SZSE = 0,
-  /** 上海证券交易所 */ 
+  /** 上海证券交易所 */
   SSE = 1,
 }
 
@@ -17,21 +17,21 @@ export enum Exchange {
  */
 export enum KLineType {
   /** 日线 */
-  DAILY = 'D',
+  DAILY = "D",
   /** 周线 */
-  WEEKLY = 'W',
+  WEEKLY = "W",
   /** 月线 */
-  MONTHLY = 'M',
+  MONTHLY = "M",
   /** 分钟线 */
-  MINUTE = 'M1',
+  MINUTE = "M1",
   /** 5分钟线 */
-  MINUTE_5 = 'M5',
+  MINUTE_5 = "M5",
   /** 15分钟线 */
-  MINUTE_15 = 'M15',
+  MINUTE_15 = "M15",
   /** 30分钟线 */
-  MINUTE_30 = 'M30',
+  MINUTE_30 = "M30",
   /** 60分钟线 */
-  HOUR = 'H1',
+  HOUR = "H1",
 }
 
 /**
@@ -282,6 +282,8 @@ export interface CacheConfig {
   enableFileCache: boolean;
   /** 文件缓存目录 */
   fileCacheDir?: string;
+  /** 是否启用缓存 (开发阶段可禁用) */
+  enableCache?: boolean;
 }
 
 /**

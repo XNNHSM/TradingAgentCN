@@ -1,24 +1,40 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 市场分析师智能体 - 专门进行技术分析
  */
 @Injectable()
 export class MarketAnalystAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('MARKET_ANALYST_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('MARKET_ANALYST_TEMPERATURE', configService.get<number>('LLM_DEFAULT_TEMPERATURE', 0.7)),
-      maxTokens: configService.get<number>('MARKET_ANALYST_MAX_TOKENS', configService.get<number>('LLM_DEFAULT_MAX_TOKENS', 2500)),
-      timeout: configService.get<number>('MARKET_ANALYST_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 45)),
-      retryCount: configService.get<number>('MARKET_ANALYST_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "MARKET_ANALYST_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>(
+        "MARKET_ANALYST_TEMPERATURE",
+        configService.get<number>("LLM_DEFAULT_TEMPERATURE", 0.7),
+      ),
+      maxTokens: configService.get<number>(
+        "MARKET_ANALYST_MAX_TOKENS",
+        configService.get<number>("LLM_DEFAULT_MAX_TOKENS", 2500),
+      ),
+      timeout: configService.get<number>(
+        "MARKET_ANALYST_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+      ),
+      retryCount: configService.get<number>(
+        "MARKET_ANALYST_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的中文市场分析师，专门分析股票市场技术指标。您的任务是从以下指标列表中选择最相关的指标（最多8个），为特定的市场条件或交易策略提供分析。
 
 技术指标分类：
@@ -56,18 +72,18 @@ export class MarketAnalystAgent extends BaseAgent {
     };
 
     super(
-      '市场分析师',
+      "市场分析师",
       AgentType.MARKET_ANALYST,
-      '专业的技术分析师，专注于股票市场技术指标分析',
+      "专业的技术分析师，专注于股票市场技术指标分析",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, timeRange, historicalData } = context;
-    
+
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -147,13 +163,15 @@ export class MarketAnalystAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
+  protected async preprocessContext(
+    context: AgentContext,
+  ): Promise<AgentContext> {
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 60); // 默认60天
-      
+
       context.timeRange = { startDate, endDate };
     }
 

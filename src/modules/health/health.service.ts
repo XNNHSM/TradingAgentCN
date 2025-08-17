@@ -1,7 +1,7 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { DataSource } from 'typeorm';
-import { Cache } from 'cache-manager';
+import { Injectable, Inject } from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { DataSource } from "typeorm";
+import { Cache } from "cache-manager";
 
 @Injectable()
 export class HealthService {
@@ -17,18 +17,22 @@ export class HealthService {
     ]);
 
     return {
-      status: 'ok',
+      status: "ok",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,
-      version: process.env.npm_package_version || '1.0.0',
+      version: process.env.npm_package_version || "1.0.0",
       services: {
         database: dbStatus,
         redis: redisStatus,
       },
       memory: {
-        used: Math.round((process.memoryUsage().heapUsed / 1024 / 1024) * 100) / 100,
-        total: Math.round((process.memoryUsage().heapTotal / 1024 / 1024) * 100) / 100,
+        used:
+          Math.round((process.memoryUsage().heapUsed / 1024 / 1024) * 100) /
+          100,
+        total:
+          Math.round((process.memoryUsage().heapTotal / 1024 / 1024) * 100) /
+          100,
       },
     };
   }
@@ -36,17 +40,17 @@ export class HealthService {
   async checkDatabase() {
     try {
       // 执行简单查询检查数据库连接
-      await this.dataSource.query('SELECT 1');
+      await this.dataSource.query("SELECT 1");
       return {
-        status: 'healthy',
+        status: "healthy",
         responseTime: Date.now(),
-        connection: 'active',
+        connection: "active",
       };
     } catch (error) {
       return {
-        status: 'unhealthy',
+        status: "unhealthy",
         error: error.message,
-        connection: 'failed',
+        connection: "failed",
       };
     }
   }
@@ -54,27 +58,27 @@ export class HealthService {
   async checkRedis() {
     try {
       // 检查Redis连接
-      const testKey = 'health_check_test';
+      const testKey = "health_check_test";
       const testValue = Date.now().toString();
-      
+
       await this.cacheManager.set(testKey, testValue, 1000); // 1秒过期
       const retrievedValue = await this.cacheManager.get(testKey);
-      
+
       if (retrievedValue === testValue) {
         await this.cacheManager.del(testKey);
         return {
-          status: 'healthy',
+          status: "healthy",
           responseTime: Date.now(),
-          connection: 'active',
+          connection: "active",
         };
       } else {
-        throw new Error('Redis value mismatch');
+        throw new Error("Redis value mismatch");
       }
     } catch (error) {
       return {
-        status: 'unhealthy',
+        status: "unhealthy",
         error: error.message,
-        connection: 'failed',
+        connection: "failed",
       };
     }
   }

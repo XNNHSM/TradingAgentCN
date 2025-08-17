@@ -1,24 +1,39 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig, AgentResult, TradingRecommendation } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+  AgentResult,
+  TradingRecommendation,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 反思智能体 - 专门进行质量控制和综合评估
  */
 @Injectable()
 export class ReflectionAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('REFLECTION_AGENT_MODEL', configService.get<string>('DASHSCOPE_STANDARD_MODEL', 'qwen-plus')),
-      temperature: configService.get<number>('REFLECTION_AGENT_TEMPERATURE', 0.4),
-      maxTokens: configService.get<number>('REFLECTION_AGENT_MAX_TOKENS', 3000),
-      timeout: configService.get<number>('REFLECTION_AGENT_TIMEOUT', configService.get<number>('LLM_DEFAULT_TIMEOUT', 60)),
-      retryCount: configService.get<number>('REFLECTION_AGENT_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "REFLECTION_AGENT_MODEL",
+        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+      ),
+      temperature: configService.get<number>(
+        "REFLECTION_AGENT_TEMPERATURE",
+        0.4,
+      ),
+      maxTokens: configService.get<number>("REFLECTION_AGENT_MAX_TOKENS", 3000),
+      timeout: configService.get<number>(
+        "REFLECTION_AGENT_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 60),
+      ),
+      retryCount: configService.get<number>(
+        "REFLECTION_AGENT_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是一位专业的金融分析专家，负责审查交易决策/分析并提供全面的逐步分析。
 您的目标是对投资决策提供详细洞察，并突出改进机会，严格遵循以下准则：
 
@@ -55,18 +70,18 @@ export class ReflectionAgent extends BaseAgent {
     };
 
     super(
-      '反思智能体',
+      "反思智能体",
       AgentType.REFLECTION_AGENT,
-      '专业的反思分析师，负责质量控制和决策优化',
+      "专业的反思分析师，负责质量控制和决策优化",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `作为反思智能体，请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -76,39 +91,42 @@ export class ReflectionAgent extends BaseAgent {
     // 分析所有前序结果
     if (previousResults && previousResults.length > 0) {
       prompt += `## 团队分析师完整报告\n\n`;
-      
+
       const analysisTypes = {
-        market_analyst: '市场分析师',
-        fundamental_analyst: '基本面分析师', 
-        news_analyst: '新闻分析师',
-        bull_researcher: '多头研究员',
-        bear_researcher: '空头研究员',
-        trader: '交易员'
+        market_analyst: "市场分析师",
+        fundamental_analyst: "基本面分析师",
+        news_analyst: "新闻分析师",
+        bull_researcher: "多头研究员",
+        bear_researcher: "空头研究员",
+        trader: "交易员",
       };
 
       previousResults.forEach((result, index) => {
         const typeName = analysisTypes[result.agentType] || result.agentName;
-        
+
         prompt += `### ${index + 1}. ${typeName}报告\n`;
-        prompt += `**评分**: ${result.score || 'N/A'}\n`;
-        prompt += `**建议**: ${result.recommendation || 'N/A'}\n`;
-        prompt += `**置信度**: ${result.confidence ? (result.confidence * 100).toFixed(1) + '%' : 'N/A'}\n`;
-        prompt += `**处理时间**: ${result.processingTime || 'N/A'}ms\n`;
-        
+        prompt += `**评分**: ${result.score || "N/A"}\n`;
+        prompt += `**建议**: ${result.recommendation || "N/A"}\n`;
+        prompt += `**置信度**: ${result.confidence ? (result.confidence * 100).toFixed(1) + "%" : "N/A"}\n`;
+        prompt += `**处理时间**: ${result.processingTime || "N/A"}ms\n`;
+
         if (result.keyInsights && result.keyInsights.length > 0) {
-          prompt += `**关键洞察**:\n${result.keyInsights.map(insight => `- ${insight}`).join('\n')}\n`;
+          prompt += `**关键洞察**:\n${result.keyInsights.map((insight) => `- ${insight}`).join("\n")}\n`;
         }
-        
+
         if (result.risks && result.risks.length > 0) {
-          prompt += `**风险提示**:\n${result.risks.map(risk => `- ${risk}`).join('\n')}\n`;
+          prompt += `**风险提示**:\n${result.risks.map((risk) => `- ${risk}`).join("\n")}\n`;
         }
-        
+
         prompt += `**完整分析**:\n${result.analysis}\n\n`;
-        
-        if (result.supportingData && Object.keys(result.supportingData).length > 0) {
+
+        if (
+          result.supportingData &&
+          Object.keys(result.supportingData).length > 0
+        ) {
           prompt += `**支撑数据**: ${JSON.stringify(result.supportingData, null, 2)}\n\n`;
         }
-        
+
         prompt += `---\n\n`;
       });
     }
@@ -253,25 +271,32 @@ export class ReflectionAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async postprocessResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+  protected async postprocessResult(
+    analysis: string,
+    context: AgentContext,
+  ): Promise<AgentResult> {
     const result = await super.postprocessResult(analysis, context);
-    
+
     // 反思智能体的特殊处理
-    
+
     // 1. 提取团队整体评分
-    const teamScoreMatch = analysis.match(/(?:整体评分|团队评分)[:：]\s*([0-9.]+)/i);
+    const teamScoreMatch = analysis.match(
+      /(?:整体评分|团队评分)[:：]\s*([0-9.]+)/i,
+    );
     if (teamScoreMatch) {
       result.supportingData = result.supportingData || {};
       result.supportingData.teamScore = parseFloat(teamScoreMatch[1]);
     }
 
     // 2. 提取反思后的最终建议
-    const finalRecommendationMatch = analysis.match(/反思后建议[:：]\s*([^\\n]+)/i);
+    const finalRecommendationMatch = analysis.match(
+      /反思后建议[:：]\s*([^\\n]+)/i,
+    );
     if (finalRecommendationMatch) {
       const recommendation = finalRecommendationMatch[1].trim();
-      if (recommendation.includes('买入')) {
+      if (recommendation.includes("买入")) {
         result.recommendation = TradingRecommendation.BUY;
-      } else if (recommendation.includes('卖出')) {
+      } else if (recommendation.includes("卖出")) {
         result.recommendation = TradingRecommendation.SELL;
       } else {
         result.recommendation = TradingRecommendation.HOLD;
@@ -283,8 +308,8 @@ export class ReflectionAgent extends BaseAgent {
     if (insightsSection) {
       const insights = insightsSection[0].match(/\d+\.\s*\[([^\]]+)\]/g);
       if (insights) {
-        result.keyInsights = insights.map(insight => 
-          insight.replace(/\d+\.\s*\[([^\]]+)\]/, '$1')
+        result.keyInsights = insights.map((insight) =>
+          insight.replace(/\d+\.\s*\[([^\]]+)\]/, "$1"),
         );
       }
     }
@@ -294,39 +319,44 @@ export class ReflectionAgent extends BaseAgent {
     if (improvementSection) {
       const improvements = improvementSection[0].match(/[-•]\s*([^\\n]+)/g);
       if (improvements) {
-        result.risks = improvements.slice(0, 3).map(item => 
-          item.replace(/[-•]\s*/, '').trim()
-        );
+        result.risks = improvements
+          .slice(0, 3)
+          .map((item) => item.replace(/[-•]\s*/, "").trim());
       }
     }
 
     // 5. 计算综合置信度（基于团队一致性）
     if (context.previousResults && context.previousResults.length > 0) {
       const recommendations = context.previousResults
-        .map(r => r.recommendation)
+        .map((r) => r.recommendation)
         .filter(Boolean);
-      
+
       const scores = context.previousResults
-        .map(r => r.score)
+        .map((r) => r.score)
         .filter(Boolean);
 
       // 基于建议一致性计算置信度
       const mostCommonRecommendation = this.getMostCommon(recommendations);
-      const consistencyRatio = recommendations.filter(r => r === mostCommonRecommendation).length / recommendations.length;
-      
+      const consistencyRatio =
+        recommendations.filter((r) => r === mostCommonRecommendation).length /
+        recommendations.length;
+
       // 基于评分标准差计算一致性
-      const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-      const variance = scores.reduce((sum, score) => sum + Math.pow(score - avgScore, 2), 0) / scores.length;
+      const avgScore =
+        scores.reduce((sum, score) => sum + score, 0) / scores.length;
+      const variance =
+        scores.reduce((sum, score) => sum + Math.pow(score - avgScore, 2), 0) /
+        scores.length;
       const stdDev = Math.sqrt(variance);
       const scoreConsistency = Math.max(0, 1 - stdDev / 50); // 标准差越小，一致性越高
 
-      result.confidence = (consistencyRatio * 0.6 + scoreConsistency * 0.4);
+      result.confidence = consistencyRatio * 0.6 + scoreConsistency * 0.4;
       result.supportingData = result.supportingData || {};
       result.supportingData.teamConsistency = {
         recommendationConsistency: consistencyRatio,
         scoreConsistency: scoreConsistency,
         avgScore: avgScore,
-        scoreStdDev: stdDev
+        scoreStdDev: stdDev,
       };
     }
 
@@ -337,11 +367,16 @@ export class ReflectionAgent extends BaseAgent {
    * 获取数组中最常出现的元素
    */
   private getMostCommon<T>(arr: T[]): T {
-    const counts = arr.reduce((acc, val) => {
-      acc[val as string] = (acc[val as string] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const counts = arr.reduce(
+      (acc, val) => {
+        acc[val as string] = (acc[val as string] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
-    return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b) as T;
+    return Object.keys(counts).reduce((a, b) =>
+      counts[a] > counts[b] ? a : b,
+    ) as T;
   }
 }

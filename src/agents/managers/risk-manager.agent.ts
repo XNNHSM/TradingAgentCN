@@ -1,24 +1,31 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { AgentType, AgentContext, AgentConfig } from '../interfaces/agent.interface';
-import { LLMService } from '../services/llm.service';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { BaseAgent } from "../base/base-agent";
+import {
+  AgentType,
+  AgentContext,
+  AgentConfig,
+} from "../interfaces/agent.interface";
+import { LLMService } from "../services/llm.service";
 
 /**
  * 风险管理员智能体 - 最终风险评估和交易决策
  */
 @Injectable()
 export class RiskManagerAgent extends BaseAgent {
-  constructor(
-    llmService: LLMService,
-    configService: ConfigService,
-  ) {
+  constructor(llmService: LLMService, configService: ConfigService) {
     const config: Partial<AgentConfig> = {
-      model: configService.get<string>('RISK_MANAGER_MODEL', configService.get<string>('DASHSCOPE_PREMIUM_MODEL', 'qwen-max')),
-      temperature: configService.get<number>('RISK_MANAGER_TEMPERATURE', 0.6),
-      maxTokens: configService.get<number>('RISK_MANAGER_MAX_TOKENS', 3000),
-      timeout: configService.get<number>('RISK_MANAGER_TIMEOUT', 60),
-      retryCount: configService.get<number>('RISK_MANAGER_RETRY_COUNT', configService.get<number>('LLM_MAX_RETRIES', 3)),
+      model: configService.get<string>(
+        "RISK_MANAGER_MODEL",
+        configService.get<string>("DASHSCOPE_PREMIUM_MODEL", "qwen-max"),
+      ),
+      temperature: configService.get<number>("RISK_MANAGER_TEMPERATURE", 0.6),
+      maxTokens: configService.get<number>("RISK_MANAGER_MAX_TOKENS", 3000),
+      timeout: configService.get<number>("RISK_MANAGER_TIMEOUT", 60),
+      retryCount: configService.get<number>(
+        "RISK_MANAGER_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 3),
+      ),
       systemPrompt: `您是风险管理法官和辩论协调员，您的目标是评估三位风险分析师（激进型、中立型和保守型）之间的辩论，并为交易员确定最佳行动方案。您的决策必须得出明确建议：买入、卖出或持有。只有在特定论据强有力地支持下才选择"持有"，而不是在所有观点看似合理时作为默认选项。力求清晰果断。
 
 决策指南：
@@ -37,18 +44,18 @@ export class RiskManagerAgent extends BaseAgent {
     };
 
     super(
-      '风险管理员',
+      "风险管理员",
       AgentType.RISK_MANAGER,
-      '专业的风险管理法官和最终决策者，负责综合评估所有风险因素并制定最终交易决策',
+      "专业的风险管理法官和最终决策者，负责综合评估所有风险因素并制定最终交易决策",
       llmService,
       undefined, // dataToolkit 暂时不需要
-      config
+      config,
     );
   }
 
   protected async buildPrompt(context: AgentContext): Promise<string> {
     const { stockCode, stockName, previousResults } = context;
-    
+
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {
       prompt += ` (${stockName})`;
@@ -58,16 +65,34 @@ export class RiskManagerAgent extends BaseAgent {
     // 添加前期分析结果
     if (previousResults && previousResults.length > 0) {
       prompt += `## 分析师团队报告汇总\n\n`;
-      
+
       // 整理各种报告
       const reports = {
-        market: previousResults.find(r => r.agentType === AgentType.MARKET_ANALYST)?.analysis || '',
-        fundamentals: previousResults.find(r => r.agentType === AgentType.FUNDAMENTAL_ANALYST)?.analysis || '',
-        news: previousResults.find(r => r.agentType === AgentType.NEWS_ANALYST)?.analysis || '',
-        investmentPlan: previousResults.find(r => r.agentType === 'research_manager' || r.agentName === '研究管理员')?.analysis || '',
-        traderPlan: previousResults.find(r => r.agentType === AgentType.TRADER)?.analysis || '',
-        conservativeView: previousResults.find(r => r.agentName === '保守型交易员')?.analysis || '',
-        aggressiveView: previousResults.find(r => r.agentName === '激进型交易员')?.analysis || ''
+        market:
+          previousResults.find((r) => r.agentType === AgentType.MARKET_ANALYST)
+            ?.analysis || "",
+        fundamentals:
+          previousResults.find(
+            (r) => r.agentType === AgentType.FUNDAMENTAL_ANALYST,
+          )?.analysis || "",
+        news:
+          previousResults.find((r) => r.agentType === AgentType.NEWS_ANALYST)
+            ?.analysis || "",
+        investmentPlan:
+          previousResults.find(
+            (r) =>
+              r.agentType === "research_manager" ||
+              r.agentName === "研究管理员",
+          )?.analysis || "",
+        traderPlan:
+          previousResults.find((r) => r.agentType === AgentType.TRADER)
+            ?.analysis || "",
+        conservativeView:
+          previousResults.find((r) => r.agentName === "保守型交易员")
+            ?.analysis || "",
+        aggressiveView:
+          previousResults.find((r) => r.agentName === "激进型交易员")
+            ?.analysis || "",
       };
 
       if (reports.market) {
@@ -141,13 +166,15 @@ export class RiskManagerAgent extends BaseAgent {
     return prompt;
   }
 
-  protected async preprocessContext(context: AgentContext): Promise<AgentContext> {
+  protected async preprocessContext(
+    context: AgentContext,
+  ): Promise<AgentContext> {
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 7); // 默认一周
-      
+
       context.timeRange = { startDate, endDate };
     }
 
