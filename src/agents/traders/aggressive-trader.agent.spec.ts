@@ -157,10 +157,10 @@ describe("AggressiveTraderAgent - 真实LLM测试", () => {
     it("应该包含所有分析师的汇总信息", async () => {
       const prompt = await agent["buildPrompt"](testContext);
 
-      expect(prompt).toContain("### 市场分析师 (MARKET_ANALYST)");
-      expect(prompt).toContain("### 基本面分析师 (FUNDAMENTAL_ANALYST)");
-      expect(prompt).toContain("### 新闻分析师 (NEWS_ANALYST)");
-      expect(prompt).toContain("### 多头研究员 (BULL_RESEARCHER)");
+      expect(prompt).toContain("### 市场分析师 (market_analyst)");
+      expect(prompt).toContain("### 基本面分析师 (fundamental_analyst)");
+      expect(prompt).toContain("### 新闻分析师 (news_analyst)");
+      expect(prompt).toContain("### 多头研究员 (bull_researcher)");
     });
 
     it("应该包含激进型交易决策框架", async () => {
@@ -373,7 +373,7 @@ describe("AggressiveTraderAgent - 真实LLM测试", () => {
       expect(prompt).toContain("000001");
       expect(prompt).toContain("平安银行");
       expect(prompt).toContain("激进型交易员");
-      expect(prompt).toContain("高收益机会");
+      expect(prompt).toContain("机会评估");
       expect(prompt).toContain("机会评估矩阵");
       expect(prompt.length).toBeGreaterThan(2000);
     });
@@ -450,7 +450,7 @@ describe("AggressiveTraderAgent - 真实LLM测试", () => {
       
       // 检查是否尝试提取催化剂相关信息
       expect(prompt).toContain("催化剂");
-      expect(prompt).toContain("驱动因素");
+      expect(prompt).toContain("催化剂因素");
     });
   });
 

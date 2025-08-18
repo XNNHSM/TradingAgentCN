@@ -1,8 +1,15 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { 
+  LLMServiceV2, 
+  LLMResponse as LLMResponseV2, 
+  LLMConfig as LLMConfigV2,
+  LLMMessage,
+  ToolCall as ToolCallV2
+} from "./llm-adapters";
 
 /**
- * LLM响应结果接口
+ * 向后兼容的LLM响应结果接口
  */
 export interface LLMResponse {
   content: string;
@@ -11,7 +18,7 @@ export interface LLMResponse {
 }
 
 /**
- * 工具调用接口
+ * 向后兼容的工具调用接口
  */
 export interface ToolCall {
   id: string;
@@ -23,7 +30,7 @@ export interface ToolCall {
 }
 
 /**
- * LLM服务提供商接口
+ * 向后兼容的LLM服务提供商接口
  */
 export interface LLMProvider {
   name: string;
@@ -32,7 +39,7 @@ export interface LLMProvider {
 }
 
 /**
- * LLM配置接口
+ * 向后兼容的LLM配置接口
  */
 export interface LLMConfig {
   model?: string;
@@ -170,7 +177,8 @@ export class DashScopeProvider implements LLMProvider {
 }
 
 /**
- * LLM服务管理器
+ * LLM服务管理器（向后兼容版本）
+ * 内部使用新的LLMServiceV2，但保持旧接口以确保兼容性
  */
 @Injectable()
 export class LLMService {
@@ -181,8 +189,9 @@ export class LLMService {
   constructor(
     private readonly configService: ConfigService,
     private readonly dashScopeProvider: DashScopeProvider,
+    @Optional() private readonly llmServiceV2?: LLMServiceV2, // 可选依赖
   ) {
-    // 注册可用的LLM提供商
+    // 注册可用的LLM提供商（保持向后兼容）
     this.registerProvider(dashScopeProvider);
 
     // 从环境变量获取默认提供商
@@ -190,6 +199,12 @@ export class LLMService {
       "LLM_PRIMARY_PROVIDER",
       "dashscope",
     );
+
+    if (this.llmServiceV2) {
+      this.logger.log("LLM服务已初始化，支持新旧两套接口");
+    } else {
+      this.logger.log("LLM服务已初始化，使用传统接口");
+    }
   }
 
   /**
@@ -215,21 +230,33 @@ export class LLMService {
   }
 
   /**
-   * 生成文本
+   * 生成文本（优先使用新服务，保持向后兼容）
    */
   async generate(
     prompt: string,
     config?: LLMConfig & { provider?: string },
   ): Promise<string> {
+    // 如果有新服务，优先使用
+    if (this.llmServiceV2) {
+      try {
+        const newConfig: LLMConfigV2 = {
+          ...config,
+          toolChoice: config?.toolChoice === "auto" ? "auto" : config?.toolChoice === "none" ? "none" : undefined,
+        };
+        
+        return await this.llmServiceV2.generate(prompt, newConfig);
+      } catch (error) {
+        this.logger.warn(`新服务调用失败，回退到旧服务: ${error.message}`);
+      }
+    }
+    
+    // 使用旧的实现
     const provider = this.getProvider(config?.provider);
-
     const startTime = Date.now();
-    this.logger.debug(`使用 ${provider.name} 生成文本...`);
 
     try {
       const result = await provider.generate(prompt, config);
       const duration = Date.now() - startTime;
-
       this.logger.debug(`文本生成完成，耗时: ${duration}ms`);
       return result;
     } catch (error) {
@@ -242,12 +269,42 @@ export class LLMService {
   }
 
   /**
-   * 使用工具生成文本
+   * 使用工具生成文本（优先使用新服务，保持向后兼容）
    */
   async generateWithTools(
     prompt: string,
     config?: LLMConfig & { provider?: string },
   ): Promise<LLMResponse> {
+    // 如果有新服务，优先使用
+    if (this.llmServiceV2) {
+      try {
+        const newConfig: LLMConfigV2 = {
+          ...config,
+          tools: config?.tools?.map(tool => ({
+            type: "function" as const,
+            function: {
+              name: tool.function?.name || tool.name,
+              description: tool.function?.description || tool.description,
+              parameters: tool.function?.parameters || tool.parameters,
+            },
+          })),
+          toolChoice: config?.toolChoice === "auto" ? "auto" : config?.toolChoice === "none" ? "none" : undefined,
+        };
+        
+        const response = await this.llmServiceV2.generateWithDetails(prompt, newConfig);
+        
+        // 转换响应格式以保持兼容性
+        return {
+          content: response.content,
+          toolCalls: response.toolCalls,
+          finishReason: response.finishReason,
+        };
+      } catch (error) {
+        this.logger.warn(`新服务调用失败，回退到旧服务: ${error.message}`);
+      }
+    }
+    
+    // 使用旧的实现
     const provider = this.getProvider(config?.provider);
 
     if (!provider.generateWithTools) {
@@ -255,12 +312,10 @@ export class LLMService {
     }
 
     const startTime = Date.now();
-    this.logger.debug(`使用 ${provider.name} 生成文本（支持工具调用）...`);
 
     try {
       const result = await provider.generateWithTools(prompt, config);
       const duration = Date.now() - startTime;
-
       this.logger.debug(`文本生成完成，耗时: ${duration}ms`);
       return result;
     } catch (error) {

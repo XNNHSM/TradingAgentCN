@@ -32,7 +32,7 @@ export abstract class BaseAgent implements IAgent {
       model: "qwen-plus",
       temperature: 0.7,
       maxTokens: 2000,
-      timeout: 30,
+      timeout: 90, // 增加到90秒，适应复杂分析任务
       retryCount: 3,
       systemPrompt: "",
       ...config,
@@ -157,13 +157,19 @@ export abstract class BaseAgent implements IAgent {
         return await this.llmService.generate(fullPrompt, llmConfig);
       } catch (error) {
         lastError = error;
+        const isTimeoutError = error.message.includes('timeout') || 
+                              error.message.includes('aborted due to timeout');
+        
         this.logger.warn(
-          `LLM调用失败 (尝试 ${attempt}/${this.config.retryCount}): ${error.message}`,
+          `LLM调用失败 (尝试 ${attempt}/${this.config.retryCount}): ${error.message}${isTimeoutError ? ' [超时错误]' : ''}`,
         );
 
         if (attempt < this.config.retryCount) {
-          // 指数退避延迟
-          const delay = Math.pow(2, attempt - 1) * 1000;
+          // 如果是超时错误，增加重试延迟时间
+          const baseDelay = Math.pow(2, attempt - 1) * 1000;
+          const delay = isTimeoutError ? baseDelay * 2 : baseDelay;
+          
+          this.logger.debug(`等待 ${delay}ms 后重试...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
@@ -194,7 +200,7 @@ export abstract class BaseAgent implements IAgent {
 
     this.logger.debug(
       "开始LLM调用，支持以下工具：",
-      tools.map((t) => t.function.name),
+      (tools || []).map((t) => t.function?.name || t.name || "未知工具"),
     );
 
     return await this.llmService.generateWithTools(fullPrompt, llmConfig);
@@ -281,7 +287,7 @@ export abstract class BaseAgent implements IAgent {
    */
   protected extractScore(analysis: string): number {
     // 查找评分模式，如 "评分: 85" 或 "得分：75分"
-    const scorePattern = /(?:评分|得分)[:：]\s*(\d+)/i;
+    const scorePattern = /(?:评分|得分)[:：]\s*(-?\d+)/i;
     const match = analysis.match(scorePattern);
 
     if (match) {
@@ -298,8 +304,8 @@ export abstract class BaseAgent implements IAgent {
   protected extractConfidence(analysis: string): number {
     // 查找置信度模式，如 "置信度: 0.8" 或 "可信度：85%"
     const confidencePatterns = [
-      /(?:置信度|可信度)[:：]\s*([0-9.]+)/i,
-      /(?:置信度|可信度)[:：]\s*(\d+)%/i,
+      /(?:置信度|可信度)[:：]\s*(-?\d+)%/i, // 先匹配百分比（包含负数）
+      /(?:置信度|可信度)[:：]\s*(-?[0-9.]+)/i, // 再匹配小数（包含负数）
     ];
 
     for (const pattern of confidencePatterns) {
