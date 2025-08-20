@@ -235,76 +235,84 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 重写工具调用方法，使用MCP客户端
+   * 重写分析方法，预先获取MCP数据，然后调用普通LLM生成
    */
-  protected async callLLMWithTools(
-    prompt: string,
-    _tools: any[],
-  ): Promise<any> {
-    // 获取MCP工具定义
-    const mcpTools = this.mcpClient.getToolDefinitions();
+  protected async performAnalysis(context: AgentContext): Promise<string> {
+    const { stockCode, stockName } = context;
+
+    // 第一步：预先获取所有需要的MCP数据
+    this.logger.debug(`开始为股票 ${stockCode} 获取MCP数据`);
     
-    const fullPrompt = this.config.systemPrompt
-      ? `${this.config.systemPrompt}\n\n${prompt}`
-      : prompt;
+    let mcpData = "";
+    
+    try {
+      // 1. 获取股票基本信息
+      const basicInfo = await this.mcpClient.callTool('get_stock_basic_info', { stock_code: stockCode });
+      mcpData += `\n\n## 股票基本信息\n${basicInfo}`;
+      
+      // 2. 获取实时行情数据  
+      const realtimeData = await this.mcpClient.callTool('get_stock_realtime_data', { stock_code: stockCode });
+      mcpData += `\n\n## 实时行情数据\n${realtimeData}`;
+      
+      // 3. 获取历史数据(60天)
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const historicalData = await this.mcpClient.callTool('get_stock_historical_data', {
+        stock_code: stockCode,
+        start_date: startDate,
+        end_date: endDate
+      });
+      mcpData += `\n\n## 历史价格数据(60天)\n${historicalData}`;
+      
+      // 4. 获取技术指标
+      const technicalData = await this.mcpClient.callTool('get_stock_technical_indicators', {
+        stock_code: stockCode,
+        period: 20
+      });
+      mcpData += `\n\n## 技术指标分析\n${technicalData}`;
+      
+      // 5. 获取财务数据
+      const financialData = await this.mcpClient.callTool('get_stock_financial_data', {
+        stock_code: stockCode,
+        report_type: 'balance',
+        period: 'quarterly'
+      });
+      mcpData += `\n\n## 财务数据\n${financialData}`;
+      
+      // 6. 获取相关新闻
+      const newsData = await this.mcpClient.callTool('get_stock_news', {
+        keyword: stockName || stockCode,
+        days: 7
+      });
+      mcpData += `\n\n## 相关新闻(7天)\n${newsData}`;
+      
+      // 7. 获取市场概览
+      const marketOverview = await this.mcpClient.callTool('get_market_overview', {});
+      mcpData += `\n\n## 市场概览\n${marketOverview}`;
+      
+    } catch (error) {
+      this.logger.error('MCP数据获取失败', error);
+      mcpData += `\n\n## 数据获取异常\n由于数据源问题，部分数据可能不完整: ${error.message}`;
+    }
+    
+    // 第二步：构建包含数据的完整提示词
+    const analysisPrompt = await this.buildPrompt(context);
+    const fullPrompt = `${analysisPrompt}\n\n# 实时数据参考\n${mcpData}\n\n请基于以上实时数据进行专业分析，确保所有结论都有数据支撑。`;
+    
+    // 第三步：调用普通LLM生成分析结果
+    const fullSystemPrompt = this.config.systemPrompt
+      ? `${this.config.systemPrompt}\n\n${fullPrompt}`
+      : fullPrompt;
 
     const llmConfig = {
       model: this.config.model,
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       timeout: this.config.timeout * 1000,
-      tools: mcpTools,
-      toolChoice: "auto",
     };
 
-    this.logger.debug(
-      "开始MCP工具调用，支持以下工具：",
-      mcpTools.map((t) => t.function?.name || "未知工具"),
-    );
-
-    return await this.llmService.generateWithTools(fullPrompt, llmConfig);
-  }
-
-  /**
-   * 重写工具调用处理方法，使用MCP客户端执行
-   */
-  protected async processToolCalls(
-    llmResponse: any,
-    _context: AgentContext,
-  ): Promise<any> {
-    if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
-      return llmResponse;
-    }
-
-    this.logger.debug(`处理 ${llmResponse.toolCalls.length} 个MCP工具调用`);
-
-    let enhancedContent = llmResponse.content;
-
-    // 执行所有MCP工具调用
-    for (const toolCall of llmResponse.toolCalls) {
-      try {
-        const functionName = toolCall.function.name;
-        const arguments_ = JSON.parse(toolCall.function.arguments);
-
-        this.logger.debug(`执行MCP工具: ${functionName}`, arguments_);
-
-        // 使用MCP客户端执行工具调用
-        const toolResult = await this.mcpClient.callTool(
-          functionName,
-          arguments_,
-        );
-
-        // 将工具结果添加到内容中
-        enhancedContent += `\n\n## MCP数据获取结果 - ${functionName}\n\n${toolResult}`;
-      } catch (error) {
-        this.logger.error(`MCP工具调用失败: ${toolCall.function.name}`, error);
-        enhancedContent += `\n\nMCP工具调用失败 (${toolCall.function.name}): ${error.message}`;
-      }
-    }
-
-    return {
-      ...llmResponse,
-      content: enhancedContent,
-    };
+    this.logger.debug('开始LLM分析生成，基于预获取的MCP数据');
+    
+    return await this.llmService.generate(fullSystemPrompt, llmConfig);
   }
 }

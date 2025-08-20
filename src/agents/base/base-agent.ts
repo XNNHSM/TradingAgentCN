@@ -9,7 +9,6 @@ import {
   TradingRecommendation,
 } from "../interfaces/agent.interface";
 import { LLMService, LLMConfig, LLMResponse } from "../services/llm.service";
-import { DataToolkitService } from "../services/data-toolkit.service";
 import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
 
 /**
@@ -25,7 +24,7 @@ export abstract class BaseAgent implements IAgent {
     public readonly type: AgentType,
     public readonly role: string,
     protected readonly llmService: LLMService,
-    protected readonly dataToolkit?: DataToolkitService,
+    protected readonly dataToolkit?: any, // 保持兼容性，但已废弃
     config: Partial<AgentConfig> = {},
     protected readonly executionRecordService?: AgentExecutionRecordService,
   ) {
@@ -72,8 +71,23 @@ export abstract class BaseAgent implements IAgent {
 
       let analysis: string;
 
-      // 如果有数据工具包，使用 function calling
-      if (this.dataToolkit) {
+      // 先检查子类是否重写了performAnalysis方法（MCP模式）
+      if (this.hasCustomPerformAnalysis()) {
+        // 使用子类的自定义分析方法（MCP模式）
+        analysis = await this.performAnalysis(processedContext);
+        
+        // 创建简化的LLMResponse
+        llmResponse = {
+          content: analysis,
+          finishReason: 'stop',
+          usage: {
+            inputTokens: Math.floor(prompt.length / 4), // 粗略估算
+            outputTokens: Math.floor(analysis.length / 4),
+            totalTokens: Math.floor((prompt.length + analysis.length) / 4),
+          }
+        };
+      } else if (this.dataToolkit) {
+        // 传统的function calling模式
         // 获取可用工具
         const tools = this.dataToolkit.getToolDefinitions();
 
@@ -237,6 +251,24 @@ export abstract class BaseAgent implements IAgent {
    * 构建提示词 - 子类必须实现
    */
   protected abstract buildPrompt(context: AgentContext): Promise<string>;
+
+  /**
+   * 执行分析 - 子类可以重写（用于MCP模式）
+   * 如果子类重写了这个方法，将跳过传统的tool calling流程
+   */
+  protected async performAnalysis(context: AgentContext): Promise<string> {
+    // 默认实现：使用传统的LLM调用
+    const prompt = await this.buildPrompt(context);
+    return await this.callLLM(prompt);
+  }
+
+  /**
+   * 检查子类是否重写了performAnalysis方法
+   */
+  private hasCustomPerformAnalysis(): boolean {
+    // 检查子类是否有自己的performAnalysis实现
+    return this.performAnalysis !== BaseAgent.prototype.performAnalysis;
+  }
 
   /**
    * 调用LLM进行分析

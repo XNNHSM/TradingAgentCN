@@ -10,7 +10,7 @@ describe('MCPClientService', () => {
     get: jest.fn((key: string, defaultValue?: any) => {
       switch (key) {
         case 'DASHSCOPE_API_KEY':
-          return 'test-api-key-12345';
+          return 'ali_bailian';
         default:
           return defaultValue;
       }

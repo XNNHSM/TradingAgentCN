@@ -271,67 +271,69 @@ export class TradingStrategistAgent extends BaseAgent {
   }
 
   /**
-   * 使用MCP客户端进行工具调用
+   * 重写分析方法，预先获取MCP数据，然后调用普通LLM生成
    */
-  protected async callLLMWithTools(
-    prompt: string,
-    _tools: any[],
-  ): Promise<any> {
-    const mcpTools = this.mcpClient.getToolDefinitions();
+  protected async performAnalysis(context: AgentContext): Promise<string> {
+    const { stockCode, stockName } = context;
+
+    // 第一步：预先获取交易策略所需的MCP数据
+    this.logger.debug(`开始为股票 ${stockCode} 获取交易策略数据`);
     
-    const fullPrompt = this.config.systemPrompt
-      ? `${this.config.systemPrompt}\n\n${prompt}`
-      : prompt;
+    let mcpData = "";
+    
+    try {
+      // 1. 获取实时行情数据
+      const realtimeData = await this.mcpClient.callTool('get_stock_realtime_data', { stock_code: stockCode });
+      mcpData += `\n\n## 实时行情数据\n${realtimeData}`;
+      
+      // 2. 获取技术指标
+      const technicalData = await this.mcpClient.callTool('get_stock_technical_indicators', {
+        stock_code: stockCode,
+        period: 20
+      });
+      mcpData += `\n\n## 技术指标分析\n${technicalData}`;
+      
+      // 3. 获取历史数据(60天)
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const historicalData = await this.mcpClient.callTool('get_stock_historical_data', {
+        stock_code: stockCode,
+        start_date: startDate,
+        end_date: endDate
+      });
+      mcpData += `\n\n## 历史价格数据(60天)\n${historicalData}`;
+      
+      // 4. 获取市场概览
+      const marketOverview = await this.mcpClient.callTool('get_market_overview', {});
+      mcpData += `\n\n## 市场整体情况\n${marketOverview}`;
+      
+      // 5. 获取股票基本信息
+      const basicInfo = await this.mcpClient.callTool('get_stock_basic_info', { stock_code: stockCode });
+      mcpData += `\n\n## 股票基本信息\n${basicInfo}`;
+      
+    } catch (error) {
+      this.logger.error('交易策略MCP数据获取失败', error);
+      mcpData += `\n\n## 数据获取异常\n由于数据源问题，部分数据可能不完整: ${error.message}`;
+    }
+    
+    // 第二步：构建包含数据的完整提示词
+    const strategyPrompt = await this.buildPrompt(context);
+    const fullPrompt = `${strategyPrompt}\n\n# 实时数据参考\n${mcpData}\n\n请基于以上数据制定专业的交易策略，确保所有建议都有数据支撑。`;
+    
+    // 第三步：调用普通LLM生成策略结果
+    const fullSystemPrompt = this.config.systemPrompt
+      ? `${this.config.systemPrompt}\n\n${fullPrompt}`
+      : fullPrompt;
 
     const llmConfig = {
       model: this.config.model,
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       timeout: this.config.timeout * 1000,
-      tools: mcpTools,
-      toolChoice: "auto",
     };
 
-    return await this.llmService.generateWithTools(fullPrompt, llmConfig);
-  }
-
-  /**
-   * 处理MCP工具调用
-   */
-  protected async processToolCalls(
-    llmResponse: any,
-    _context: AgentContext,
-  ): Promise<any> {
-    if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
-      return llmResponse;
-    }
-
-    this.logger.debug(`处理 ${llmResponse.toolCalls.length} 个交易策略MCP工具调用`);
-
-    let enhancedContent = llmResponse.content;
-
-    for (const toolCall of llmResponse.toolCalls) {
-      try {
-        const functionName = toolCall.function.name;
-        const arguments_ = JSON.parse(toolCall.function.arguments);
-
-        this.logger.debug(`执行交易策略MCP工具: ${functionName}`, arguments_);
-
-        const toolResult = await this.mcpClient.callTool(
-          functionName,
-          arguments_,
-        );
-
-        enhancedContent += `\n\n## 策略数据来源 - ${functionName}\n\n${toolResult}`;
-      } catch (error) {
-        this.logger.error(`交易策略MCP工具调用失败: ${toolCall.function.name}`, error);
-        enhancedContent += `\n\n数据获取失败 (${toolCall.function.name}): ${error.message}`;
-      }
-    }
-
-    return {
-      ...llmResponse,
-      content: enhancedContent,
-    };
+    this.logger.debug('开始交易策略LLM生成，基于预获取的MCP数据');
+    
+    return await this.llmService.generate(fullSystemPrompt, llmConfig);
   }
 }

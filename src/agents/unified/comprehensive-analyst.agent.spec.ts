@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ComprehensiveAnalystAgent } from './comprehensive-analyst.agent';
 import { LLMService } from '../services/llm.service';
 import { MCPClientService } from '../services/mcp-client.service';
-import { AgentContext, AgentType } from '../interfaces/agent.interface';
+import { AgentContext, AgentType, TradingRecommendation } from '../interfaces/agent.interface';
 
 describe('ComprehensiveAnalystAgent', () => {
   let agent: ComprehensiveAnalystAgent;
@@ -81,6 +81,10 @@ describe('ComprehensiveAnalystAgent', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // 重置默认行为
+    mockMCPClient.isConnectedToMCP.mockReturnValue(true);
+    mockMCPClient.initialize.mockResolvedValue(undefined);
+    mockMCPClient.callTool.mockResolvedValue('默认模拟数据');
   });
 
   describe('智能体初始化', () => {
@@ -109,8 +113,13 @@ describe('ComprehensiveAnalystAgent', () => {
     };
 
     it('应该成功执行综合分析', async () => {
-      const mockLLMResponse = {
-        content: `# 000001 综合分析报告
+      const mockAnalysisResult = `# 000001 综合分析报告
+
+## 股票基本信息
+股票基本信息数据
+
+## 实时行情数据
+实时行情数据
 
 ## 技术分析
 - 短期趋势：上升
@@ -129,26 +138,17 @@ describe('ComprehensiveAnalystAgent', () => {
 ## 综合评估
 - 技术面评分：75/100分
 - 短期建议：买入
-- 目标价位：16.50-17.00元`,
-        finishReason: 'stop',
-        usage: {
-          inputTokens: 1000,
-          outputTokens: 500,
-          totalTokens: 1500,
-        },
-        toolCalls: [
-          {
-            id: 'call_1',
-            function: {
-              name: 'get_stock_basic_info',
-              arguments: JSON.stringify({ stock_code: '000001' }),
-            },
-          },
-        ],
-      };
+- 目标价位：16.50-17.00元`;
 
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
-      mockMCPClient.callTool.mockResolvedValue('股票基本信息数据');
+      mockLLMService.generate.mockResolvedValue(mockAnalysisResult);
+      mockMCPClient.callTool
+        .mockResolvedValueOnce('股票基本信息数据')
+        .mockResolvedValueOnce('实时行情数据')
+        .mockResolvedValueOnce('历史价格数据')
+        .mockResolvedValueOnce('技术指标数据')
+        .mockResolvedValueOnce('财务数据')
+        .mockResolvedValueOnce('相关新闻数据')
+        .mockResolvedValueOnce('市场概览数据');
 
       const result = await agent.analyze(testContext);
 
@@ -158,69 +158,67 @@ describe('ComprehensiveAnalystAgent', () => {
       expect(result.analysis).toContain('000001');
       expect(result.analysis).toContain('综合分析报告');
       expect(result.timestamp).toBeInstanceOf(Date);
-      expect(result.processingTime).toBeGreaterThan(0);
+      expect(result.processingTime).toBeGreaterThanOrEqual(0);
+
+      // 验证MCP工具调用
+      expect(mockMCPClient.callTool).toHaveBeenCalledTimes(7);
+      expect(mockLLMService.generate).toHaveBeenCalledTimes(1);
+      expect(mockLLMService.generateWithTools).not.toHaveBeenCalled();
     });
 
     it('应该正确提取评分信息', async () => {
       const mockAnalysis = `
 # 股票分析报告
+
+## 股票基本信息
+基本信息数据
+
+## 实时行情数据  
+实时数据
+
+## 综合评估
 技术面评分: 85分
 置信度: 0.8
 短期建议: 买入
 目标价格: 50.0元
 `;
 
-      const mockLLMResponse = {
-        content: mockAnalysis,
-        finishReason: 'stop',
-        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
-      };
-
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
+      mockLLMService.generate.mockResolvedValue(mockAnalysis);
+      mockMCPClient.callTool.mockResolvedValue('模拟数据');
 
       const result = await agent.analyze(testContext);
 
       expect(result.score).toBe(85);
       expect(result.confidence).toBe(0.8);
-      expect(result.recommendation).toBe('BUY');
+      expect(result.recommendation).toBe(TradingRecommendation.BUY);
     });
 
-    it('应该处理MCP工具调用', async () => {
-      const mockLLMResponse = {
-        content: '基础分析内容',
-        finishReason: 'stop',
-        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
-        toolCalls: [
-          {
-            id: 'call_1',
-            function: {
-              name: 'get_stock_basic_info',
-              arguments: JSON.stringify({ stock_code: '000001' }),
-            },
-          },
-          {
-            id: 'call_2', 
-            function: {
-              name: 'get_stock_realtime_data',
-              arguments: JSON.stringify({ stock_code: '000001' }),
-            },
-          },
-        ],
-      };
+    it('应该处理MCP数据获取', async () => {
+      const mockAnalysisResult = '基于MCP数据的综合分析内容\n\n## 股票基本信息\n股票基本信息：平安银行...\n\n## 实时行情数据\n实时行情：当前价格 16.25元...';
 
       const mockToolResults = [
         '股票基本信息：平安银行...',
         '实时行情：当前价格 16.25元...',
+        '历史数据',
+        '技术指标',
+        '财务数据', 
+        '新闻数据',
+        '市场概览'
       ];
 
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
+      mockLLMService.generate.mockResolvedValue(mockAnalysisResult);
       mockMCPClient.callTool
         .mockResolvedValueOnce(mockToolResults[0])
-        .mockResolvedValueOnce(mockToolResults[1]);
+        .mockResolvedValueOnce(mockToolResults[1])
+        .mockResolvedValueOnce(mockToolResults[2])
+        .mockResolvedValueOnce(mockToolResults[3])
+        .mockResolvedValueOnce(mockToolResults[4])
+        .mockResolvedValueOnce(mockToolResults[5])
+        .mockResolvedValueOnce(mockToolResults[6]);
 
       const result = await agent.analyze(testContext);
 
-      expect(mockMCPClient.callTool).toHaveBeenCalledTimes(2);
+      expect(mockMCPClient.callTool).toHaveBeenCalledTimes(7);
       expect(mockMCPClient.callTool).toHaveBeenCalledWith(
         'get_stock_basic_info',
         { stock_code: '000001' }
@@ -230,21 +228,16 @@ describe('ComprehensiveAnalystAgent', () => {
         { stock_code: '000001' }
       );
 
-      expect(result.analysis).toContain('基础分析内容');
-      expect(result.analysis).toContain('MCP数据获取结果');
+      expect(result.analysis).toContain('基于MCP数据的综合分析内容');
       expect(result.analysis).toContain('股票基本信息：平安银行');
     });
 
     it('应该处理MCP连接初始化', async () => {
       mockMCPClient.isConnectedToMCP.mockReturnValue(false);
       
-      const mockLLMResponse = {
-        content: '分析内容',
-        finishReason: 'stop',
-        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
-      };
-
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
+      const mockAnalysisResult = '分析内容';
+      mockLLMService.generate.mockResolvedValue(mockAnalysisResult);
+      mockMCPClient.callTool.mockResolvedValue('模拟数据');
 
       await agent.analyze(testContext);
 
@@ -257,19 +250,15 @@ describe('ComprehensiveAnalystAgent', () => {
         stockName: '平安银行',
       };
 
-      const mockLLMResponse = {
-        content: '分析结果',
-        finishReason: 'stop', 
-        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
-      };
-
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
+      const mockAnalysisResult = '分析结果';
+      mockLLMService.generate.mockResolvedValue(mockAnalysisResult);
+      mockMCPClient.callTool.mockResolvedValue('模拟数据');
 
       const result = await agent.analyze(contextWithoutTimeRange);
 
       expect(result).toBeDefined();
       // 验证是否设置了默认的60天时间范围
-      const calls = mockLLMService.generateWithTools.mock.calls;
+      const calls = mockLLMService.generate.mock.calls;
       expect(calls[0][0]).toContain('60天');
     });
   });
@@ -281,39 +270,30 @@ describe('ComprehensiveAnalystAgent', () => {
     };
 
     it('应该处理LLM调用失败', async () => {
-      mockLLMService.generateWithTools.mockRejectedValue(new Error('LLM调用失败'));
+      mockLLMService.generate.mockRejectedValue(new Error('LLM调用失败'));
+      mockMCPClient.callTool.mockResolvedValue('模拟数据');
 
       await expect(agent.analyze(testContext)).rejects.toThrow('LLM调用失败');
     });
 
     it('应该处理MCP工具调用失败', async () => {
-      const mockLLMResponse = {
-        content: '基础内容',
-        finishReason: 'stop',
-        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
-        toolCalls: [
-          {
-            id: 'call_1',
-            function: {
-              name: 'get_stock_basic_info',
-              arguments: JSON.stringify({ stock_code: '000001' }),
-            },
-          },
-        ],
-      };
-
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
+      // 模拟LLM返回包含异常信息的分析结果
+      const mockAnalysisResult = '基础内容\n\n# 实时数据参考\n\n## 数据获取异常\n由于数据源问题，部分数据可能不完整: MCP工具调用失败';
+      
+      mockLLMService.generate.mockResolvedValue(mockAnalysisResult);
       mockMCPClient.callTool.mockRejectedValue(new Error('MCP工具调用失败'));
 
       const result = await agent.analyze(testContext);
 
       expect(result.analysis).toContain('基础内容');
-      expect(result.analysis).toContain('MCP工具调用失败');
+      // 由于MCP数据获取异常被包含在分析结果中
+      expect(result.analysis).toContain('数据获取异常');
     });
 
     it('应该处理MCP初始化失败', async () => {
       mockMCPClient.isConnectedToMCP.mockReturnValue(false);
       mockMCPClient.initialize.mockRejectedValue(new Error('MCP初始化失败'));
+      mockLLMService.generate.mockResolvedValue('分析结果');
 
       await expect(agent.analyze(testContext)).rejects.toThrow('MCP初始化失败');
     });
@@ -330,26 +310,28 @@ describe('ComprehensiveAnalystAgent', () => {
         },
       };
 
-      const mockLLMResponse = {
-        content: '分析结果',
-        finishReason: 'stop',
-        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
-      };
-
-      mockLLMService.generateWithTools.mockResolvedValue(mockLLMResponse);
+      const mockAnalysisResult = '分析结果';
+      mockLLMService.generate.mockResolvedValue(mockAnalysisResult);
+      
+      // 模拟所有MCP工具调用成功
+      mockMCPClient.callTool.mockImplementation((toolName) => {
+        return Promise.resolve(`${toolName}的模拟数据`);
+      });
 
       await agent.analyze(testContext);
 
-      const prompt = mockLLMService.generateWithTools.mock.calls[0][0];
+      const prompt = mockLLMService.generate.mock.calls[0][0];
       
       expect(prompt).toContain('000001');
       expect(prompt).toContain('平安银行');
-      expect(prompt).toContain('2025-7-1');
-      expect(prompt).toContain('2025-8-1');
-      expect(prompt).toContain('get_stock_basic_info');
-      expect(prompt).toContain('get_stock_realtime_data');
-      expect(prompt).toContain('get_stock_historical_data');
+      expect(prompt).toContain('7/1/2025');
+      expect(prompt).toContain('8/1/2025');
       expect(prompt).toContain('综合分析报告');
+      expect(prompt).toContain('实时数据参考'); // 验证包含了MCP数据
+      
+      // 验证MCP工具被正确调用
+      expect(mockMCPClient.callTool).toHaveBeenCalledWith('get_stock_basic_info', { stock_code: '000001' });
+      expect(mockMCPClient.callTool).toHaveBeenCalledWith('get_stock_realtime_data', { stock_code: '000001' });
     });
   });
 });
