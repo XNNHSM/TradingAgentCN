@@ -1,99 +1,84 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { StockDataModule } from "../services/stock-data/stock-data.module";
-import { NewsModule } from "../services/news/news.module";
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-// 服务
-import { LLMService, DashScopeProvider } from "./services/llm.service";
-import { AgentOrchestratorService } from "./services/agent-orchestrator.service";
-import { TradingAgentsOrchestratorService } from "./services/trading-agents-orchestrator.service";
-import { DataToolkitService } from "./services/data-toolkit.service";
+// MCP相关服务
+import { MCPClientService } from './services/mcp-client.service';
+import { LLMService } from './services/llm.service';
 
-// 新的LLM适配器
-import { LLMServiceV2, DashScopeAdapter } from "./services/llm-adapters";
+// 新的统一智能体
+import { ComprehensiveAnalystAgent } from './unified/comprehensive-analyst.agent';
+import { TradingStrategistAgent } from './unified/trading-strategist.agent';
+import { UnifiedOrchestratorService } from './unified/unified-orchestrator.service';
 
-// 分析师
-import { MarketAnalystAgent } from "./analysts/market-analyst.agent";
-import { FundamentalAnalystAgent } from "./analysts/fundamental-analyst.agent";
-import { NewsAnalystAgent } from "./analysts/news-analyst.agent";
+// 执行记录相关（保持兼容）
+import { AgentExecutionRecord } from './entities/agent-execution-record.entity';
+import { AgentExecutionRecordService } from './services/agent-execution-record.service';
+import { AgentExecutionShardingService } from './services/agent-execution-sharding.service';
 
-// 研究员
-import { BullResearcherAgent } from "./researchers/bull-researcher.agent";
-import { BearResearcherAgent } from "./researchers/bear-researcher.agent";
-
-// 管理员
-import { ResearchManagerAgent } from "./managers/research-manager.agent";
-import { RiskManagerAgent } from "./managers/risk-manager.agent";
-
-// 交易员
-import { ConservativeTraderAgent } from "./traders/conservative-trader.agent";
-import { AggressiveTraderAgent } from "./traders/aggressive-trader.agent";
-
-// 反思
-import { ReflectionAgent } from "./reflection/reflection.agent";
+// 执行记录控制器
+import { ExecutionRecordsController } from './execution-records/execution-records.controller';
+import { ExecutionRecordsService } from './execution-records/execution-records.service';
 
 /**
- * 智能体模块 - 集成所有AI智能体
+ * 智能体模块
+ * 基于阿里云百炼MCP协议的新一代智能体架构
  */
 @Module({
   imports: [
-    ConfigModule, 
-    StockDataModule, 
-    NewsModule,
+    ConfigModule,
+    TypeOrmModule.forFeature([AgentExecutionRecord]),
   ],
   providers: [
-    // 核心服务（旧版本，向后兼容）
-    DashScopeProvider,
+    // 核心服务
+    MCPClientService,
     LLMService,
-    DataToolkitService,
-    
-    // 新的LLM适配器服务
-    DashScopeAdapter,
-    LLMServiceV2,
-    
-    // 编排服务
-    AgentOrchestratorService,
-    TradingAgentsOrchestratorService,
 
-    // 分析师团队
-    MarketAnalystAgent,
-    FundamentalAnalystAgent,
-    NewsAnalystAgent,
+    // 统一智能体
+    ComprehensiveAnalystAgent,
+    TradingStrategistAgent,
+    UnifiedOrchestratorService,
 
-    // 研究员团队
-    BullResearcherAgent,
-    BearResearcherAgent,
-
-    // 管理员团队
-    ResearchManagerAgent,
-    RiskManagerAgent,
-
-    // 交易员团队
-    ConservativeTraderAgent,
-    AggressiveTraderAgent,
-
-    // 反思系统
-    ReflectionAgent,
+    // 执行记录服务
+    AgentExecutionRecordService,
+    AgentExecutionShardingService,
+    ExecutionRecordsService,
+  ],
+  controllers: [
+    ExecutionRecordsController,
   ],
   exports: [
-    // 对外暴露主要服务
-    AgentOrchestratorService,
-    TradingAgentsOrchestratorService,
+    // 对外提供的主要服务
+    UnifiedOrchestratorService,
+    MCPClientService,
+    ComprehensiveAnalystAgent,
+    TradingStrategistAgent,
+    
+    // 兼容性导出
+    AgentExecutionRecordService,
     LLMService,
-    LLMServiceV2, // 导出新的LLM服务供其他模块使用
-    DataToolkitService,
-
-    // 导出所有智能体供其他模块使用
-    MarketAnalystAgent,
-    FundamentalAnalystAgent,
-    NewsAnalystAgent,
-    BullResearcherAgent,
-    BearResearcherAgent,
-    ResearchManagerAgent,
-    RiskManagerAgent,
-    ConservativeTraderAgent,
-    AggressiveTraderAgent,
-    ReflectionAgent,
   ],
 })
-export class AgentsModule {}
+export class AgentsModule {
+  constructor(
+    private readonly mcpClient: MCPClientService,
+  ) {}
+
+  /**
+   * 模块初始化时自动连接MCP服务
+   */
+  async onModuleInit() {
+    try {
+      await this.mcpClient.initialize();
+    } catch (error) {
+      console.warn('MCP服务初始化失败，将在首次使用时重试:', error.message);
+    }
+  }
+
+  /**
+   * 模块销毁时断开MCP连接
+   */
+  async onModuleDestroy() {
+    await this.mcpClient.disconnect();
+  }
+}

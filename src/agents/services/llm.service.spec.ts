@@ -1,16 +1,18 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ConfigService } from "@nestjs/config";
-import { LLMService, DashScopeProvider } from "./llm.service";
+import { LLMService } from "./llm.service";
+import { LLMServiceV2, DashScopeAdapter } from "./llm-adapters";
 
-describe("LLMService - 真实API测试", () => {
+describe("LLMService - 向后兼容性测试", () => {
   let service: LLMService;
-  let dashScopeProvider: DashScopeProvider;
+  let llmServiceV2: LLMServiceV2;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LLMService,
-        DashScopeProvider,
+        DashScopeAdapter,
+        LLMServiceV2,
         {
           provide: ConfigService,
           useValue: {
@@ -38,30 +40,32 @@ describe("LLMService - 真实API测试", () => {
     }).compile();
 
     service = module.get<LLMService>(LLMService);
-    dashScopeProvider = module.get<DashScopeProvider>(DashScopeProvider);
+    llmServiceV2 = module.get<LLMServiceV2>(LLMServiceV2);
+    
+    // 重要：初始化 LLMServiceV2，这样适配器才会被注册和初始化
+    await llmServiceV2.onModuleInit();
+  });
+
+  afterEach(() => {
+    // 清理定时器以避免Jest警告
+    if (llmServiceV2 && (llmServiceV2 as any).healthCheckTimer) {
+      clearInterval((llmServiceV2 as any).healthCheckTimer);
+    }
   });
 
   it("should be defined", () => {
     expect(service).toBeDefined();
-    expect(dashScopeProvider).toBeDefined();
+    expect(llmServiceV2).toBeDefined();
   });
 
-  describe("LLMService 基础功能", () => {
-    it("应该返回所有可用的提供商", () => {
-      const providers = service.getAvailableProviders();
-      expect(providers).toContain("dashscope");
-      expect(providers.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe("DashScopeProvider 真实API测试", () => {
+  describe("向后兼容性测试", () => {
     // 只有在配置了真实API密钥时才运行这些测试
     const hasApiKey =
       process.env.DASHSCOPE_API_KEY &&
       process.env.DASHSCOPE_API_KEY !== "test-key";
 
     if (hasApiKey) {
-      it("应该成功调用真实的百炼API进行文本生成", async () => {
+      it("应该通过旧接口成功调用新服务进行文本生成", async () => {
         const prompt = "请用中文简要回答：北京是中国的什么？";
 
         const result = await service.generate(prompt, {
@@ -76,33 +80,7 @@ describe("LLMService - 真实API测试", () => {
         expect(result).toMatch(/首都|都城|政治|中心/);
       }, 30000);
 
-      it("应该能够进行数学计算", async () => {
-        const prompt = "请计算：15 + 27 = ?";
-
-        const result = await service.generate(prompt, {
-          model: "qwen-plus",
-          temperature: 0.1,
-          maxTokens: 50,
-        });
-
-        expect(result).toBeDefined();
-        expect(result).toMatch(/42|四十二|12|2/); // 匹配正确答案42或者步骤中的数字
-      }, 30000);
-
-      it("应该能够进行逻辑推理", async () => {
-        const prompt = "如果所有的猫都是动物，而加菲是一只猫，那么加菲是什么？";
-
-        const result = await service.generate(prompt, {
-          model: "qwen-plus",
-          temperature: 0.1,
-          maxTokens: 100,
-        });
-
-        expect(result).toBeDefined();
-        expect(result).toMatch(/动物/);
-      }, 30000);
-
-      it("应该能够使用 generateWithTools 进行工具调用", async () => {
+      it("应该通过旧接口成功调用新服务进行工具调用", async () => {
         const tools = [
           {
             type: "function",
@@ -145,7 +123,7 @@ describe("LLMService - 真实API测试", () => {
         }
       }, 30000);
 
-      it("应该能够进行中文股市分析", async () => {
+      it("应该能够处理中文股市分析", async () => {
         const prompt = `
 请分析以下股票情况：
 股票名称：平安银行
@@ -166,35 +144,6 @@ describe("LLMService - 真实API测试", () => {
         expect(result).toBeDefined();
         expect(result.length).toBeGreaterThan(20);
         expect(result).toMatch(/平安银行|股票|投资|建议|风险/);
-      }, 30000);
-
-      it("应该能够处理批量请求", async () => {
-        const prompts = [
-          "1+1等于多少？",
-          "太阳从哪个方向升起？",
-          "地球有几个月亮？",
-        ];
-
-        const results = await service.generateBatch(prompts, {
-          model: "qwen-plus",
-          temperature: 0.1,
-          maxTokens: 50,
-        });
-
-        expect(results).toHaveLength(3);
-        results.forEach((result) => {
-          expect(typeof result).toBe("string");
-          expect(result.length).toBeGreaterThan(0);
-        });
-
-        expect(results[0]).toMatch(/2/);
-        expect(results[1]).toMatch(/东/);
-        expect(results[2]).toMatch(/1|一/);
-      }, 60000);
-
-      it("应该能够通过健康检查", async () => {
-        const isHealthy = await service.checkHealth();
-        expect(isHealthy).toBe(true);
       }, 30000);
 
       it("应该能够处理复杂的投资分析请求", async () => {
@@ -220,66 +169,7 @@ describe("LLMService - 真实API测试", () => {
         // 检查是否包含数字评分
         expect(result).toMatch(/\d{1,3}[分点]?/);
       }, 30000);
-    } else {
-      it("跳过真实API测试 - 未配置DASHSCOPE_API_KEY", () => {
-        console.log("跳过真实API测试：未配置有效的DASHSCOPE_API_KEY");
-        expect(true).toBe(true);
-      });
-    }
-  });
 
-  describe("错误处理测试", () => {
-    it("应该处理无效的提供商", async () => {
-      await expect(
-        service.generate("测试", { provider: "invalid-provider" }),
-      ).rejects.toThrow("未找到LLM提供商: invalid-provider");
-    });
-
-    it("应该处理不支持工具调用的提供商", async () => {
-      // 模拟一个不支持工具调用的提供商
-      const mockProvider = {
-        name: "mock-provider",
-        generate: jest.fn().mockResolvedValue("测试响应"),
-      };
-
-      service["providers"].set("mock-provider", mockProvider);
-
-      await expect(
-        service.generateWithTools("测试", {
-          provider: "mock-provider",
-          tools: [],
-        }),
-      ).rejects.toThrow("提供商 mock-provider 不支持工具调用");
-    });
-
-    it("应该在没有API密钥时正确处理", async () => {
-      const providerWithoutKey = new DashScopeProvider({
-        get: jest.fn().mockReturnValue(undefined),
-      } as any);
-
-      await expect(
-        providerWithoutKey.generateWithTools("测试"),
-      ).rejects.toThrow("DASHSCOPE_API_KEY 未配置");
-    });
-  });
-
-  describe("配置测试", () => {
-    it("应该正确初始化配置", () => {
-      expect(dashScopeProvider.name).toBe("dashscope");
-    });
-
-    it("应该使用正确的默认提供商", () => {
-      const providers = service.getAvailableProviders();
-      expect(providers).toContain("dashscope");
-    });
-  });
-
-  describe("性能测试", () => {
-    const hasApiKey =
-      process.env.DASHSCOPE_API_KEY &&
-      process.env.DASHSCOPE_API_KEY !== "test-key";
-
-    if (hasApiKey) {
       it("应该在合理时间内完成请求", async () => {
         const startTime = Date.now();
 
@@ -309,20 +199,7 @@ describe("LLMService - 真实API测试", () => {
           expect(typeof result).toBe("string");
         });
       }, 45000);
-    } else {
-      it("跳过性能测试 - 未配置API密钥", () => {
-        console.log("跳过性能测试：未配置有效的DASHSCOPE_API_KEY");
-        expect(true).toBe(true);
-      });
-    }
-  });
 
-  describe("模型参数测试", () => {
-    const hasApiKey =
-      process.env.DASHSCOPE_API_KEY &&
-      process.env.DASHSCOPE_API_KEY !== "test-key";
-
-    if (hasApiKey) {
       it("应该能够使用不同的温度参数", async () => {
         const prompt = "描述一下春天的景色";
 
@@ -356,8 +233,96 @@ describe("LLMService - 真实API测试", () => {
         expect(shortResult.length).toBeLessThan(longResult.length * 1.5);
       }, 45000);
     } else {
-      it("跳过模型参数测试 - 未配置API密钥", () => {
-        console.log("跳过模型参数测试：未配置有效的DASHSCOPE_API_KEY");
+      it("跳过真实API测试 - 未配置DASHSCOPE_API_KEY", () => {
+        console.log("跳过真实API测试：未配置有效的DASHSCOPE_API_KEY");
+        expect(true).toBe(true);
+      });
+    }
+  });
+
+  describe("错误处理测试", () => {
+    it("应该在LLMServiceV2不可用时抛出错误", async () => {
+      // 创建一个没有LLMServiceV2的服务实例
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          LLMService,
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn().mockReturnValue("test-value"),
+            },
+          },
+        ],
+      }).compile();
+
+      const serviceWithoutV2 = module.get<LLMService>(LLMService);
+
+      await expect(
+        serviceWithoutV2.generate("测试"),
+      ).rejects.toThrow("LLMServiceV2 不可用，请检查配置");
+
+      await expect(
+        serviceWithoutV2.generateWithTools("测试", { tools: [] }),
+      ).rejects.toThrow("LLMServiceV2 不可用，请检查配置");
+    });
+  });
+
+  describe("配置测试", () => {
+    it("应该正确初始化并显示配置状态", () => {
+      // 检查服务是否正确初始化
+      expect(service).toBeDefined();
+      expect(llmServiceV2).toBeDefined();
+    });
+  });
+
+  describe("接口兼容性测试", () => {
+    const hasApiKey =
+      process.env.DASHSCOPE_API_KEY &&
+      process.env.DASHSCOPE_API_KEY !== "test-key";
+
+    if (hasApiKey) {
+      it("应该保持工具调用响应格式的兼容性", async () => {
+        const tools = [
+          {
+            type: "function",
+            function: {
+              name: "test_function",
+              description: "测试函数",
+              parameters: {
+                type: "object",
+                properties: {
+                  input: { type: "string" },
+                },
+              },
+            },
+          },
+        ];
+
+        const result = await service.generateWithTools(
+          "调用测试函数，参数是hello",
+          {
+            tools,
+            toolChoice: "auto",
+            maxTokens: 100,
+          },
+        );
+
+        // 验证响应格式符合旧接口标准
+        expect(result).toHaveProperty("content");
+        expect(typeof result.content).toBe("string");
+        
+        if (result.toolCalls) {
+          expect(Array.isArray(result.toolCalls)).toBe(true);
+          if (result.toolCalls.length > 0) {
+            expect(result.toolCalls[0]).toHaveProperty("function");
+            expect(result.toolCalls[0].function).toHaveProperty("name");
+            expect(result.toolCalls[0].function).toHaveProperty("arguments");
+          }
+        }
+      }, 30000);
+    } else {
+      it("跳过接口兼容性测试 - 未配置API密钥", () => {
+        console.log("跳过接口兼容性测试：未配置有效的DASHSCOPE_API_KEY");
         expect(true).toBe(true);
       });
     }

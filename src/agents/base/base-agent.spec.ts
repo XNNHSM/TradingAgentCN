@@ -10,7 +10,8 @@ import {
   AgentConfig,
   TradingRecommendation,
 } from "../interfaces/agent.interface";
-import { LLMService, LLMResponse, DashScopeProvider } from "../services/llm.service";
+import { LLMService, LLMResponse } from "../services/llm.service";
+import { DashScopeAdapter } from "../services/llm-adapters";
 import { DataToolkitService } from "../services/data-toolkit.service";
 import { ConfigService } from "@nestjs/config";
 
@@ -113,7 +114,7 @@ describe("BaseAgent - 真实LLM测试", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LLMService,
-        DashScopeProvider,
+        DashScopeAdapter,
         {
           provide: ConfigService,
           useValue: {

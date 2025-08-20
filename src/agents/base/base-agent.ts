@@ -10,6 +10,7 @@ import {
 } from "../interfaces/agent.interface";
 import { LLMService, LLMConfig, LLMResponse } from "../services/llm.service";
 import { DataToolkitService } from "../services/data-toolkit.service";
+import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
 
 /**
  * 智能体基础抽象类
@@ -26,6 +27,7 @@ export abstract class BaseAgent implements IAgent {
     protected readonly llmService: LLMService,
     protected readonly dataToolkit?: DataToolkitService,
     config: Partial<AgentConfig> = {},
+    protected readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     this.logger = new Logger(this.constructor.name);
     this.config = {
@@ -43,19 +45,30 @@ export abstract class BaseAgent implements IAgent {
    * 执行分析任务（支持 function calling）
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
+    const startTime = new Date();
     this.status = AgentStatus.ANALYZING;
+    
+    // 生成会话ID（如果context中没有）
+    const sessionId = context.metadata?.sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     this.logger.log(
-      `开始分析股票: ${context.stockCode} - ${context.stockName || "Unknown"}`,
+      `开始分析股票: ${context.stockCode} - ${context.stockName || "Unknown"} (Session: ${sessionId})`,
     );
+
+    let llmResponse: LLMResponse;
+    let prompt: string;
+    let toolCalls: any[] = [];
+    let toolResults: any[] = [];
+    let result: AgentResult;
+    let errorMessage: string;
+    let errorStack: string;
 
     try {
       // 预处理上下文
       const processedContext = await this.preprocessContext(context);
 
       // 构建提示词
-      const prompt = await this.buildPrompt(processedContext);
+      prompt = await this.buildPrompt(processedContext);
 
       let analysis: string;
 
@@ -65,7 +78,12 @@ export abstract class BaseAgent implements IAgent {
         const tools = this.dataToolkit.getToolDefinitions();
 
         // 调用LLM进行分析（支持工具调用）
-        const llmResponse = await this.callLLMWithTools(prompt, tools);
+        llmResponse = await this.callLLMWithTools(prompt, tools);
+
+        // 记录工具调用
+        if (llmResponse.toolCalls) {
+          toolCalls = llmResponse.toolCalls;
+        }
 
         // 处理工具调用
         const enhancedResponse = await this.processToolCalls(
@@ -74,41 +92,128 @@ export abstract class BaseAgent implements IAgent {
         );
 
         analysis = enhancedResponse.content;
+        
+        // 记录工具调用结果
+        if (enhancedResponse.toolCalls) {
+          toolResults = enhancedResponse.toolCalls.map(call => ({
+            id: call.id,
+            function: call.function.name,
+            result: 'Tool execution completed', // 可以更详细地记录结果
+          }));
+        }
       } else {
         // 传统方式调用LLM
-        analysis = await this.callLLM(prompt);
+        const analysisResult = await this.callLLM(prompt);
+        analysis = analysisResult;
+        
+        // 创建简化的LLMResponse
+        llmResponse = {
+          content: analysis,
+          finishReason: 'stop',
+          usage: {
+            inputTokens: Math.floor(prompt.length / 4), // 粗略估算
+            outputTokens: Math.floor(analysis.length / 4),
+            totalTokens: Math.floor((prompt.length + analysis.length) / 4),
+          }
+        };
       }
 
       // 后处理分析结果
-      const result = await this.postprocessResult(analysis, processedContext);
+      result = await this.postprocessResult(analysis, processedContext);
 
       // 记录处理时间
-      result.processingTime = Date.now() - startTime;
-      result.timestamp = new Date();
+      const endTime = new Date();
+      result.processingTime = endTime.getTime() - startTime.getTime();
+      result.timestamp = endTime;
       result.agentName = this.name;
       result.agentType = this.type;
 
       this.status = AgentStatus.COMPLETED;
       this.logger.log(`分析完成，耗时: ${result.processingTime}ms`);
 
+      // 保存执行记录
+      if (this.executionRecordService) {
+        try {
+          await this.executionRecordService.createExecutionRecord({
+            sessionId,
+            agentType: this.type,
+            agentName: this.name,
+            agentRole: this.role,
+            stockCode: context.stockCode,
+            stockName: context.stockName,
+            context: processedContext,
+            llmModel: this.config.model,
+            inputPrompt: prompt,
+            llmResponse,
+            result,
+            startTime,
+            endTime,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            toolResults: toolResults.length > 0 ? toolResults : undefined,
+            analysisType: context.metadata?.analysisType || 'single',
+            environment: process.env.NODE_ENV || 'development',
+          });
+        } catch (recordError) {
+          this.logger.warn(`保存执行记录失败: ${recordError.message}`);
+          // 不影响主要流程
+        }
+      }
+
       return result;
+      
     } catch (error) {
       this.status = AgentStatus.ERROR;
+      errorMessage = error.message;
+      errorStack = error.stack;
+      
       this.logger.error(`分析失败: ${error.message}`, error.stack);
 
-      // 返回错误结果
-      return {
+      // 创建错误结果
+      const endTime = new Date();
+      result = {
         agentName: this.name,
         agentType: this.type,
         analysis: `分析过程中发生错误: ${error.message}`,
-        score: 0,
+        timestamp: endTime,
+        processingTime: endTime.getTime() - startTime.getTime(),
         confidence: 0,
-        recommendation: TradingRecommendation.HOLD,
-        keyInsights: [],
-        risks: [`系统错误: ${error.message}`],
-        timestamp: new Date(),
-        processingTime: Date.now() - startTime,
+        score: 0,
       };
+
+      // 保存错误执行记录
+      if (this.executionRecordService) {
+        try {
+          await this.executionRecordService.createExecutionRecord({
+            sessionId,
+            agentType: this.type,
+            agentName: this.name,
+            agentRole: this.role,
+            stockCode: context.stockCode,
+            stockName: context.stockName,
+            context,
+            llmModel: this.config.model,
+            inputPrompt: prompt || '构建提示词时出错',
+            llmResponse: llmResponse || {
+              content: '',
+              finishReason: 'error',
+              usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+            },
+            result,
+            startTime,
+            endTime,
+            toolCalls,
+            toolResults,
+            analysisType: context.metadata?.analysisType || 'single',
+            environment: process.env.NODE_ENV || 'development',
+            errorMessage,
+            errorStack,
+          });
+        } catch (recordError) {
+          this.logger.warn(`保存错误执行记录失败: ${recordError.message}`);
+        }
+      }
+
+      throw error; // 重新抛出原错误
     }
   }
 
@@ -258,7 +363,7 @@ export abstract class BaseAgent implements IAgent {
    */
   protected async postprocessResult(
     analysis: string,
-    context: AgentContext,
+    _context: AgentContext,
   ): Promise<AgentResult> {
     // 基础结果结构
     const result: AgentResult = {

@@ -1,27 +1,50 @@
 # TradingAgentCN
 
-基于大语言模型(LLM)的智能交易决策系统，专门针对中国A股市场设计。通过多智能体协作、实时数据采集、情绪分析和技术指标分析，为投资者提供专业的交易建议和风险评估。
+基于大语言模型(LLM)和阿里云百炼MCP协议的智能交易决策系统，专门针对中国A股市场设计。通过统一智能体架构、实时数据采集、情绪分析和技术指标分析，为投资者提供专业的交易建议和风险评估。
 
 ## 🎯 核心价值
 
-- **智能化决策**: 基于多LLM协作的投资决策引擎
+- **智能化决策**: 基于MCP协议的统一智能体决策引擎
 - **全景分析**: 技术面、基本面、新闻情绪三维度综合分析
-- **风险可控**: 内置风险管理和反思机制
+- **架构简化**: 从8个智能体简化为2个核心智能体，降低75%复杂度
+- **数据统一**: 基于阿里云百炼MCP协议的统一数据获取接口
 - **实时响应**: 支持定时任务和手动触发的灵活决策模式
 
 ## 🏗️ 技术架构
 
 ### 技术栈
 - **框架**: NestJS + TypeScript + TypeORM
-- **智能体**: LangChain.js
+- **智能体**: LangChain.js + 阿里云百炼MCP协议
+- **数据获取**: MCP (Model Context Protocol) 统一接口
 - **主要LLM**: 阿里云百炼(DashScope)
 - **数据库**: MySQL + Redis
 - **部署**: Docker 容器化
 
-### 架构设计
+### 新一代MCP架构设计
 ```
-API 接口层 → NestJS 服务层 → 多智能体框架 → LLM 提供商层 → 数据服务层 → 存储缓存层
+API接口层 → NestJS服务层 → 统一智能体框架 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
 ```
+
+### 智能体架构 (重构后)
+```
+统一智能体系统/
+├── 综合分析师 (ComprehensiveAnalyst)
+│   └── 集成技术分析 + 基本面分析 + 新闻分析
+├── 交易策略师 (TradingStrategist) 
+│   └── 集成多空分析 + 交易决策 + 风险管控
+└── 统一协调服务 (UnifiedOrchestrator)
+    └── MCP协议数据获取 + 智能体协调 + 决策生成
+```
+
+### MCP数据工具 (8个核心工具)
+- `get_stock_basic_info` - 获取股票基本信息
+- `get_stock_realtime_data` - 获取实时行情数据  
+- `get_stock_historical_data` - 获取历史价格数据
+- `get_stock_technical_indicators` - 获取技术指标
+- `get_stock_financial_data` - 获取财务数据
+- `get_market_overview` - 获取市场概览
+- `search_stocks` - 搜索股票
+- `get_stock_news` - 获取相关新闻
 
 ## 🚀 快速开始
 
@@ -55,8 +78,17 @@ DB_DATABASE=trading_agent_cn
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
-# 百炼API配置
-DASHSCOPE_API_KEY=your_api_key
+# 阿里云百炼API配置 (必需)
+DASHSCOPE_API_KEY=your_dashscope_api_key
+
+# MCP智能体配置 (可选)
+COMPREHENSIVE_ANALYST_MODEL=qwen-plus
+COMPREHENSIVE_ANALYST_TEMPERATURE=0.7
+COMPREHENSIVE_ANALYST_MAX_TOKENS=4000
+
+TRADING_STRATEGIST_MODEL=qwen-plus  
+TRADING_STRATEGIST_TEMPERATURE=0.6
+TRADING_STRATEGIST_MAX_TOKENS=3000
 ```
 
 ### 数据库初始化
@@ -81,6 +113,18 @@ npm run start:prod
 应用启动后访问：
 - API服务: http://localhost:3000/api/v1
 - API文档: http://localhost:3000/api-docs
+
+### 智能体服务验证
+```bash
+# 运行智能体集成测试
+npm test -- --testPathPattern="unified/.*\.spec\.ts"
+
+# 运行MCP客户端测试  
+npm test -- --testPathPattern="mcp-client.service.spec.ts"
+
+# 运行完整的MCP集成测试
+npm test -- --testPathPattern="mcp-integration.spec.ts"
+```
 
 ## 📚 API 文档
 
@@ -159,6 +203,43 @@ POST /api/v1/health/database
 POST /api/v1/health/redis
 ```
 
+### 智能体决策接口 (新增)
+
+#### 单个股票分析
+```http
+POST /api/v1/agents/analyze-stock
+Content-Type: application/json
+
+{
+  "stockCode": "000001",
+  "stockName": "平安银行"
+}
+```
+
+#### 批量股票分析
+```http  
+POST /api/v1/agents/analyze-batch
+Content-Type: application/json
+
+{
+  "stocks": [
+    {
+      "stockCode": "000001",
+      "stockName": "平安银行" 
+    },
+    {
+      "stockCode": "600036",
+      "stockName": "招商银行"
+    }
+  ]
+}
+```
+
+#### 获取智能体状态
+```http
+POST /api/v1/agents/status
+```
+
 ## 🔧 开发指南
 
 ### 项目结构
@@ -167,13 +248,22 @@ src/
 ├── common/           # 公共模块
 │   ├── dto/         # 数据传输对象
 │   ├── entities/    # 基础实体类
-│   └── ...
+│   └── utils/       # 工具函数
 ├── config/          # 配置文件
 ├── modules/         # 业务模块
 │   ├── watchlist/   # 自选股模块
 │   ├── health/      # 健康检查模块
 │   └── ...
-├── agents/          # 智能体模块（待实现）
+├── agents/          # 智能体模块 (MCP架构)
+│   ├── services/    # MCP客户端服务
+│   │   ├── mcp-client.service.ts        # MCP协议客户端
+│   │   └── llm.service.ts              # LLM调用服务
+│   ├── unified/     # 统一智能体架构
+│   │   ├── comprehensive-analyst.agent.ts   # 综合分析师
+│   │   ├── trading-strategist.agent.ts      # 交易策略师  
+│   │   └── unified-orchestrator.service.ts # 统一协调服务
+│   ├── interfaces/  # 智能体接口定义
+│   └── agents.module.ts # 智能体模块
 ├── app.module.ts    # 应用主模块
 └── main.ts          # 应用入口
 ```
@@ -184,9 +274,17 @@ src/
 - 所有查询限制最多关联3张表
 - 列表接口必须分页，最多200条记录
 
-### 缓存策略
+### MCP智能体开发规范
+- 所有数据获取通过MCP客户端服务，不直接调用外部API
+- 智能体必须实现标准的AgentInterface接口
+- 使用统一的日志记录格式和错误处理机制
+- 所有分析结果必须包含置信度评分(0-100)
+- 工具调用必须处理超时和重试机制
+
+### 缓存策略  
+- 开发阶段缓存功能暂时禁用 (ENABLE_CACHE=false)
 - Redis仅作为缓存层，所有数据必须落盘到MySQL
-- 缓存键命名规范: `模块:方法:参数`
+- 缓存键命名规范: `模块:方法:参数`  
 - 所有缓存必须设置TTL过期时间
 
 ## 🐳 Docker 部署
@@ -207,14 +305,39 @@ docker run -d \
   -p 3000:3000 \
   -e DB_HOST=mysql \
   -e REDIS_HOST=redis \
+  -e DASHSCOPE_API_KEY=your_api_key \
   trading-agent-cn
 ```
 
 ## 📊 监控与日志
 
 - 应用日志存储在 `logs/` 目录
-- 支持结构化日志输出
+- 支持结构化日志输出 (JSON格式)
 - 提供健康检查端点用于监控
+- MCP连接状态实时监控
+- 智能体分析性能指标跟踪
+
+## 🧪 测试指南
+
+### 运行测试
+```bash
+# 运行所有测试
+npm run test
+
+# 运行MCP相关测试
+npm test -- --testPathPattern="mcp"
+
+# 运行智能体测试
+npm test -- --testPathPattern="agents"
+
+# 运行测试并查看覆盖率
+npm run test:cov
+```
+
+### 测试说明
+- MCP测试使用模拟数据，不依赖真实API
+- 智能体测试覆盖完整的分析流程
+- 集成测试验证端到端的决策workflow
 
 ## 🤝 贡献指南
 

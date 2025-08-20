@@ -22,6 +22,7 @@ export interface IAgent {
  * 智能体类型枚举
  */
 export enum AgentType {
+  // 原有智能体类型（保留兼容性）
   MARKET_ANALYST = "market_analyst", // 市场分析师
   FUNDAMENTAL_ANALYST = "fundamental_analyst", // 基本面分析师
   NEWS_ANALYST = "news_analyst", // 新闻分析师
@@ -33,6 +34,10 @@ export enum AgentType {
   AGGRESSIVE_TRADER = "aggressive_trader", // 激进型交易员
   RISK_MANAGER = "risk_manager", // 风险管理员
   REFLECTION_AGENT = "reflection_agent", // 反思智能体
+
+  // 新的统一智能体类型（基于MCP）
+  COMPREHENSIVE_ANALYST = "comprehensive_analyst", // 综合分析师（整合市场、基本面、新闻分析）
+  TRADING_STRATEGIST = "trading_strategist", // 交易策略师（整合研究员、交易员、风险管理）
 }
 
 /**

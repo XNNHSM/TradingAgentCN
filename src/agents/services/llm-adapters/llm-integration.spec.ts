@@ -5,7 +5,7 @@
 
 import { Test, TestingModule } from "@nestjs/testing";
 import { ConfigModule } from "@nestjs/config";
-import { LLMService, DashScopeProvider } from "../llm.service";
+import { LLMService } from "../llm.service";
 import { LLMServiceV2, DashScopeAdapter } from "./index";
 
 describe("LLM适配器架构集成测试", () => {
@@ -23,7 +23,7 @@ describe("LLM适配器架构集成测试", () => {
       ],
       providers: [
         // 旧服务
-        DashScopeProvider,
+        DashScopeAdapter,
         LLMService,
         
         // 新服务

@@ -264,48 +264,136 @@ export class DashScopeAdapter extends BaseLLMAdapter {
   }
 
   /**
-   * 调用DashScope API
+   * 调用DashScope API (带重试机制)
    */
   private async callDashScopeAPI(
     requestBody: DashScopeRequestBody,
     config?: LLMConfig,
   ): Promise<DashScopeResponse> {
-    const timeout = config?.timeout ?? 60000; // 默认60秒超时
-
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-        "X-DashScope-SSE": "disable", // 禁用SSE模式
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(timeout),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorDetails = "";
-      
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorDetails = errorJson.message || errorJson.error?.message || errorText;
-      } catch {
-        errorDetails = errorText;
-      }
-
-      throw new Error(
-        `DashScope API错误: HTTP ${response.status} - ${errorDetails}`,
-      );
-    }
-
-    const result: DashScopeResponse = await response.json();
+    // 根据模型和消息长度动态设置超时时间
+    const baseTimeout = config?.timeout ?? this.calculateTimeout(requestBody);
+    const maxRetries = config?.maxRetries ?? 2;
     
-    if (!result.output) {
-      throw new Error(`DashScope API响应格式错误: ${JSON.stringify(result)}`);
-    }
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // 每次重试增加超时时间
+        const currentTimeout = baseTimeout + (attempt * 15000); // 每次重试增加15秒
+        
+        this.logger.debug(`API调用尝试 ${attempt + 1}/${maxRetries + 1}, 超时: ${currentTimeout}ms`);
+        
+        const response = await fetch(this.baseUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+            "X-DashScope-SSE": "disable", // 禁用SSE模式
+          },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(currentTimeout),
+        });
+        
+        // 成功获得响应，进行状态检查
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorDetails = "";
+          
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorDetails = errorJson.message || errorJson.error?.message || errorText;
+          } catch {
+            errorDetails = errorText;
+          }
 
-    return result;
+          throw new Error(
+            `DashScope API错误: HTTP ${response.status} - ${errorDetails}`,
+          );
+        }
+        
+        const result: DashScopeResponse = await response.json();
+        
+        if (!result.output) {
+          throw new Error(`DashScope API响应格式错误: ${JSON.stringify(result)}`);
+        }
+
+        return result;
+        
+      } catch (error) {
+        lastError = error;
+        
+        // 判断是否应该重试
+        const shouldRetry = this.shouldRetryRequest(error, attempt, maxRetries);
+        
+        if (!shouldRetry) {
+          throw error;
+        }
+        
+        // 等待后重试 (指数退避)
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000);
+        this.logger.warn(`API调用失败，${waitTime}ms后重试: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+    
+    throw lastError;
+  }
+
+  /**
+   * 计算合适的超时时间
+   */
+  private calculateTimeout(requestBody: DashScopeRequestBody): number {
+    const messageCount = requestBody.input.messages.length;
+    const totalChars = requestBody.input.messages.reduce((sum, msg) => sum + msg.content.length, 0);
+    const maxTokens = requestBody.parameters.max_tokens || 2048;
+    
+    // 基础超时: 30秒
+    let timeout = 30000;
+    
+    // 根据消息数量增加超时
+    timeout += messageCount * 2000; // 每条消息增加2秒
+    
+    // 根据内容长度增加超时
+    timeout += Math.ceil(totalChars / 1000) * 1000; // 每1000字符增加1秒
+    
+    // 根据预期输出长度增加超时
+    timeout += Math.ceil(maxTokens / 100) * 1000; // 每100个token增加1秒
+    
+    // 设置最小和最大超时限制
+    return Math.min(Math.max(timeout, 15000), 120000); // 15秒到2分钟之间
+  }
+
+  /**
+   * 判断是否应该重试请求
+   */
+  private shouldRetryRequest(error: any, attempt: number, maxRetries: number): boolean {
+    // 如果已经达到最大重试次数，不重试
+    if (attempt >= maxRetries) {
+      return false;
+    }
+    
+    // 超时错误可以重试
+    if (error.name === 'AbortError' || error.message.includes('timeout')) {
+      return true;
+    }
+    
+    // 网络错误可以重试
+    if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
+      return true;
+    }
+    
+    // 5xx服务器错误可以重试
+    if (error.message.includes('HTTP 5')) {
+      return true;
+    }
+    
+    // 429 限流错误可以重试
+    if (error.message.includes('HTTP 429')) {
+      return true;
+    }
+    
+    // 其他错误不重试
+    return false;
   }
 
   /**

@@ -58,6 +58,7 @@ export interface LLMConfig {
   maxTokens?: number;
   topP?: number;
   timeout?: number;
+  maxRetries?: number; // 最大重试次数
   stream?: boolean;
   tools?: ToolDefinition[]; // Function calling 工具定义
   toolChoice?: "auto" | "none" | { type: "function"; function: { name: string } };
