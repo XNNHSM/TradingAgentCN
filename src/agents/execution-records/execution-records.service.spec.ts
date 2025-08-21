@@ -20,11 +20,11 @@ describe('AgentExecutionRecordService', () => {
         }),
         TypeOrmModule.forRoot({
           type: 'mysql',
-          host: 'localhost',
-          port: 3306,
-          username: 'test_user',
-          password: 'test_password',
-          database: 'test_db',
+          host: process.env.DB_HOST || 'localhost',
+          port: parseInt(process.env.DB_PORT || '3306'),
+          username: process.env.DB_USERNAME || 'test_user',
+          password: process.env.DB_PASSWORD || 'default_test_pass',
+          database: process.env.DB_DATABASE || 'test_db',
           entities: [AgentExecutionRecord],
           synchronize: true,
           dropSchema: true, // 每次测试前清空数据库

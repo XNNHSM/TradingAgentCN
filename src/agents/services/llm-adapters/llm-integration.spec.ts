@@ -17,7 +17,8 @@ describe("LLM适配器架构集成测试", () => {
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          envFilePath: ".env.test",
+          // 使用默认的环境变量加载方式
+          // dotenv已经在setup.ts中配置好了
         }),
       ],
       providers: [

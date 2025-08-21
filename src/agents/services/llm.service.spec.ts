@@ -17,20 +17,8 @@ describe("LLMService - 集成测试", () => {
             get: jest
               .fn()
               .mockImplementation((key: string, defaultValue?: any) => {
-                // 使用 .env 中的配置
-                const envConfig: Record<string, any> = {
-                  DASHSCOPE_API_KEY:
-                    process.env.DASHSCOPE_API_KEY || "test-key",
-                  DASHSCOPE_BASE_URL:
-                    "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
-                  DASHSCOPE_STANDARD_MODEL: "qwen-plus",
-                  LLM_DEFAULT_TEMPERATURE: 0.1, // 降低温度以提高一致性
-                  LLM_DEFAULT_MAX_TOKENS: 1000,
-                  LLM_DEFAULT_TIMEOUT: 30,
-                  LLM_PRIMARY_PROVIDER: "dashscope",
-                  LLM_MAX_RETRIES: 2,
-                };
-                return envConfig[key] ?? defaultValue;
+                // 直接从环境变量获取配置
+                return process.env[key] ?? defaultValue;
               }),
           },
         },
