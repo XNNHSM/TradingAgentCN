@@ -1,18 +1,16 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ConfigService } from "@nestjs/config";
 import { LLMService } from "./llm.service";
-import { LLMServiceV2, DashScopeAdapter } from "./llm-adapters";
+import { DashScopeAdapter } from "./llm-adapters";
 
-describe("LLMService - 向后兼容性测试", () => {
+describe("LLMService - 集成测试", () => {
   let service: LLMService;
-  let llmServiceV2: LLMServiceV2;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LLMService,
         DashScopeAdapter,
-        LLMServiceV2,
         {
           provide: ConfigService,
           useValue: {
@@ -40,32 +38,30 @@ describe("LLMService - 向后兼容性测试", () => {
     }).compile();
 
     service = module.get<LLMService>(LLMService);
-    llmServiceV2 = module.get<LLMServiceV2>(LLMServiceV2);
     
-    // 重要：初始化 LLMServiceV2，这样适配器才会被注册和初始化
-    await llmServiceV2.onModuleInit();
+    // 重要：初始化服务，这样适配器才会被注册和初始化
+    await service.onModuleInit();
   });
 
   afterEach(() => {
     // 清理定时器以避免Jest警告
-    if (llmServiceV2 && (llmServiceV2 as any).healthCheckTimer) {
-      clearInterval((llmServiceV2 as any).healthCheckTimer);
+    if (service && (service as any).healthCheckTimer) {
+      clearInterval((service as any).healthCheckTimer);
     }
   });
 
   it("should be defined", () => {
     expect(service).toBeDefined();
-    expect(llmServiceV2).toBeDefined();
   });
 
-  describe("向后兼容性测试", () => {
+  describe("基础功能测试", () => {
     // 只有在配置了真实API密钥时才运行这些测试
     const hasApiKey =
       process.env.DASHSCOPE_API_KEY &&
       process.env.DASHSCOPE_API_KEY !== "test-key";
 
     if (hasApiKey) {
-      it("应该通过旧接口成功调用新服务进行文本生成", async () => {
+      it("应该成功进行文本生成", async () => {
         const prompt = "请用中文简要回答：北京是中国的什么？";
 
         const result = await service.generate(prompt, {
@@ -80,10 +76,10 @@ describe("LLMService - 向后兼容性测试", () => {
         expect(result).toMatch(/首都|都城|政治|中心/);
       }, 30000);
 
-      it("应该通过旧接口成功调用新服务进行工具调用", async () => {
+      it("应该成功进行工具调用", async () => {
         const tools = [
           {
-            type: "function",
+            type: "function" as const,
             function: {
               name: "get_stock_price",
               description: "获取股票价格",
@@ -240,38 +236,33 @@ describe("LLMService - 向后兼容性测试", () => {
     }
   });
 
-  describe("错误处理测试", () => {
-    it("应该在LLMServiceV2不可用时抛出错误", async () => {
-      // 创建一个没有LLMServiceV2的服务实例
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          LLMService,
-          {
-            provide: ConfigService,
-            useValue: {
-              get: jest.fn().mockReturnValue("test-value"),
-            },
-          },
-        ],
-      }).compile();
-
-      const serviceWithoutV2 = module.get<LLMService>(LLMService);
-
-      await expect(
-        serviceWithoutV2.generate("测试"),
-      ).rejects.toThrow("LLMServiceV2 不可用，请检查配置");
-
-      await expect(
-        serviceWithoutV2.generateWithTools("测试", { tools: [] }),
-      ).rejects.toThrow("LLMServiceV2 不可用，请检查配置");
-    });
-  });
-
-  describe("配置测试", () => {
+  describe("服务管理功能测试", () => {
     it("应该正确初始化并显示配置状态", () => {
       // 检查服务是否正确初始化
       expect(service).toBeDefined();
-      expect(llmServiceV2).toBeDefined();
+    });
+
+    it("应该有可用的提供商", () => {
+      const providers = service.getAvailableProviders();
+      expect(providers.length).toBeGreaterThan(0);
+    });
+
+    it("应该有服务统计信息", () => {
+      const stats = service.getServiceStats();
+      expect(stats).toBeDefined();
+      expect(stats).toHaveProperty("totalAdapters");
+      expect(stats).toHaveProperty("availableAdapters");
+      expect(stats).toHaveProperty("primaryProvider");
+    });
+
+    it("应该能够获取提供商状态", () => {
+      const status = service.getProviderStatus();
+      expect(Array.isArray(status)).toBe(true);
+    });
+
+    it("应该能够手动触发健康检查", async () => {
+      const result = await service.triggerHealthCheck();
+      expect(result).toBeInstanceOf(Map);
     });
   });
 
@@ -284,7 +275,7 @@ describe("LLMService - 向后兼容性测试", () => {
       it("应该保持工具调用响应格式的兼容性", async () => {
         const tools = [
           {
-            type: "function",
+            type: "function" as const,
             function: {
               name: "test_function",
               description: "测试函数",

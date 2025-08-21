@@ -8,8 +8,7 @@ export * from "./base-llm-adapter";
 // 具体适配器实现
 export * from "./dashscope-adapter";
 
-// 服务管理器
-export * from "./llm-service-v2";
+// 服务管理器现在在上级目录的 llm.service.ts 中
 
 // 未来可以添加其他适配器
 // export * from "./openai-adapter";

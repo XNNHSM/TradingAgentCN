@@ -1,23 +1,21 @@
-import { Injectable, Logger, Optional } from "@nestjs/common";
-import { 
-  LLMServiceV2, 
-  LLMConfig as LLMConfigV2
-} from "./llm-adapters";
-
 /**
- * 向后兼容的LLM响应结果接口
+ * LLM服务管理器
+ * 支持多适配器架构，具备更好的扩展性和错误处理
  */
-export interface LLMResponse {
-  content: string;
-  toolCalls?: ToolCall[];
-  finishReason?: string;
-  usage?: {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-    cost?: number;
-  };
-}
+
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import {
+  BaseLLMAdapter,
+  LLMConfig,
+  LLMMessage,
+  LLMResponse,
+  ModelInfo,
+} from "./llm-adapters/base-llm-adapter";
+
+// 重新导出类型以保持兼容性
+export { LLMConfig, LLMMessage, LLMResponse, ModelInfo } from "./llm-adapters/base-llm-adapter";
+import { DashScopeAdapter } from "./llm-adapters/dashscope-adapter";
 
 /**
  * 向后兼容的工具调用接口
@@ -31,96 +29,469 @@ export interface ToolCall {
   };
 }
 
-
 /**
- * 向后兼容的LLM配置接口
+ * LLM服务配置接口
  */
-export interface LLMConfig {
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  timeout?: number;
-  tools?: any[]; // Function calling 工具定义
-  toolChoice?: string; // 工具选择策略
+interface LLMServiceConfig {
+  primaryProvider: string;
+  fallbackProviders: string[];
+  enableFallback: boolean;
+  maxRetries: number;
+  retryDelay: number;
+  healthCheckInterval: number;
 }
 
-
 /**
- * LLM服务管理器（向后兼容版本）
- * 内部使用新的LLMServiceV2，但保持旧接口以确保兼容性
+ * 提供商状态信息
  */
+interface ProviderStatus {
+  name: string;
+  available: boolean;
+  lastHealthCheck: Date;
+  consecutiveFailures: number;
+  totalRequests: number;
+  totalFailures: number;
+  averageResponseTime: number;
+}
+
 @Injectable()
-export class LLMService {
+export class LLMService implements OnModuleInit {
   private readonly logger = new Logger(LLMService.name);
+  private adapters = new Map<string, BaseLLMAdapter>();
+  private providerStats = new Map<string, ProviderStatus>();
+  private config: LLMServiceConfig;
+  private healthCheckTimer?: NodeJS.Timeout;
+
   constructor(
-    @Optional() private readonly llmServiceV2?: LLMServiceV2, // 可选依赖
+    private readonly configService: ConfigService,
+    private readonly dashScopeAdapter: DashScopeAdapter,
   ) {
-    if (this.llmServiceV2) {
-      this.logger.log("LLM服务已初始化，优先使用 LLMServiceV2");
-    } else {
-      this.logger.warn("LLMServiceV2 不可用，请检查配置");
-    }
+    this.loadConfiguration();
   }
 
-
+  async onModuleInit(): Promise<void> {
+    await this.initializeAdapters();
+    this.startHealthChecking();
+  }
 
   /**
-   * 生成文本（优先使用新服务，保持向后兼容）
+   * 加载配置
+   */
+  private loadConfiguration(): void {
+    this.config = {
+      primaryProvider: this.configService.get<string>(
+        "LLM_PRIMARY_PROVIDER",
+        "dashscope",
+      ),
+      fallbackProviders: this.configService
+        .get<string>("LLM_FALLBACK_PROVIDERS", "")
+        .split(",")
+        .filter(Boolean),
+      enableFallback: this.configService.get<boolean>(
+        "LLM_ENABLE_FALLBACK",
+        true,
+      ),
+      maxRetries: this.configService.get<number>("LLM_MAX_RETRIES", 3),
+      retryDelay: this.configService.get<number>("LLM_RETRY_DELAY", 1000),
+      healthCheckInterval: this.configService.get<number>(
+        "LLM_HEALTH_CHECK_INTERVAL",
+        300000,
+      ), // 5分钟
+    };
+
+    this.logger.log(
+      `LLM服务配置: 主提供商=${this.config.primaryProvider}, ` +
+        `后备提供商=[${this.config.fallbackProviders.join(",")}], ` +
+        `启用后备=${this.config.enableFallback}`,
+    );
+  }
+
+  /**
+   * 初始化所有适配器
+   */
+  private async initializeAdapters(): Promise<void> {
+    const adapters = [this.dashScopeAdapter];
+    // 后续可以添加其他适配器：openaiAdapter, geminiAdapter等
+
+    for (const adapter of adapters) {
+      try {
+        await adapter.initialize();
+        this.registerAdapter(adapter);
+      } catch (error) {
+        this.logger.error(
+          `适配器 ${adapter.name} 初始化失败: ${error.message}`,
+        );
+      }
+    }
+
+    this.logger.log(`已注册 ${this.adapters.size} 个LLM适配器`);
+  }
+
+  /**
+   * 注册适配器
+   */
+  private registerAdapter(adapter: BaseLLMAdapter): void {
+    this.adapters.set(adapter.name, adapter);
+    this.providerStats.set(adapter.name, {
+      name: adapter.name,
+      available: adapter.isAvailable(),
+      lastHealthCheck: new Date(),
+      consecutiveFailures: 0,
+      totalRequests: 0,
+      totalFailures: 0,
+      averageResponseTime: 0,
+    });
+
+    this.logger.log(
+      `已注册LLM适配器: ${adapter.name} (可用: ${adapter.isAvailable()})`,
+    );
+  }
+
+  /**
+   * 生成文本（简单接口）
    */
   async generate(
-    prompt: string,
+    prompt: string | LLMMessage[],
     config?: LLMConfig & { provider?: string },
   ): Promise<string> {
-    // 优先使用新服务
-    if (this.llmServiceV2) {
-      const newConfig: LLMConfigV2 = {
-        ...config,
-        toolChoice: config?.toolChoice === "auto" ? "auto" : config?.toolChoice === "none" ? "none" : undefined,
-      };
-      
-      return await this.llmServiceV2.generate(prompt, newConfig);
-    }
-    
-    // 如果没有新服务，抛出错误
-    throw new Error("LLMServiceV2 不可用，请检查配置");
+    const response = await this.generateWithDetails(prompt, config);
+    return response.content;
   }
 
   /**
-   * 使用工具生成文本（优先使用新服务，保持向后兼容）
+   * 使用工具生成文本（向后兼容接口）
    */
   async generateWithTools(
     prompt: string,
-    config?: LLMConfig & { provider?: string },
-  ): Promise<LLMResponse> {
-    // 优先使用新服务
-    if (this.llmServiceV2) {
-      const newConfig: LLMConfigV2 = {
-        ...config,
-        tools: config?.tools?.map(tool => ({
-          type: "function" as const,
-          function: {
-            name: tool.function?.name || tool.name,
-            description: tool.function?.description || tool.description,
-            parameters: tool.function?.parameters || tool.parameters,
-          },
-        })),
-        toolChoice: config?.toolChoice === "auto" ? "auto" : config?.toolChoice === "none" ? "none" : undefined,
-      };
-      
-      const response = await this.llmServiceV2.generateWithDetails(prompt, newConfig);
-      
-      // 转换响应格式以保持兼容性
-      return {
-        content: response.content,
-        toolCalls: response.toolCalls,
-        finishReason: response.finishReason,
-      };
-    }
+    config?: LLMConfig & { provider?: string; tools?: any[]; toolChoice?: string },
+  ): Promise<{
+    content: string;
+    toolCalls?: ToolCall[];
+    finishReason?: string;
+    usage?: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      cost?: number;
+    };
+  }> {
+    // 转换工具配置格式
+    const newConfig: LLMConfig = {
+      ...config,
+      tools: config?.tools?.map(tool => ({
+        type: "function" as const,
+        function: {
+          name: tool.function?.name || (tool as any).name,
+          description: tool.function?.description || (tool as any).description,
+          parameters: tool.function?.parameters || (tool as any).parameters,
+        },
+      })),
+      toolChoice: config?.toolChoice === "auto" ? "auto" : 
+                  config?.toolChoice === "none" ? "none" : undefined,
+    };
     
-    // 如果没有新服务，抛出错误
-    throw new Error("LLMServiceV2 不可用，请检查配置");
+    const response = await this.generateWithDetails(prompt, newConfig);
+    
+    // 转换响应格式以保持兼容性
+    return {
+      content: response.content,
+      toolCalls: response.toolCalls,
+      finishReason: response.finishReason,
+      usage: response.usage,
+    };
   }
 
+  /**
+   * 生成文本（详细响应）
+   */
+  async generateWithDetails(
+    prompt: string | LLMMessage[],
+    config?: LLMConfig & { provider?: string },
+  ): Promise<LLMResponse> {
+    const providers = this.getProviderOrder(config?.provider);
+    
+    let lastError: Error | undefined;
 
+    for (const providerName of providers) {
+      const adapter = this.adapters.get(providerName);
+      if (!adapter || !adapter.isAvailable()) {
+        continue;
+      }
 
+      try {
+        const startTime = Date.now();
+        const response = await this.executeWithRetry(
+          adapter,
+          prompt,
+          config,
+        );
+        
+        // 更新统计信息
+        this.updateProviderStats(providerName, Date.now() - startTime, false);
+        
+        return response;
+      } catch (error) {
+        lastError = error;
+        this.updateProviderStats(providerName, 0, true);
+        
+        this.logger.warn(
+          `提供商 ${providerName} 调用失败: ${error.message}`,
+        );
+
+        // 如果不是主提供商且启用了后备，继续尝试下一个
+        if (
+          providerName !== this.config.primaryProvider &&
+          this.config.enableFallback
+        ) {
+          continue;
+        }
+      }
+    }
+
+    // 所有提供商都失败了
+    throw new Error(
+      `所有LLM提供商都不可用。最后错误: ${lastError?.message || "未知错误"}`,
+    );
+  }
+
+  /**
+   * 使用重试机制执行请求
+   */
+  private async executeWithRetry(
+    adapter: BaseLLMAdapter,
+    prompt: string | LLMMessage[],
+    config?: LLMConfig,
+  ): Promise<LLMResponse> {
+    let lastError: Error;
+
+    for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        return await adapter.generateWithDetails(prompt, config);
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt < this.config.maxRetries) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt - 1);
+          this.logger.debug(
+            `${adapter.name} 重试 ${attempt}/${this.config.maxRetries}，等待 ${delay}ms`,
+          );
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    throw lastError!;
+  }
+
+  /**
+   * 获取提供商调用顺序
+   */
+  private getProviderOrder(preferredProvider?: string): string[] {
+    if (preferredProvider && this.adapters.has(preferredProvider)) {
+      return [preferredProvider];
+    }
+
+    const order = [this.config.primaryProvider];
+    
+    if (this.config.enableFallback) {
+      order.push(...this.config.fallbackProviders);
+    }
+
+    return order.filter((name) => this.adapters.has(name));
+  }
+
+  /**
+   * 更新提供商统计信息
+   */
+  private updateProviderStats(
+    providerName: string,
+    responseTime: number,
+    failed: boolean,
+  ): void {
+    const stats = this.providerStats.get(providerName);
+    if (!stats) return;
+
+    stats.totalRequests++;
+    
+    if (failed) {
+      stats.totalFailures++;
+      stats.consecutiveFailures++;
+    } else {
+      stats.consecutiveFailures = 0;
+      // 更新平均响应时间（简单移动平均）
+      stats.averageResponseTime = 
+        (stats.averageResponseTime * 0.9) + (responseTime * 0.1);
+    }
+  }
+
+  /**
+   * 开始健康检查
+   */
+  private startHealthChecking(): void {
+    if (this.config.healthCheckInterval <= 0) {
+      return;
+    }
+
+    this.healthCheckTimer = setInterval(() => {
+      this.performHealthChecks();
+    }, this.config.healthCheckInterval);
+
+    this.logger.log(
+      `已启动LLM健康检查，间隔: ${this.config.healthCheckInterval}ms`,
+    );
+  }
+
+  /**
+   * 执行健康检查
+   */
+  private async performHealthChecks(): Promise<void> {
+    const promises = Array.from(this.adapters.entries()).map(
+      async ([name, adapter]) => {
+        try {
+          const isHealthy = await adapter.healthCheck();
+          const stats = this.providerStats.get(name)!;
+          stats.available = isHealthy;
+          stats.lastHealthCheck = new Date();
+
+          if (!isHealthy) {
+            this.logger.warn(`提供商 ${name} 健康检查失败`);
+          }
+        } catch (error) {
+          this.logger.error(
+            `提供商 ${name} 健康检查异常: ${error.message}`,
+          );
+          const stats = this.providerStats.get(name)!;
+          stats.available = false;
+          stats.lastHealthCheck = new Date();
+        }
+      },
+    );
+
+    await Promise.allSettled(promises);
+  }
+
+  /**
+   * 批量生成文本
+   */
+  async generateBatch(
+    prompts: (string | LLMMessage[])[],
+    config?: LLMConfig & { provider?: string; concurrency?: number },
+  ): Promise<LLMResponse[]> {
+    const concurrency = config?.concurrency || 5;
+    const results: LLMResponse[] = [];
+    
+    for (let i = 0; i < prompts.length; i += concurrency) {
+      const batch = prompts.slice(i, i + concurrency);
+      const batchResults = await Promise.allSettled(
+        batch.map((prompt) => this.generateWithDetails(prompt, config)),
+      );
+
+      batchResults.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          results.push(result.value);
+        } else {
+          this.logger.error(
+            `批量生成第 ${i + index} 个请求失败: ${result.reason}`,
+          );
+          // 添加错误响应
+          results.push({
+            content: "",
+            finishReason: "error",
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          });
+        }
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取所有支持的模型
+   */
+  getAllSupportedModels(): Map<string, ModelInfo[]> {
+    const models = new Map<string, ModelInfo[]>();
+    
+    this.adapters.forEach((adapter, name) => {
+      models.set(name, adapter.getSupportedModels());
+    });
+
+    return models;
+  }
+
+  /**
+   * 获取提供商状态
+   */
+  getProviderStatus(): ProviderStatus[] {
+    return Array.from(this.providerStats.values());
+  }
+
+  /**
+   * 获取可用提供商列表
+   */
+  getAvailableProviders(): string[] {
+    return Array.from(this.adapters.keys());
+  }
+
+  /**
+   * 获取服务统计信息
+   */
+  getServiceStats(): {
+    totalAdapters: number;
+    availableAdapters: number;
+    primaryProvider: string;
+    fallbackEnabled: boolean;
+  } {
+    const availableAdapters = Array.from(this.providerStats.values()).filter(
+      (stats) => stats.available,
+    ).length;
+
+    return {
+      totalAdapters: this.adapters.size,
+      availableAdapters,
+      primaryProvider: this.config.primaryProvider,
+      fallbackEnabled: this.config.enableFallback,
+    };
+  }
+
+  /**
+   * 手动触发健康检查
+   */
+  async triggerHealthCheck(): Promise<Map<string, boolean>> {
+    const results = new Map<string, boolean>();
+    
+    const promises = Array.from(this.adapters.entries()).map(
+      async ([name, adapter]) => {
+        try {
+          const isHealthy = await adapter.healthCheck();
+          results.set(name, isHealthy);
+          
+          const stats = this.providerStats.get(name)!;
+          stats.available = isHealthy;
+          stats.lastHealthCheck = new Date();
+        } catch (error) {
+          results.set(name, false);
+        }
+      },
+    );
+
+    await Promise.allSettled(promises);
+    return results;
+  }
+
+  /**
+   * 清理资源
+   */
+  async onModuleDestroy(): Promise<void> {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+    }
+  }
+
+  /**
+   * 工具方法：睡眠
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 }
