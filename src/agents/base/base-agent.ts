@@ -332,7 +332,7 @@ export abstract class BaseAgent implements IAgent {
       maxTokens: this.config.maxTokens,
       timeout: this.config.timeout * 1000,
       tools,
-      toolChoice: "auto", // 让模型自动决定是否调用工具
+      toolChoice: "auto" as "auto", // 让模型自动决定是否调用工具
     };
 
     this.logger.debug(

@@ -12,14 +12,25 @@ import {
 } from "../interfaces/agent.interface";
 import { LLMService, LLMResponse } from "../services/llm.service";
 import { DashScopeAdapter } from "../services/llm-adapters";
-import { DataToolkitService } from "../services/data-toolkit.service";
+// // import { DataToolkitService } from "../services/data-toolkit.service";
+
+// Temporary mock class for missing service
+class MockDataToolkitService {
+  getToolDefinitions(): any[] {
+    return [];
+  }
+  
+  async executeTool(toolName: string, params: any): Promise<any> {
+    return `Mock result for ${toolName}`;
+  }
+}
 import { ConfigService } from "@nestjs/config";
 
 // 创建具体的测试智能体类
 class TestAgent extends BaseAgent {
   constructor(
     llmService: LLMService,
-    dataToolkit?: DataToolkitService,
+    dataToolkit?: MockDataToolkitService,
     config: Partial<AgentConfig> = {},
   ) {
     super(
@@ -87,7 +98,7 @@ class TestAgent extends BaseAgent {
 describe("BaseAgent - 真实LLM测试", () => {
   let agent: TestAgent;
   let llmService: LLMService;
-  let dataToolkit: DataToolkitService;
+  let dataToolkit: MockDataToolkitService;
 
   const testContext: AgentContext = {
     stockCode: "000001",
@@ -132,18 +143,12 @@ describe("BaseAgent - 真实LLM测试", () => {
             }),
           },
         },
-        {
-          provide: DataToolkitService,
-          useValue: {
-            getToolDefinitions: jest.fn(),
-            executeTool: jest.fn(),
-          },
-        },
+        MockDataToolkitService,
       ],
     }).compile();
 
     llmService = module.get<LLMService>(LLMService);
-    dataToolkit = module.get<DataToolkitService>(DataToolkitService);
+    dataToolkit = module.get<MockDataToolkitService>(MockDataToolkitService);
 
     agent = new TestAgent(llmService, dataToolkit);
   }, 60000);

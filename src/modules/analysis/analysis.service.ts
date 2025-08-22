@@ -6,11 +6,46 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Between } from "typeorm";
-import {
-  AgentOrchestratorService,
-  AnalysisResult,
-  QuickAnalysisResult,
-} from "../../agents/services/agent-orchestrator.service";
+// import {
+//   AgentOrchestratorService,
+//   AnalysisResult,
+//   QuickAnalysisResult,
+// } from "../../agents/services/agent-orchestrator.service";
+
+// Temporary type definitions for missing services
+interface AnalysisResult {
+  stockCode: string;
+  stockName: string;
+  executionTime: number;
+  timestamp: Date;
+  summary?: {
+    averageScore?: number;
+    finalRecommendation?: any;
+    confidence?: number;
+    keyInsights?: string[];
+    majorRisks?: string[];
+  };
+}
+
+interface QuickAnalysisResult {
+  stockCode: string;
+  stockName: string;
+  executionTime: number;
+  timestamp: Date;
+  quickSummary?: {
+    averageScore?: number;
+    recommendation?: any;
+    confidence?: number;
+    keyPoints?: string[];
+    mainRisks?: string[];
+  };
+}
+
+interface AgentOrchestratorService {
+  executeFullAnalysis(context: any): Promise<AnalysisResult>;
+  executeQuickAnalysis(context: any): Promise<QuickAnalysisResult>;
+}
+
 import { AgentContext } from "../../agents/interfaces/agent.interface";
 import { AnalysisRecord } from "./entities/analysis-record.entity";
 import {
@@ -29,7 +64,7 @@ export class AnalysisService {
   constructor(
     @InjectRepository(AnalysisRecord)
     private readonly analysisRepository: Repository<AnalysisRecord>,
-    private readonly agentOrchestrator: AgentOrchestratorService,
+    // private readonly agentOrchestrator: AgentOrchestratorService,
   ) {}
 
   /**
@@ -55,13 +90,15 @@ export class AnalysisService {
 
       try {
         // 根据分析类型执行不同的分析流程
-        if (dto.analysisType === "full") {
-          analysisResult =
-            await this.agentOrchestrator.executeFullAnalysis(context);
-        } else {
-          analysisResult =
-            await this.agentOrchestrator.executeQuickAnalysis(context);
-        }
+        // TODO: 重新启用智能体协调器
+        throw new Error("智能体协调器暂时不可用，正在重构中");
+        // if (dto.analysisType === "full") {
+        //   analysisResult =
+        //     await this.agentOrchestrator.executeFullAnalysis(context);
+        // } else {
+        //   analysisResult =
+        //     await this.agentOrchestrator.executeQuickAnalysis(context);
+        // }
       } catch (error) {
         this.logger.error(`分析执行失败: ${error.message}`, error.stack);
         status = "failed";

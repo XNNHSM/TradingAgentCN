@@ -11,21 +11,21 @@ export abstract class BaseEntity {
   id: number;
 
   @CreateDateColumn({
-    type: "datetime",
+    type: "timestamp",
     precision: 6,
     comment: "创建时间",
   })
   createdAt: Date;
 
   @UpdateDateColumn({
-    type: "datetime",
+    type: "timestamp",
     precision: 6,
     comment: "更新时间",
   })
   updatedAt: Date;
 
   @DeleteDateColumn({
-    type: "datetime",
+    type: "timestamp",
     precision: 6,
     nullable: true,
     comment: "删除时间（软删除）",

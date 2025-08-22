@@ -1,26 +1,52 @@
-version: '3.8'
-
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:${PORT:-3000}"
     environment:
-      NODE_ENV: production
-      PORT: 3000
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USERNAME: root
-      DB_PASSWORD: trading123
-      DB_DATABASE: trading_agent_cn
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-test_123!}
+      DB_DATABASE: ${DB_DATABASE:-trading_agent}
       REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ""
-      REDIS_DB: 0
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      # API Keys
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      # Cache Configuration
+      CACHE_TTL: ${CACHE_TTL:-300}
+      CACHE_MAX_ITEMS: ${CACHE_MAX_ITEMS:-1000}
+      # LLM Configuration
+      LLM_PRIMARY_PROVIDER: ${LLM_PRIMARY_PROVIDER:-dashscope}
+      LLM_DEFAULT_TIMEOUT: ${LLM_DEFAULT_TIMEOUT:-30}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      LLM_DEFAULT_TEMPERATURE: ${LLM_DEFAULT_TEMPERATURE:-0.7}
+      LLM_DEFAULT_MAX_TOKENS: ${LLM_DEFAULT_MAX_TOKENS:-2000}
+      # DashScope Models
+      DASHSCOPE_FAST_MODEL: ${DASHSCOPE_FAST_MODEL:-qwen-turbo}
+      DASHSCOPE_STANDARD_MODEL: ${DASHSCOPE_STANDARD_MODEL:-qwen-plus}
+      DASHSCOPE_PREMIUM_MODEL: ${DASHSCOPE_PREMIUM_MODEL:-qwen-max}
+      # System Performance
+      MAX_CONCURRENT_ANALYSTS: ${MAX_CONCURRENT_ANALYSTS:-3}
+      MAX_CONCURRENT_RESEARCHERS: ${MAX_CONCURRENT_RESEARCHERS:-2}
+      MAX_CONCURRENT_TRADERS: ${MAX_CONCURRENT_TRADERS:-2}
+      ENABLE_METRICS: ${ENABLE_METRICS:-true}
+      ENABLE_AGENT_LOGS: ${ENABLE_AGENT_LOGS:-true}
+      # Log Level
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -30,58 +56,78 @@ services:
     networks:
       - trading-network
 
-  mysql:
-    image: mysql:8.0
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-15}
     ports:
-      - "3306:3306"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: trading123
-      MYSQL_DATABASE: trading_agent_cn
-      MYSQL_CHARACTER_SET_SERVER: utf8mb4
-      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-test_123!}
+      POSTGRES_DB: ${POSTGRES_DB:-trading_agent}
+      POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS:---encoding=UTF-8 --lc-collate=C --lc-ctype=C}
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trading_agent}"]
+      interval: ${POSTGRES_HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${POSTGRES_HEALTHCHECK_TIMEOUT:-10s}
+      retries: ${POSTGRES_HEALTHCHECK_RETRIES:-5}
+      start_period: ${POSTGRES_HEALTHCHECK_START_PERIOD:-30s}
     networks:
       - trading-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:${REDIS_VERSION:-7-alpine}
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    command: >
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          redis-server --requirepass "$$REDIS_PASSWORD"
+        else
+          redis-server
+        fi
+      '
     volumes:
       - redis_data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 3s
-      retries: 5
+      test: >
+        sh -c '
+          if [ -n "$$REDIS_PASSWORD" ]; then
+            redis-cli -a "$$REDIS_PASSWORD" ping
+          else
+            redis-cli ping
+          fi
+        '
+      interval: ${REDIS_HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${REDIS_HEALTHCHECK_TIMEOUT:-3s}
+      retries: ${REDIS_HEALTHCHECK_RETRIES:-5}
     networks:
       - trading-network
 
   # 可选：Redis管理界面
   redis-commander:
-    image: rediscommander/redis-commander:latest
+    image: rediscommander/redis-commander:${REDIS_COMMANDER_VERSION:-latest}
     ports:
-      - "8081:8081"
+      - "${REDIS_COMMANDER_PORT:-8081}:8081"
     environment:
-      REDIS_HOSTS: local:redis:6379
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     depends_on:
       - redis
     restart: unless-stopped
     networks:
       - trading-network
+    profiles:
+      - redis-ui
 
 volumes:
-  mysql_data:
+  postgres_data:
   redis_data:
 
 networks:

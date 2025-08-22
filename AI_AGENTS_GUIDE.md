@@ -58,10 +58,10 @@ DASHSCOPE_API_KEY=your_dashscope_api_key_here
 
 # 数据库配置
 DB_HOST=localhost
-DB_PORT=3306
-DB_USERNAME=root
-DB_PASSWORD=your_mysql_password
-DB_DATABASE=trading_agent_cn
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=test_123!
+DB_DATABASE=trading_agent
 
 # Redis配置
 REDIS_HOST=localhost
@@ -338,8 +338,8 @@ console.log('完整分析:', analysis.data.results);
 
 #### 2. 数据库连接失败
 ```
-错误: connect ECONNREFUSED 127.0.0.1:3306
-解决: 确保MySQL服务正在运行并且配置正确
+错误: connect ECONNREFUSED 127.0.0.1:5432
+解决: 确保PostgreSQL服务正在运行并且配置正确
 ```
 
 #### 3. Redis连接失败

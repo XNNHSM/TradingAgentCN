@@ -9,24 +9,22 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
     return {
-      type: "mysql",
+      type: "postgres",
       host: this.configService.get<string>("DB_HOST", "localhost"),
-      port: this.configService.get<number>("DB_PORT", 3306),
-      username: this.configService.get<string>("DB_USERNAME", "root"),
-      password: this.configService.get<string>("DB_PASSWORD", ""),
+      port: this.configService.get<number>("DB_PORT", 5432),
+      username: this.configService.get<string>("DB_USERNAME", "postgres"),
+      password: this.configService.get<string>("DB_PASSWORD", "test_123!"),
       database: this.configService.get<string>(
         "DB_DATABASE",
-        "trading_agent_cn",
+        "trading_agent",
       ),
       entities: [join(__dirname, "..", "**", "*.entity.{ts,js}")],
       synchronize: this.configService.get<string>("NODE_ENV") === "development",
       logging: this.configService.get<string>("NODE_ENV") === "development",
-      timezone: "+08:00",
-      charset: "utf8mb4",
       extra: {
-        connectionLimit: 10,
-        acquireTimeout: 60000,
-        timeout: 60000,
+        max: 10,
+        connectionTimeoutMillis: 60000,
+        idleTimeoutMillis: 60000,
       },
     };
   }

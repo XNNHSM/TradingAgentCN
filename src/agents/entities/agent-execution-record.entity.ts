@@ -43,13 +43,13 @@ export class AgentExecutionRecord {
   stockName: string; // 股票名称
 
   // === 执行信息 ===
-  @Column({ type: 'datetime' })
+  @Column({ type: 'timestamp' })
   executionDate: Date; // 执行日期
 
-  @Column({ type: 'datetime' })
+  @Column({ type: 'timestamp' })
   startTime: Date; // 开始时间
 
-  @Column({ type: 'datetime' })
+  @Column({ type: 'timestamp' })
   endTime: Date; // 结束时间
 
   @Column({ type: 'int', unsigned: true })
@@ -78,13 +78,13 @@ export class AgentExecutionRecord {
   estimatedCost: number; // 预估成本(美元)
 
   // === 分析结果 ===
-  @Column({ type: 'longtext' })
+  @Column({ type: 'text' })
   analysisResult: string; // 分析结果(原markdown内容)
 
   @Column({ type: 'json', nullable: true })
   structuredResult: any; // 结构化结果(JSON格式)
 
-  @Column({ type: 'tinyint', unsigned: true, nullable: true })
+  @Column({ type: 'smallint', nullable: true })
   score: number; // 评分(0-100)
 
   @Column({ type: 'enum', enum: TradingRecommendation, nullable: true })
@@ -133,7 +133,7 @@ export class AgentExecutionRecord {
   @UpdateDateColumn() 
   updatedAt: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   deletedAt: Date; // 软删除
 
   @Column({ type: 'int', default: 1 })

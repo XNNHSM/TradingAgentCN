@@ -10,7 +10,7 @@ TradingAgentCN 是一个基于大语言模型(LLM)的智能交易决策系统，
 - **后端框架**: NestJS + TypeScript + TypeORM
 - **数据获取协议**: 阿里云百炼MCP (Model Context Protocol)
 - **主要LLM**: 阿里云百炼(DashScope) - qwen-plus/qwen-max
-- **数据库**: MySQL + Redis
+- **数据库**: PostgreSQL + Redis
 - **部署方案**: Docker 容器化
 
 ### 新一代MCP架构
@@ -111,8 +111,22 @@ npm run migration:revert
 
 ### Docker 部署
 ```bash
-# 使用 Docker Compose 启动
+# 使用默认配置启动
 docker-compose up -d
+
+# 使用环境变量自定义配置
+cp .env.example .env
+# 编辑 .env 文件设置数据库密码等
+docker-compose up -d
+
+# 使用命令行环境变量
+POSTGRES_PASSWORD=myPassword REDIS_PASSWORD=myRedisPass docker-compose up -d
+
+# 修改应用服务端口
+APP_PORT=8080 docker-compose up -d
+
+# 启动Redis管理界面
+docker-compose --profile redis-ui up -d
 
 # 手动构建 Docker 镜像
 docker build -t trading-agent-cn .
@@ -185,7 +199,7 @@ src/
 │                              │ (仅缓存，所有数据必须落盘)         │
 │                              ▼                                 │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                   MySQL 持久化存储                         │ │
+│  │                PostgreSQL 持久化存储                       │ │
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │ │
 │  │  │核心业务数据 │ │股票市场数据 │ │系统运营数据 │          │ │
 │  │  │- 用户信息   │ │- 股票基础   │ │- 系统配置   │          │ │
@@ -199,7 +213,7 @@ src/
 ```
 
 ### 存储策略
-- **MySQL**: 所有业务数据的主要持久化存储，包含核心业务数据、股票市场数据和系统运营数据
+- **PostgreSQL**: 所有业务数据的主要持久化存储，包含核心业务数据、股票市场数据和系统运营数据
 - **Redis**: ⚠️ **现阶段暂时禁用缓存** - 开发阶段为确保数据一致性，暂时关闭所有缓存功能
 - **软删除**: 所有实体使用逻辑删除(deletedAt字段)
 
@@ -221,19 +235,19 @@ src/
 ⚠️ **开发阶段缓存配置**:
 - **当前状态**: 所有缓存功能暂时禁用
 - **配置方式**: 环境变量 `ENABLE_CACHE=false`
-- **数据源**: 直接访问MySQL和外部API，不使用缓存层
+- **数据源**: 直接访问PostgreSQL和外部API，不使用缓存层
 - **性能考虑**: 开发阶段优先保证数据一致性，后续优化性能
 
 ### 数据流向设计 (无缓存模式)
 
 #### 数据写入流程
 ```
-1. 数据源 → 2. 业务处理 → 3. MySQL落盘
+1. 数据源 → 2. 业务处理 → 3. PostgreSQL落盘
 ```
 
 #### 数据读取流程
 ```
-1. 直接查询MySQL → 2. 返回结果
+1. 直接查询PostgreSQL → 2. 返回结果
 ```
 
 ### 缓存配置规范 (后续启用时)
@@ -478,7 +492,7 @@ this.logger.error(JSON.stringify({
 
 1. **安装依赖**: `npm install`
 2. **配置环境**: 复制 `.env.example` 到 `.env` 并配置
-3. **启动数据库**: 确保MySQL和Redis正在运行
+3. **启动数据库**: 确保PostgreSQL和Redis正在运行
 4. **运行开发模式**: `npm run start:dev`
 5. **访问API文档**: http://localhost:3000/api-docs
 6. **运行测试**: `npm run test`

@@ -19,12 +19,12 @@ describe('AgentExecutionRecordService', () => {
           envFilePath: '.env.test',
         }),
         TypeOrmModule.forRoot({
-          type: 'mysql',
+          type: 'postgres',
           host: process.env.DB_HOST || 'localhost',
-          port: parseInt(process.env.DB_PORT || '3306'),
-          username: process.env.DB_USERNAME || 'test_user',
-          password: process.env.DB_PASSWORD || 'default_test_pass',
-          database: process.env.DB_DATABASE || 'test_db',
+          port: parseInt(process.env.DB_PORT || '5432'),
+          username: process.env.DB_USERNAME || 'postgres',
+          password: process.env.DB_PASSWORD || 'test_123!',
+          database: process.env.DB_DATABASE || 'trading_agent',
           entities: [AgentExecutionRecord],
           synchronize: true,
           dropSchema: true, // 每次测试前清空数据库

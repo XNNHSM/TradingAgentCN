@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 // MCP相关服务
 import { MCPClientService } from './services/mcp-client.service';
 import { LLMService } from './services/llm.service';
+import { DashScopeAdapter } from './services/llm-adapters/dashscope-adapter';
 
 // 新的统一智能体
 import { ComprehensiveAnalystAgent } from './unified/comprehensive-analyst.agent';
@@ -18,7 +19,6 @@ import { AgentExecutionShardingService } from './services/agent-execution-shardi
 
 // 执行记录控制器
 import { ExecutionRecordsController } from './execution-records/execution-records.controller';
-import { ExecutionRecordsService } from './execution-records/execution-records.service';
 
 /**
  * 智能体模块
@@ -30,6 +30,9 @@ import { ExecutionRecordsService } from './execution-records/execution-records.s
     TypeOrmModule.forFeature([AgentExecutionRecord]),
   ],
   providers: [
+    // LLM适配器
+    DashScopeAdapter,
+    
     // 核心服务
     MCPClientService,
     LLMService,
@@ -42,7 +45,6 @@ import { ExecutionRecordsService } from './execution-records/execution-records.s
     // 执行记录服务
     AgentExecutionRecordService,
     AgentExecutionShardingService,
-    ExecutionRecordsService,
   ],
   controllers: [
     ExecutionRecordsController,

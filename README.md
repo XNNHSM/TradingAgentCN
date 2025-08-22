@@ -17,7 +17,7 @@
 - **智能体**: LangChain.js + 阿里云百炼MCP协议
 - **数据获取**: MCP (Model Context Protocol) 统一接口
 - **主要LLM**: 阿里云百炼(DashScope)
-- **数据库**: MySQL + Redis
+- **数据库**: PostgreSQL + Redis
 - **部署**: Docker 容器化
 
 ### 新一代MCP架构设计
@@ -50,7 +50,7 @@ API接口层 → NestJS服务层 → 统一智能体框架 → MCP协议层 → 
 
 ### 环境要求
 - Node.js 18+
-- MySQL 8.0+
+- PostgreSQL 15+
 - Redis 7.0+
 - npm 或 yarn
 
@@ -67,12 +67,12 @@ cp .env.example .env
 
 2. 编辑 `.env` 文件，配置数据库和Redis连接信息：
 ```bash
-# 数据库配置
+# 数据库配置 (PostgreSQL)
 DB_HOST=localhost
-DB_PORT=3306
-DB_USERNAME=root
-DB_PASSWORD=your_password
-DB_DATABASE=trading_agent_cn
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=test_123!
+DB_DATABASE=trading_agent
 
 # Redis配置
 REDIS_HOST=localhost
@@ -93,8 +93,15 @@ TRADING_STRATEGIST_MAX_TOKENS=3000
 
 ### 数据库初始化
 ```bash
-# 创建数据库
-mysql -u root -p -e "CREATE DATABASE trading_agent_cn CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+# 使用Docker快速启动PostgreSQL
+docker run --name trading-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=test_123! \
+  -e POSTGRES_DB=trading_agent \
+  -p 5432:5432 -d postgres:15
+
+# 或手动创建数据库
+psql -U postgres -c "CREATE DATABASE trading_agent;"
 
 # 运行数据库迁移（开发模式会自动同步表结构）
 npm run start:dev
@@ -283,15 +290,67 @@ src/
 
 ### 缓存策略  
 - 开发阶段缓存功能暂时禁用 (ENABLE_CACHE=false)
-- Redis仅作为缓存层，所有数据必须落盘到MySQL
+- Redis仅作为缓存层，所有数据必须落盘到PostgreSQL
 - 缓存键命名规范: `模块:方法:参数`  
 - 所有缓存必须设置TTL过期时间
 
 ## 🐳 Docker 部署
 
 ### 使用 Docker Compose
+
+#### 快速启动（使用默认配置）
 ```bash
 docker-compose up -d
+```
+
+#### 使用环境变量自定义配置
+
+1. **复制环境变量模板**:
+```bash
+cp .env.example .env
+```
+
+2. **编辑 `.env` 文件配置数据库密码等**:
+```bash
+# PostgreSQL 配置
+POSTGRES_PASSWORD=mySecurePassword123
+POSTGRES_DB=trading_agent
+
+# Redis 配置
+REDIS_PASSWORD=myRedisPassword
+
+# API 密钥
+DASHSCOPE_API_KEY=your_actual_api_key
+```
+
+3. **使用自定义配置启动**:
+```bash
+docker-compose up -d
+```
+
+> 📝 **说明**: docker-compose 会自动加载 .env 文件中的环境变量
+
+#### 常用环境变量组合
+
+**使用命令行环境变量（临时覆盖）**:
+```bash
+# 修改数据库密码
+POSTGRES_PASSWORD=newPassword docker-compose up -d
+
+# 使用Redis密码
+REDIS_PASSWORD=redisPass docker-compose up -d
+
+# 自定义端口
+# 应用端口修改为8080
+APP_PORT=8080 docker-compose up -d
+
+# 数据库服务端口
+POSTGRES_PORT=5433 REDIS_PORT=6380 docker-compose up -d
+```
+
+**启动Redis管理界面**:
+```bash
+docker-compose --profile redis-ui up -d
 ```
 
 ### 手动构建
@@ -303,11 +362,27 @@ docker build -t trading-agent-cn .
 docker run -d \
   --name trading-agent-cn \
   -p 3000:3000 \
-  -e DB_HOST=mysql \
+  -e DB_HOST=postgres \
   -e REDIS_HOST=redis \
   -e DASHSCOPE_API_KEY=your_api_key \
   trading-agent-cn
 ```
+
+### Docker Compose 环境变量说明
+
+| 变量名 | 默认值 | 说明 |
+|---------|-------|------|
+| `POSTGRES_VERSION` | `15` | PostgreSQL版本 |
+| `POSTGRES_PORT` | `5432` | PostgreSQL端口 |
+| `POSTGRES_USER` | `postgres` | 数据库用户名 |
+| `POSTGRES_PASSWORD` | `test_123!` | 数据库密码 |
+| `POSTGRES_DB` | `trading_agent` | 数据库名 |
+| `APP_PORT` | `3000` | 应用对外服务端口（主机端口） |
+| `PORT` | `3000` | 应用内部端口（容器端口） |
+| `REDIS_VERSION` | `7-alpine` | Redis版本 |
+| `REDIS_PORT` | `6379` | Redis端口 |
+| `REDIS_PASSWORD` | `""` | Redis密码（空为无密码） |
+| `REDIS_COMMANDER_PORT` | `8081` | Redis管理界面端口 |
 
 ## 📊 监控与日志
 
