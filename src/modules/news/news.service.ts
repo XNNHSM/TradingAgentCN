@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RawNews } from './entities/raw-news.entity';
@@ -7,10 +7,11 @@ import { CrawlNewsDto } from './dto/crawl-news.dto';
 import { NewsCrawlerFactory } from './factories/news-crawler.factory';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
 import { Result } from '../../common/dto/result.dto';
+import { BusinessLogger } from '../../common/utils/business-logger.util';
 
 @Injectable()
 export class NewsService {
-  private readonly logger = new Logger(NewsService.name);
+  private readonly businessLogger = new BusinessLogger(NewsService.name);
 
   constructor(
     @InjectRepository(RawNews)
@@ -26,19 +27,11 @@ export class NewsService {
       const news = this.rawNewsRepository.create(createNewsDto);
       const savedNews = await this.rawNewsRepository.save(news);
       
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Created news: ${savedNews.title}`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Created news: ${savedNews.title}`);
       
       return Result.success(savedNews);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error creating news: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.serviceError(`Error creating news: ${error.message}`, error);
       return Result.error('创建新闻失败');
     }
   }
@@ -51,19 +44,11 @@ export class NewsService {
       const newsEntities = newsItems.map(item => this.rawNewsRepository.create(item));
       const savedNews = await this.rawNewsRepository.save(newsEntities);
       
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Created ${savedNews.length} news items`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Created ${savedNews.length} news items`, { count: savedNews.length });
       
       return Result.success(savedNews);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error creating batch news: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.serviceError(`Error creating batch news: ${error.message}`, error);
       return Result.error('批量创建新闻失败');
     }
   }
@@ -116,11 +101,7 @@ export class NewsService {
         hasPrev: page > 1,
       });
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error querying news: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.serviceError(`Error querying news: ${error.message}`, error);
       return Result.error('查询新闻失败');
     }
   }
@@ -138,11 +119,7 @@ export class NewsService {
       
       return Result.success(news);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error finding news by id ${id}: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.serviceError(`Error finding news by id ${id}: ${error.message}`, error, { id });
       return Result.error('查询新闻失败');
     }
   }
@@ -161,19 +138,11 @@ export class NewsService {
       Object.assign(news, updateNewsDto);
       const updatedNews = await this.rawNewsRepository.save(news);
       
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Updated news: ${updatedNews.title}`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Updated news: ${updatedNews.title}`, { id });
       
       return Result.success(updatedNews);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error updating news ${id}: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.serviceError(`Error updating news ${id}: ${error.message}`, error, { id });
       return Result.error('更新新闻失败');
     }
   }
@@ -189,21 +158,29 @@ export class NewsService {
         return Result.error('新闻不存在');
       }
       
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Deleted news with id: ${id}`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Deleted news with id: ${id}`, { id });
       
       return Result.success(null);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error deleting news ${id}: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.serviceError(`Error deleting news ${id}: ${error.message}`, error, { id });
       return Result.error('删除新闻失败');
     }
+  }
+
+  /**
+   * 将 RawNews 实体转换为 CreateNewsDto
+   */
+  private convertToCreateDto(newsItem: RawNews): CreateNewsDto {
+    return {
+      title: newsItem.title,
+      content: newsItem.content,
+      url: newsItem.url,
+      sourceCode: newsItem.sourceCode,
+      sourceName: newsItem.sourceName,
+      newsDate: newsItem.newsDate,
+      analyzed: newsItem.analyzed,
+      region: newsItem.region,
+    };
   }
 
   /**
@@ -219,11 +196,7 @@ export class NewsService {
       const newsItems = await crawler.crawlNews(date);
       
       if (newsItems.length === 0) {
-        this.logger.log(JSON.stringify({
-          category: 'SERVICE_INFO',
-          message: `No news found for ${source} on ${date}`,
-          url: ''
-        }));
+        this.businessLogger.serviceInfo(`No news found for ${source} on ${date}`, { source, date });
         return Result.success([]);
       }
       
@@ -231,36 +204,45 @@ export class NewsService {
       const savedNews: RawNews[] = [];
       for (const newsItem of newsItems) {
         try {
+          // 检查是否已存在相同URL的新闻
           const existing = await this.rawNewsRepository.findOne({ 
             where: { url: newsItem.url } 
           });
           
           if (!existing) {
-            const saved = await this.rawNewsRepository.save(newsItem);
-            savedNews.push(saved);
+            // 转换为 CreateNewsDto 并调用 create 方法
+            const createDto = this.convertToCreateDto(newsItem);
+            const createResult = await this.create(createDto);
+            
+            if (createResult.code === 0) {
+              savedNews.push(createResult.data);
+            } else {
+              this.businessLogger.serviceError(`Failed to create news: ${newsItem.title}`, undefined, {
+                url: newsItem.url,
+                title: newsItem.title,
+                error: createResult.message
+              });
+            }
+          } else {
+            this.businessLogger.debug(`News already exists, skipping: ${newsItem.title}`);
           }
         } catch (error) {
-          this.logger.error(JSON.stringify({
-            category: 'SERVICE_ERROR',
-            message: `Error saving news: ${newsItem.title} - ${error.message}`,
-            url: newsItem.url
-          }));
+          this.businessLogger.serviceError(`Error saving news: ${newsItem.title}`, error, { 
+            url: newsItem.url,
+            title: newsItem.title 
+          });
         }
       }
       
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Crawled and saved ${savedNews.length} news items from ${source}`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Crawled and saved ${savedNews.length} news items from ${source}`, {
+        count: savedNews.length,
+        source,
+        date
+      });
       
       return Result.success(savedNews);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error crawling news from ${source}: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.businessError(`爬取新闻数据`, error, { source, date });
       return Result.error('爬取新闻失败');
     }
   }
@@ -278,11 +260,11 @@ export class NewsService {
       const newsItems = await crawler.crawlNewsRange(startDate, endDate);
       
       if (newsItems.length === 0) {
-        this.logger.log(JSON.stringify({
-          category: 'SERVICE_INFO',
-          message: `No news found for ${source} between ${startDate} and ${endDate}`,
-          url: ''
-        }));
+        this.businessLogger.serviceInfo(`No news found for ${source} between ${startDate} and ${endDate}`, {
+          source,
+          startDate,
+          endDate
+        });
         return Result.success([]);
       }
       
@@ -290,74 +272,92 @@ export class NewsService {
       const savedNews: RawNews[] = [];
       for (const newsItem of newsItems) {
         try {
+          // 检查是否已存在相同URL的新闻
           const existing = await this.rawNewsRepository.findOne({ 
             where: { url: newsItem.url } 
           });
           
           if (!existing) {
-            const saved = await this.rawNewsRepository.save(newsItem);
-            savedNews.push(saved);
+            // 转换为 CreateNewsDto 并调用 create 方法
+            const createDto = this.convertToCreateDto(newsItem);
+            const createResult = await this.create(createDto);
+            
+            if (createResult.code === 0) {
+              savedNews.push(createResult.data);
+            } else {
+              this.businessLogger.serviceError(`Failed to create news: ${newsItem.title}`, undefined, {
+                url: newsItem.url,
+                title: newsItem.title,
+                error: createResult.message
+              });
+            }
+          } else {
+            this.businessLogger.debug(`News already exists, skipping: ${newsItem.title}`);
           }
         } catch (error) {
-          this.logger.error(JSON.stringify({
-            category: 'SERVICE_ERROR',
-            message: `Error saving news: ${newsItem.title} - ${error.message}`,
-            url: newsItem.url
-          }));
+          this.businessLogger.serviceError(`Error saving news: ${newsItem.title}`, error, { 
+            url: newsItem.url,
+            title: newsItem.title 
+          });
         }
       }
       
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Crawled and saved ${savedNews.length} news items from ${source} (${startDate} to ${endDate})`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Crawled and saved ${savedNews.length} news items from ${source} (${startDate} to ${endDate})`, {
+        count: savedNews.length,
+        source,
+        startDate,
+        endDate
+      });
       
       return Result.success(savedNews);
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error crawling news range from ${source}: ${error.message}`,
-        url: ''
-      }));
+      this.businessLogger.businessError(`爬取新闻数据范围`, error, { source, startDate, endDate });
       return Result.error('爬取新闻失败');
     }
   }
 
   /**
-   * 爬取新闻数据（支持多数据源和日期范围）
+   * 启动爬取任务（异步执行，不等待结果）
    */
-  async crawlNewsWithSources(crawlDto: CrawlNewsDto): Promise<Result<{
-    totalCrawled: number;
-    sourceResults: {
-      source: NewsSource;
-      count: number;
-      success: boolean;
-      error?: string;
-    }[];
-  }>> {
+  startCrawlingTask(crawlDto: CrawlNewsDto): void {
+    const { startDate, endDate, sources } = crawlDto;
+    
+    // 获取目标数据源
+    const targetSources = sources && sources.length > 0 
+      ? sources 
+      : this.newsCrawlerFactory.getSupportedSources();
+
+    this.businessLogger.serviceInfo(`启动新闻爬取任务: sources=${targetSources.join(', ')}, dateRange=${startDate}~${endDate}`, {
+      sources: targetSources,
+      startDate,
+      endDate
+    });
+
+    // 异步执行爬取任务，不阻塞接口响应
+    this.performCrawling(crawlDto).catch(error => {
+      this.businessLogger.businessError(`新闻爬取任务执行`, error);
+    });
+  }
+
+  /**
+   * 执行实际的爬取工作（内部方法）
+   */
+  private async performCrawling(crawlDto: CrawlNewsDto): Promise<void> {
     try {
       const { startDate, endDate, sources } = crawlDto;
       
-      // 如果没有指定数据源，则使用所有支持的数据源
+      // 获取目标数据源
       const targetSources = sources && sources.length > 0 
         ? sources 
         : this.newsCrawlerFactory.getSupportedSources();
 
-      const sourceResults: {
-        source: NewsSource;
-        count: number;
-        success: boolean;
-        error?: string;
-      }[] = [];
-      
       let totalCrawled = 0;
 
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Starting news crawl for sources: ${targetSources.join(', ')} from ${startDate} to ${endDate}`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`开始执行新闻爬取: sources=${targetSources.join(', ')}, dateRange=${startDate}~${endDate}`, {
+        sources: targetSources,
+        startDate,
+        endDate
+      });
 
       // 并发爬取所有数据源
       const crawlPromises = targetSources.map(async (source) => {
@@ -367,67 +367,31 @@ export class NewsService {
           if (result.code === 0) {
             const count = result.data.length;
             totalCrawled += count;
-            sourceResults.push({
-              source,
-              count,
-              success: true
-            });
             
-            this.logger.log(JSON.stringify({
-              category: 'SERVICE_INFO',
-              message: `Successfully crawled ${count} news from ${source}`,
-              url: ''
-            }));
-          } else {
-            sourceResults.push({
+            this.businessLogger.serviceInfo(`数据源 ${source} 爬取完成: ${count} 条新闻`, {
               source,
-              count: 0,
-              success: false,
+              count
+            });
+          } else {
+            this.businessLogger.serviceError(`数据源 ${source} 爬取失败: ${result.message}`, undefined, {
+              source,
               error: result.message
             });
-            
-            this.logger.error(JSON.stringify({
-              category: 'SERVICE_ERROR',
-              message: `Failed to crawl news from ${source}: ${result.message}`,
-              url: ''
-            }));
           }
         } catch (error) {
-          sourceResults.push({
-            source,
-            count: 0,
-            success: false,
-            error: error.message
-          });
-          
-          this.logger.error(JSON.stringify({
-            category: 'SERVICE_ERROR',
-            message: `Error crawling news from ${source}: ${error.message}`,
-            url: ''
-          }));
+          this.businessLogger.businessError(`数据源爬取异常`, error, { source });
         }
       });
 
       // 等待所有爬取任务完成
       await Promise.all(crawlPromises);
 
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Completed news crawl. Total crawled: ${totalCrawled} news items`,
-        url: ''
-      }));
-
-      return Result.success({
-        totalCrawled,
-        sourceResults
+      this.businessLogger.serviceInfo(`新闻爬取任务完成，共爬取 ${totalCrawled} 条新闻`, {
+        totalCrawled
       });
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'SERVICE_ERROR',
-        message: `Error in crawlNewsWithSources: ${error.message}`,
-        url: ''
-      }));
-      return Result.error('爬取新闻失败');
+      this.businessLogger.businessError(`新闻爬取任务执行异常`, error);
+      throw error;
     }
   }
 

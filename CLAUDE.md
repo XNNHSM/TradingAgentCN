@@ -407,73 +407,88 @@ class QueryDto {
 ```
 
 ### 日志记录规范 (重要)
-⚠️ **统一日志格式**:
+⚠️ **使用统一业务日志组件**:
+
+项目使用 `BusinessLogger` 组件进行统一日志管理，位于 `src/common/utils/business-logger.util.ts`。
+
+**初始化BusinessLogger**:
 ```typescript
-// 标准日志格式
-{
-  "category": "分类标识",  // 如: HTTP_REQUEST, HTTP_RESPONSE, SERVICE_ERROR, SERVICE_INFO
-  "message": "日志内容",   // JSON格式的详细信息
-  "url": "相关URL"        // 可选，HTTP请求相关时必填
+import { BusinessLogger, LogCategory } from '../common/utils/business-logger.util';
+
+export class YourService {
+  private readonly businessLogger = new BusinessLogger(YourService.name);
 }
 ```
 
-**HTTP请求日志规范**:
+**日志类别 (LogCategory)**:
+- `HTTP_REQUEST` - HTTP请求日志
+- `HTTP_RESPONSE` - HTTP响应日志  
+- `HTTP_ERROR` - HTTP错误日志
+- `SERVICE_INFO` - 服务信息日志
+- `SERVICE_ERROR` - 服务错误日志
+- `BUSINESS_ERROR` - 业务错误日志
+- `API_CALL` - API调用日志
+- `API_SUCCESS` - API成功响应日志
+- `API_ERROR` - API错误日志
+- `DATABASE_QUERY` - 数据库查询日志
+- `DATABASE_ERROR` - 数据库错误日志
+- `AGENT_INFO` - 智能体信息日志
+- `AGENT_ERROR` - 智能体错误日志
+
+**常用方法**:
 ```typescript
-// HTTP请求日志
-this.logger.log(JSON.stringify({
-  category: "HTTP_REQUEST",
-  message: JSON.stringify({
-    method: "GET",
-    url: requestUrl,
-    params: requestParams,
-    headers: sanitizedHeaders  // 隐藏敏感信息
-  }),
-  url: requestUrl
-}));
+// 基础日志方法
+businessLogger.info(LogCategory.SERVICE_INFO, "服务已启动", url?, context?);
+businessLogger.debug(LogCategory.SERVICE_INFO, "调试信息", url?, context?);
+businessLogger.warn(LogCategory.SERVICE_ERROR, "警告信息", url?, context?);
+businessLogger.error(LogCategory.SERVICE_ERROR, "错误信息", error?, url?, context?);
 
-// HTTP响应日志
-this.logger.log(JSON.stringify({
-  category: "HTTP_RESPONSE", 
-  message: JSON.stringify({
-    status: response.status,
-    data: responseData,
-    duration: `${endTime - startTime}ms`
-  }),
-  url: requestUrl
-}));
+// 便捷方法
+businessLogger.serviceInfo("服务信息", context?);
+businessLogger.serviceError("服务错误", error?, context?);
+businessLogger.businessError("业务操作", error, context?);
 
-// 错误日志
-this.logger.error(JSON.stringify({
-  category: "HTTP_ERROR",
-  message: JSON.stringify({
-    error: error.message,
-    stack: error.stack,
-    context: contextData
-  }),
-  url: errorUrl
-}));
+// HTTP相关日志
+businessLogger.httpRequest("GET", url, params?, headers?);
+businessLogger.httpResponse(url, status, data?, duration?);
+businessLogger.httpError(url, error, status?, duration?);
+
+// API相关日志
+businessLogger.apiCall("GET", url, params?, headers?);
+businessLogger.apiSuccess(url, status, data?, duration?);
+businessLogger.apiError(url, error, status?, duration?);
 ```
 
 **使用示例**:
 ```typescript
-// 服务信息日志
-this.logger.log(JSON.stringify({
-  category: "SERVICE_INFO",
-  message: "智兔数服API已就绪",
-  url: ""
-}));
+// 服务信息
+this.businessLogger.serviceInfo("新闻爬虫服务已初始化");
 
-// 业务错误日志  
-this.logger.error(JSON.stringify({
-  category: "BUSINESS_ERROR",
-  message: JSON.stringify({
-    operation: "获取股票数据",
-    stockCode: "000001", 
-    error: "数据解析失败"
-  }),
-  url: ""
-}));
+// HTTP请求
+this.businessLogger.httpRequest("GET", targetUrl, { date: "2025-08-16" });
+
+// HTTP响应
+this.businessLogger.httpResponse(targetUrl, 200, newsData, "1200ms");
+
+// 业务错误
+this.businessLogger.businessError("爬取新闻数据", error, { 
+  url: targetUrl,
+  date: crawlDate 
+});
+
+// API调用
+this.businessLogger.apiCall("POST", "/api/news/crawl", { 
+  startDate: "2025-08-01",
+  endDate: "2025-08-16" 
+});
 ```
+
+**重要特性**:
+- **自动格式化**: 所有日志自动转换为标准JSON格式
+- **敏感信息过滤**: 自动隐藏API密钥、Authorization等敏感请求头
+- **简化调用**: 提供 `debug(message)`, `warn(message)` 等简化方法
+- **上下文支持**: 可选的context参数用于记录额外信息
+- **错误堆栈**: 自动提取Error对象的message和stack信息
 
 ### 安全最佳实践
 - 永远不要在代码中暴露API密钥或机密信息

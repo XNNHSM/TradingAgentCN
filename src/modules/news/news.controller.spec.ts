@@ -9,7 +9,7 @@ describe('NewsController', () => {
   let newsService: NewsService;
 
   const mockNewsService = {
-    crawlNewsWithSources: jest.fn(),
+    startCrawlingTask: jest.fn(),
     getSupportedSources: jest.fn(),
   };
 
@@ -33,80 +33,31 @@ describe('NewsController', () => {
   });
 
   describe('crawlNews', () => {
-    it('should crawl news with specified sources', async () => {
+    it('should start crawling task and return success message', async () => {
       const crawlDto: CrawlNewsDto = {
         startDate: '2025-08-21',
         endDate: '2025-08-21',
         sources: [NewsSource.JJRB, NewsSource.XHMRDX],
       };
 
-      const expectedResult = {
-        code: 0,
-        data: {
-          totalCrawled: 10,
-          sourceResults: [
-            {
-              source: NewsSource.JJRB,
-              count: 5,
-              success: true,
-            },
-            {
-              source: NewsSource.XHMRDX,
-              count: 5,
-              success: true,
-            },
-          ],
-        },
-        message: '操作成功',
-        timestamp: '2025-08-21T10:30:00.000Z',
-      };
-
-      mockNewsService.crawlNewsWithSources.mockResolvedValue(expectedResult);
-
       const result = await controller.crawlNews(crawlDto);
 
-      expect(result).toEqual(expectedResult);
-      expect(newsService.crawlNewsWithSources).toHaveBeenCalledWith(crawlDto);
+      expect(result.code).toBe(0);
+      expect(result.data.message).toBe('新闻爬取任务已启动，正在后台执行');
+      expect(mockNewsService.startCrawlingTask).toHaveBeenCalledWith(crawlDto);
     });
 
-    it('should crawl news from all sources when sources not specified', async () => {
+    it('should start crawling task for all sources when sources not specified', async () => {
       const crawlDto: CrawlNewsDto = {
         startDate: '2025-08-21',
         endDate: '2025-08-21',
       };
 
-      const expectedResult = {
-        code: 0,
-        data: {
-          totalCrawled: 15,
-          sourceResults: [
-            {
-              source: NewsSource.JJRB,
-              count: 5,
-              success: true,
-            },
-            {
-              source: NewsSource.XHMRDX,
-              count: 5,
-              success: true,
-            },
-            {
-              source: NewsSource.XWLB,
-              count: 5,
-              success: true,
-            },
-          ],
-        },
-        message: '操作成功',
-        timestamp: '2025-08-21T10:30:00.000Z',
-      };
-
-      mockNewsService.crawlNewsWithSources.mockResolvedValue(expectedResult);
-
       const result = await controller.crawlNews(crawlDto);
 
-      expect(result).toEqual(expectedResult);
-      expect(newsService.crawlNewsWithSources).toHaveBeenCalledWith(crawlDto);
+      expect(result.code).toBe(0);
+      expect(result.data.message).toBe('新闻爬取任务已启动，正在后台执行');
+      expect(mockNewsService.startCrawlingTask).toHaveBeenCalledWith(crawlDto);
     });
   });
 

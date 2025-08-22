@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { AbstractNewsCrawlerService } from '../interfaces/news-crawler.interface';
@@ -10,18 +9,17 @@ import { NewsRegion } from '../entities/raw-news.entity';
  */
 @Injectable()
 export class JJRBCrawlerService extends AbstractNewsCrawlerService {
-  private readonly logger = new Logger(JJRBCrawlerService.name);
-  private readonly baseUrl: string;
-  private readonly sourceCode: string;
-
-  constructor(private readonly configService: ConfigService) {
+  constructor() {
     super();
-    this.baseUrl = this.configService.get<string>('crawler.jjrb.baseUrl', 'http://paper.ce.cn/pc');
-    this.sourceCode = this.configService.get<string>('crawler.jjrb.code', 'jjrb');
+  }
+
+
+  getBaseUrl(): string {
+    return 'http://paper.ce.cn/pc';
   }
 
   getSourceCode(): string {
-    return this.sourceCode;
+    return 'jjrb';
   }
 
   getSourceName(): string {
@@ -41,13 +39,9 @@ export class JJRBCrawlerService extends AbstractNewsCrawlerService {
     const yearMonth = dateObj.getFullYear() + String(dateObj.getMonth() + 1).padStart(2, '0');
     const day = String(dateObj.getDate()).padStart(2, '0');
     
-    const indexUrl = `${this.baseUrl}/layout/${yearMonth}/${day}/node_01.html`;
+    const indexUrl = `${this.getBaseUrl()}/layout/${yearMonth}/${day}/node_01.html`;
     
-    this.logger.log(JSON.stringify({
-      category: 'HTTP_REQUEST',
-      message: `Fetching news index from URL: ${indexUrl}`,
-      url: indexUrl
-    }));
+    this.businessLogger.httpRequest('GET', indexUrl, { date });
 
     try {
       const indexDoc = await this.getDocument(indexUrl);
@@ -59,7 +53,7 @@ export class JJRBCrawlerService extends AbstractNewsCrawlerService {
       for (const link of newsLinks) {
         const href = $(link).attr('href');
         if (href) {
-          const fullUrl = `${this.baseUrl}/layout/${yearMonth}/${day}/${href}`;
+          const fullUrl = `${this.getBaseUrl()}/layout/${yearMonth}/${day}/${href}`;
           
           try {
             const document = await this.getDocument(fullUrl);
@@ -70,26 +64,18 @@ export class JJRBCrawlerService extends AbstractNewsCrawlerService {
               const areaHref = doc$(area).attr('href');
               if (areaHref) {
                 const processedHref = this.processPrefix(areaHref);
-                urls.push(`${this.baseUrl}/${processedHref}`);
+                urls.push(`${this.getBaseUrl()}/${processedHref}`);
               }
             }
           } catch (error) {
-            this.logger.error(JSON.stringify({
-              category: 'HTTP_ERROR',
-              message: `Error fetching news list from URL: ${fullUrl}`,
-              url: fullUrl
-            }));
+            this.businessLogger.httpError(fullUrl, error);
           }
         }
       }
       
       return urls;
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'HTTP_ERROR',
-        message: `Error fetching news list from URL: ${indexUrl}`,
-        url: indexUrl
-      }));
+      this.businessLogger.httpError(indexUrl, error);
       return [];
     }
   }

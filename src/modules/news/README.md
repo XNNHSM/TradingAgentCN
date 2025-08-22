@@ -10,7 +10,8 @@
 - **🔄 智能去重**: 基于URL的新闻去重机制，避免重复存储
 - **📅 日期范围爬取**: 灵活指定起止日期进行批量采集
 - **⚡ 并发处理**: 多数据源并发爬取，大幅提升采集效率
-- **📊 详细反馈**: 提供每个数据源的爬取结果统计和错误信息
+- **🚀 异步执行**: 爬取任务后台执行，接口快速响应不阻塞
+- **📊 详细日志**: 完整记录爬取进度和结果，便于监控和调试
 - **🛡️ 错误容错**: 单个源失败不影响其他源的正常工作
 
 ## 📰 支持的新闻源
@@ -29,7 +30,7 @@
 
 **接口地址：** `POST /news/crawl`
 
-**功能描述：** 根据指定的日期范围和数据源批量爬取新闻数据，支持并发处理多个数据源。
+**功能描述：** 根据指定的日期范围和数据源启动新闻爬取任务。任务将在后台异步执行，接口立即返回启动成功状态。
 
 **请求参数：**
 ```typescript
@@ -58,36 +59,17 @@ Content-Type: application/json
   "code": 0,
   "message": "操作成功",
   "data": {
-    "totalCrawled": 156,
-    "sourceResults": [
-      {
-        "source": "jjrb",
-        "count": 45,
-        "success": true
-      },
-      {
-        "source": "xhmrdx", 
-        "count": 67,
-        "success": true
-      },
-      {
-        "source": "xwlb",
-        "count": 44,
-        "success": true
-      }
-    ]
+    "message": "新闻爬取任务已启动，正在后台执行"
   },
   "timestamp": "2025-08-21T10:30:00.000Z"
 }
 ```
 
-**响应字段说明：**
-- `totalCrawled`: 总共成功爬取的新闻数量
-- `sourceResults`: 各数据源的详细结果
-  - `source`: 数据源代码
-  - `count`: 该数据源爬取的新闻数量
-  - `success`: 是否成功
-  - `error`: 失败时的错误信息（可选）
+**响应说明：**
+- 接口立即返回成功状态，不等待爬取完成
+- 爬取任务在后台异步执行
+- 爬取进度和结果将通过日志记录
+- 爬取完成后数据会自动存储到数据库
 
 #### 2. 获取支持的数据源
 
@@ -305,27 +287,26 @@ import { NewsService } from './modules/news/news.service';
 export class MyService {
   constructor(private readonly newsService: NewsService) {}
 
-  // 爬取所有数据源的新闻（最近一周）
-  async crawlAllSources() {
-    const result = await this.newsService.crawlNewsWithSources({
+  // 启动爬取所有数据源的新闻任务（最近一周）
+  async startCrawlAllSources() {
+    this.newsService.startCrawlingTask({
       startDate: '2025-08-15',
       endDate: '2025-08-21'
       // sources 不传，默认爬取所有数据源
     });
     
-    console.log(`总共爬取: ${result.data.totalCrawled} 条新闻`);
-    return result;
+    console.log('新闻爬取任务已启动');
   }
 
-  // 爬取指定数据源的新闻
-  async crawlSpecificSources() {
-    const result = await this.newsService.crawlNewsWithSources({
+  // 启动指定数据源的新闻爬取任务
+  async startCrawlSpecificSources() {
+    this.newsService.startCrawlingTask({
       startDate: '2025-08-21',
       endDate: '2025-08-21',
       sources: ['jjrb', 'xhmrdx']
     });
     
-    return result;
+    console.log('指定数据源爬取任务已启动');
   }
 
   // 获取支持的数据源
@@ -369,17 +350,19 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 export class NewsScheduleService {
   constructor(private readonly newsService: NewsService) {}
 
-  // 每天早上8点自动爬取昨日新闻
+  // 每天早上8点自动启动昨日新闻爬取任务
   @Cron(CronExpression.EVERY_DAY_AT_8AM)
   async dailyNewsCrawl() {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = yesterday.toISOString().split('T')[0];
     
-    await this.newsService.crawlNewsWithSources({
+    this.newsService.startCrawlingTask({
       startDate: dateStr,
       endDate: dateStr
     });
+    
+    console.log(`已启动 ${dateStr} 的新闻爬取任务`);
   }
 }
 

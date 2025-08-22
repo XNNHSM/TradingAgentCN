@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { AbstractNewsCrawlerService, CrawlerHeaders } from '../interfaces/news-crawler.interface';
@@ -10,18 +9,16 @@ import { NewsRegion } from '../entities/raw-news.entity';
  */
 @Injectable()
 export class XWLBCrawlerService extends AbstractNewsCrawlerService {
-  private readonly logger = new Logger(XWLBCrawlerService.name);
-  private readonly baseUrl: string;
-  private readonly sourceCode: string;
-
-  constructor(private readonly configService: ConfigService) {
+  constructor() {
     super();
-    this.baseUrl = this.configService.get<string>('crawler.xwlb.baseUrl', '');
-    this.sourceCode = this.configService.get<string>('crawler.xwlb.code', 'xwlb');
+  }
+
+  getBaseUrl(): string {
+    return "https://tv.cctv.com/lm/xwlb/day";
   }
 
   getSourceCode(): string {
-    return this.sourceCode;
+    return 'xwlb';
   }
 
   getSourceName(): string {
@@ -46,24 +43,19 @@ export class XWLBCrawlerService extends AbstractNewsCrawlerService {
 
   async getTargetUrls(date: string): Promise<string[]> {
     const dateStr = date.replace(/-/g, ''); // 转换为 YYYYMMDD 格式
-    const listUrl = `${this.baseUrl}/${dateStr}.shtml`;
+    const listUrl = `${this.getBaseUrl()}/${dateStr}.shtml`;
     
-    this.logger.log(JSON.stringify({
-      category: 'HTTP_REQUEST',
-      message: `Fetching news list from URL: ${listUrl}`,
-      url: listUrl
-    }));
+    this.businessLogger.httpRequest('GET', listUrl, { date });
 
     try {
       const listDoc = await this.getDocument(listUrl);
       const $ = cheerio.load(listDoc);
       
       const newsLinks = $('li div a');
-      this.logger.log(JSON.stringify({
-        category: 'SERVICE_INFO',
-        message: `Found ${newsLinks.length} potential news links`,
-        url: ''
-      }));
+      this.businessLogger.serviceInfo(`Found ${newsLinks.length} potential news links`, { 
+        count: newsLinks.length,
+        date 
+      });
       
       const urls: string[] = [];
       
@@ -73,7 +65,7 @@ export class XWLBCrawlerService extends AbstractNewsCrawlerService {
           // 构建绝对URL
           let fullUrl = href;
           if (href.startsWith('/')) {
-            const urlObj = new URL(this.baseUrl);
+            const urlObj = new URL(this.getBaseUrl());
             fullUrl = `${urlObj.protocol}//${urlObj.host}${href}`;
           } else if (!href.startsWith('http')) {
             fullUrl = new URL(href, listUrl).href;
@@ -84,11 +76,7 @@ export class XWLBCrawlerService extends AbstractNewsCrawlerService {
       
       return urls;
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'HTTP_ERROR',
-        message: `Error fetching news list from URL: ${listUrl}`,
-        url: listUrl
-      }));
+      this.businessLogger.httpError(listUrl, error);
       return [];
     }
   }

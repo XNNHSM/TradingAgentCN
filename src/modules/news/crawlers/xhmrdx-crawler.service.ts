@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { AbstractNewsCrawlerService } from '../interfaces/news-crawler.interface';
@@ -10,18 +9,16 @@ import { NewsRegion } from '../entities/raw-news.entity';
  */
 @Injectable()
 export class XHMRDXCrawlerService extends AbstractNewsCrawlerService {
-  private readonly logger = new Logger(XHMRDXCrawlerService.name);
-  private readonly baseUrl: string;
-  private readonly sourceCode: string;
-
-  constructor(private readonly configService: ConfigService) {
+  constructor() {
     super();
-    this.baseUrl = this.configService.get<string>('crawler.xhmrdx.baseUrl', 'http://mrdx.cn');
-    this.sourceCode = this.configService.get<string>('crawler.xhmrdx.code', 'xhmrdx');
+  }
+
+  getBaseUrl(): string {
+    return 'http://mrdx.cn';
   }
 
   getSourceCode(): string {
-    return this.sourceCode;
+    return 'xhmrdx';
   }
 
   getSourceName(): string {
@@ -34,13 +31,9 @@ export class XHMRDXCrawlerService extends AbstractNewsCrawlerService {
 
   async getTargetUrls(date: string): Promise<string[]> {
     const dateStr = date.replace(/-/g, ''); // 转换为 YYYYMMDD 格式
-    const indexUrl = `${this.baseUrl}/content/${dateStr}/Page01DK.htm`;
+    const indexUrl = `${this.getBaseUrl()}/content/${dateStr}/Page01DK.htm`;
     
-    this.logger.log(JSON.stringify({
-      category: 'HTTP_REQUEST',
-      message: `Fetching news index from URL: ${indexUrl}`,
-      url: indexUrl
-    }));
+    this.businessLogger.httpRequest('GET', indexUrl, { date });
 
     try {
       const indexDoc = await this.getDocument(indexUrl);
@@ -52,17 +45,13 @@ export class XHMRDXCrawlerService extends AbstractNewsCrawlerService {
       for (const link of newsLinks) {
         const daoxiang = $(link).attr('daoxiang');
         if (daoxiang) {
-          urls.push(`${this.baseUrl}/content/${dateStr}/${daoxiang}`);
+          urls.push(`${this.getBaseUrl()}/content/${dateStr}/${daoxiang}`);
         }
       }
       
       return urls;
     } catch (error) {
-      this.logger.error(JSON.stringify({
-        category: 'HTTP_ERROR',
-        message: `Error fetching news list from URL: ${indexUrl}`,
-        url: indexUrl
-      }));
+      this.businessLogger.httpError(indexUrl, error);
       return [];
     }
   }

@@ -20,7 +20,7 @@ export class Result<T = any> {
     this.timestamp = new Date().toISOString();
   }
 
-  static success<T>(data: T, message = "操作成功"): Result<T> {
+  static success<T>(data?: T, message = "操作成功"): Result<T> {
     return new Result(0, data, message);
   }
 

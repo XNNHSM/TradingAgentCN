@@ -1,4 +1,5 @@
 import { RawNews, NewsRegion } from '../entities/raw-news.entity';
+import { BusinessLogger, LogCategory } from '../../../common/utils/business-logger.util';
 
 export interface NewsArticleData {
   title: string;
@@ -13,8 +14,15 @@ export interface CrawlerHeaders {
 
 export abstract class AbstractNewsCrawlerService {
   protected static readonly DELAY_MILLISECONDS = 1000;
+  protected readonly businessLogger: BusinessLogger;
+
+  constructor() {
+    this.businessLogger = new BusinessLogger(this.constructor.name);
+  }
 
   abstract getSourceCode(): string;
+
+  abstract getBaseUrl(): string;
   
   abstract getSourceName(): string;
   
@@ -73,7 +81,7 @@ export abstract class AbstractNewsCrawlerService {
         }
         await this.delay(AbstractNewsCrawlerService.DELAY_MILLISECONDS);
       } catch (error) {
-        console.error(`Error crawling news from ${url}:`, error);
+        this.businessLogger.businessError('爬取新闻数据', error, { url, date });
       }
     }
     
@@ -95,7 +103,10 @@ export abstract class AbstractNewsCrawlerService {
         results.push(...dayResults);
         await this.delay(AbstractNewsCrawlerService.DELAY_MILLISECONDS);
       } catch (error) {
-        console.error(`Error crawling ${this.getSourceName()} news for date: ${dateStr}`, error);
+        this.businessLogger.businessError('爬取新闻数据', error, { 
+          source: this.getSourceName(),
+          date: dateStr 
+        });
       }
     }
     
@@ -112,7 +123,7 @@ export abstract class AbstractNewsCrawlerService {
       const content = this.extractContent(document);
 
       if (!title || !content) {
-        console.warn(`Could not find title or content for URL: ${url}`);
+        this.businessLogger.warn(LogCategory.SERVICE_ERROR, 'Could not find title or content', url, { url });
         return null;
       }
 
@@ -127,13 +138,13 @@ export abstract class AbstractNewsCrawlerService {
       news.region = this.getRegion();
 
       if (this.shouldSkipNews(news)) {
-        console.debug(`Skipping news with title: ${news.title}`);
+        this.businessLogger.debug(LogCategory.SERVICE_INFO, `Skipping news with title: ${news.title}`);
         return null;
       }
 
       return news;
     } catch (error) {
-      console.error(`Error crawling news from URL: ${url}`, error);
+      this.businessLogger.businessError('爬取新闻内容', error, { url, date });
       return null;
     }
   }
