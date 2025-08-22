@@ -170,25 +170,6 @@ export abstract class BaseLLMAdapter {
     return modelInfo?.supportsFunctionCalling || false;
   }
 
-  /**
-   * 健康检查
-   */
-  async healthCheck(): Promise<boolean> {
-    if (!this.isAvailable()) {
-      return false;
-    }
-
-    try {
-      const response = await this.generate("健康检查测试", {
-        maxTokens: 10,
-        temperature: 0.1,
-      });
-      return response.length > 0;
-    } catch (error) {
-      this.logger.error(`健康检查失败: ${error.message}`);
-      return false;
-    }
-  }
 
   /**
    * 标准化消息格式

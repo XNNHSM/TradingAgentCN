@@ -32,10 +32,7 @@ describe("LLMService - 集成测试", () => {
   });
 
   afterEach(() => {
-    // 清理定时器以避免Jest警告
-    if (service && (service as any).healthCheckTimer) {
-      clearInterval((service as any).healthCheckTimer);
-    }
+    // 清理资源以避免Jest警告
   });
 
   it("should be defined", () => {
@@ -248,10 +245,6 @@ describe("LLMService - 集成测试", () => {
       expect(Array.isArray(status)).toBe(true);
     });
 
-    it("应该能够手动触发健康检查", async () => {
-      const result = await service.triggerHealthCheck();
-      expect(result).toBeInstanceOf(Map);
-    });
   });
 
   describe("接口兼容性测试", () => {

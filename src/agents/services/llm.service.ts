@@ -38,7 +38,6 @@ interface LLMServiceConfig {
   enableFallback: boolean;
   maxRetries: number;
   retryDelay: number;
-  healthCheckInterval: number;
 }
 
 /**
@@ -47,7 +46,6 @@ interface LLMServiceConfig {
 interface ProviderStatus {
   name: string;
   available: boolean;
-  lastHealthCheck: Date;
   consecutiveFailures: number;
   totalRequests: number;
   totalFailures: number;
@@ -60,7 +58,6 @@ export class LLMService implements OnModuleInit {
   private adapters = new Map<string, BaseLLMAdapter>();
   private providerStats = new Map<string, ProviderStatus>();
   private config: LLMServiceConfig;
-  private healthCheckTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly configService: ConfigService,
@@ -71,7 +68,6 @@ export class LLMService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.initializeAdapters();
-    this.startHealthChecking();
   }
 
   /**
@@ -93,10 +89,6 @@ export class LLMService implements OnModuleInit {
       ),
       maxRetries: this.configService.get<number>("LLM_MAX_RETRIES", 3),
       retryDelay: this.configService.get<number>("LLM_RETRY_DELAY", 1000),
-      healthCheckInterval: this.configService.get<number>(
-        "LLM_HEALTH_CHECK_INTERVAL",
-        300000,
-      ), // 5分钟
     };
 
     this.logger.log(
@@ -135,7 +127,6 @@ export class LLMService implements OnModuleInit {
     this.providerStats.set(adapter.name, {
       name: adapter.name,
       available: adapter.isAvailable(),
-      lastHealthCheck: new Date(),
       consecutiveFailures: 0,
       totalRequests: 0,
       totalFailures: 0,
@@ -324,51 +315,6 @@ export class LLMService implements OnModuleInit {
     }
   }
 
-  /**
-   * 开始健康检查
-   */
-  private startHealthChecking(): void {
-    if (this.config.healthCheckInterval <= 0) {
-      return;
-    }
-
-    this.healthCheckTimer = setInterval(() => {
-      this.performHealthChecks();
-    }, this.config.healthCheckInterval);
-
-    this.logger.log(
-      `已启动LLM健康检查，间隔: ${this.config.healthCheckInterval}ms`,
-    );
-  }
-
-  /**
-   * 执行健康检查
-   */
-  private async performHealthChecks(): Promise<void> {
-    const promises = Array.from(this.adapters.entries()).map(
-      async ([name, adapter]) => {
-        try {
-          const isHealthy = await adapter.healthCheck();
-          const stats = this.providerStats.get(name)!;
-          stats.available = isHealthy;
-          stats.lastHealthCheck = new Date();
-
-          if (!isHealthy) {
-            this.logger.warn(`提供商 ${name} 健康检查失败`);
-          }
-        } catch (error) {
-          this.logger.error(
-            `提供商 ${name} 健康检查异常: ${error.message}`,
-          );
-          const stats = this.providerStats.get(name)!;
-          stats.available = false;
-          stats.lastHealthCheck = new Date();
-        }
-      },
-    );
-
-    await Promise.allSettled(promises);
-  }
 
   /**
    * 批量生成文本
@@ -455,37 +401,10 @@ export class LLMService implements OnModuleInit {
   }
 
   /**
-   * 手动触发健康检查
-   */
-  async triggerHealthCheck(): Promise<Map<string, boolean>> {
-    const results = new Map<string, boolean>();
-    
-    const promises = Array.from(this.adapters.entries()).map(
-      async ([name, adapter]) => {
-        try {
-          const isHealthy = await adapter.healthCheck();
-          results.set(name, isHealthy);
-          
-          const stats = this.providerStats.get(name)!;
-          stats.available = isHealthy;
-          stats.lastHealthCheck = new Date();
-        } catch (error) {
-          results.set(name, false);
-        }
-      },
-    );
-
-    await Promise.allSettled(promises);
-    return results;
-  }
-
-  /**
    * 清理资源
    */
   async onModuleDestroy(): Promise<void> {
-    if (this.healthCheckTimer) {
-      clearInterval(this.healthCheckTimer);
-    }
+    // 清理其他资源
   }
 
   /**

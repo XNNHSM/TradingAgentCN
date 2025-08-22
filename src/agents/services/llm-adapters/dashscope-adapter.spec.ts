@@ -205,18 +205,4 @@ describe("DashScopeAdapter", () => {
     });
   });
 
-  describe("健康检查", () => {
-    it("应该正确执行健康检查", async () => {
-      if (!process.env.DASHSCOPE_API_KEY) {
-        console.log("⚠️ 跳过健康检查测试：未设置DASHSCOPE_API_KEY");
-        return;
-      }
-
-      const isHealthy = await adapter.healthCheck();
-      console.log("健康检查结果:", isHealthy);
-
-      // 健康检查结果取决于API可用性
-      expect(typeof isHealthy).toBe("boolean");
-    }, 15000);
-  });
 });

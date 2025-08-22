@@ -214,18 +214,6 @@ describe("LLM适配器架构集成测试", () => {
       console.log("✓ 错误处理验证通过");
     });
 
-    it("✅ 健康检查应该正常工作", async () => {
-      const healthResults = await llmService.triggerHealthCheck();
-      
-      expect(healthResults).toBeInstanceOf(Map);
-      expect(healthResults.has("dashscope")).toBe(true);
-      
-      const dashscopeHealth = healthResults.get("dashscope");
-      expect(typeof dashscopeHealth).toBe("boolean");
-      
-      console.log("✓ 健康检查验证通过");
-      console.log("健康检查结果:", Array.from(healthResults.entries()));
-    }, 20000);
   });
 
   describe("📊 性能和统计", () => {
@@ -251,7 +239,7 @@ describe("LLM适配器架构集成测试", () => {
       const dashscopeStatus = providerStatus.find(s => s.name === "dashscope");
       expect(dashscopeStatus).toBeDefined();
       expect(dashscopeStatus!.totalRequests).toBeGreaterThanOrEqual(0);
-      expect(dashscopeStatus!.lastHealthCheck).toBeInstanceOf(Date);
+      expect(dashscopeStatus!.totalRequests).toBeGreaterThanOrEqual(0);
       
       console.log("✓ 提供商状态跟踪验证通过");
       console.log("DashScope状态:", JSON.stringify(dashscopeStatus, null, 2));
@@ -316,7 +304,6 @@ describe("LLM适配器架构集成测试", () => {
       expect(typeof llmService.getAllSupportedModels).toBe("function");
       expect(typeof llmService.getProviderStatus).toBe("function");
       expect(typeof llmService.getServiceStats).toBe("function");
-      expect(typeof llmService.triggerHealthCheck).toBe("function");
       
       console.log("✓ 接口完整性验证通过");
     });
