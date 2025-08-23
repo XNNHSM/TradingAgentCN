@@ -87,6 +87,12 @@ npm test -- src/agents/base/base-agent.spec.ts
 
 # 运行LLM服务测试
 npm test -- src/agents/services/llm.service.spec.ts
+
+# 运行新闻定时任务测试
+npm test -- src/modules/news/services/news-scheduler.service.spec.ts
+
+# 运行新闻摘要实体测试
+npm test -- src/modules/news/entities/news-summary.entity.spec.ts
 ```
 
 ⚠️ **MCP测试重要说明**:
@@ -177,8 +183,12 @@ src/
     │   │   └── xwlb-crawler.service.ts  # 新闻联播爬虫
     │   ├── dto/         # 新闻相关DTOs
     │   ├── entities/    # 新闻实体类
+    │   │   ├── raw-news.entity.ts      # 原始新闻数据实体
+    │   │   └── news-summary.entity.ts  # 新闻摘要实体
     │   ├── factories/   # 爬虫工厂
     │   ├── interfaces/  # 爬虫接口定义
+    │   ├── services/    # 新闻相关服务
+    │   │   └── news-scheduler.service.ts # 新闻定时任务服务
     │   ├── news.controller.ts
     │   ├── news.module.ts
     │   └── news.service.ts
@@ -638,16 +648,16 @@ this.businessLogger.apiCall("POST", "/api/news/crawl", {
 - **异步处理**: 后台爬取任务，不阻塞API响应
 - **日期范围爬取**: 支持指定起止日期的批量采集
 - **容错性**: 单条新闻获取失败不影响其他新闻的保存
+- **定时任务**: 每天凌晨1点自动爬取前一天的新闻数据
 
-**新闻数据字段**:
-- 新闻标题(title)
-- 新闻正文(content)
-- 原文链接(url)
-- 数据源代码(sourceCode)
-- 数据源名称(sourceName)
-- 新闻日期(newsDate)
-- 分析状态(analyzed)
-- 地域标记(region)
+**数据库实体**:
+- **原始新闻数据(RawNews)**: 存储爬取的完整新闻信息
+  - 新闻标题(title)、新闻正文(content)、原文链接(url)
+  - 数据源代码(sourceCode)、数据源名称(sourceName)
+  - 新闻日期(newsDate)、分析状态(analyzed)、地域标记(region)
+- **新闻摘要数据(NewsSummary)**: 存储AI生成的新闻摘要
+  - 新闻ID(newsId)、新闻标题(title)、新闻摘要(summary)
+  - 新闻内容日期(newsDate)、一对一关联原始新闻
 
 #### 实时落盘机制设计
 
@@ -683,9 +693,56 @@ crawlNewsRange(startDate: string, endDate: string, saveNewsCallback?: (news: Raw
 - **实时反馈**: 可以立即看到爬取和保存的进度
 - **性能稳定**: 降低因批量保存导致的数据库压力峰值
 
+#### 新闻定时任务系统
+
+**定时调度服务(NewsSchedulerService)**:
+- **执行时间**: 每天凌晨1点（中国时区）
+- **Cron表达式**: `'0 1 * * *'`
+- **任务范围**: 自动爬取前一天所有支持数据源的新闻
+
+**核心特性**:
+- **自动化执行**: 无需人工干预，系统自动完成每日新闻采集
+- **智能日期计算**: 自动获取前一天日期（YYYY-MM-dd格式）
+- **多数据源支持**: 遍历所有支持的新闻源进行爬取
+- **请求频率控制**: 数据源间添加2秒延迟，避免过于频繁请求
+- **详细执行日志**: 完整记录爬取过程、成功数量、失败原因
+- **异常容错处理**: 单个数据源失败不影响其他数据源爬取
+
+**手动执行功能**:
+```typescript
+// 手动触发昨日新闻爬取（用于测试或补漏）
+async triggerYesterdayNewsCrawl(): Promise<{
+  success: boolean;
+  message: string;
+  results: Record<string, number>;
+}>
+```
+
+**任务监控功能**:
+```typescript
+// 获取定时任务状态和下次运行时间
+getScheduleStatus(): {
+  taskName: string;
+  cronExpression: string;
+  timeZone: string; 
+  description: string;
+  nextRunDate?: string;
+}
+```
+
+**执行统计信息**:
+- 成功爬取的数据源数量
+- 失败的数据源及错误信息  
+- 每个数据源获取的新闻条数
+- 总执行时间和完成状态
+
 ## 📝 关键文件
 - `src/main.ts`: 应用启动入口
 - `src/app.module.ts`: 根模块配置
 - `src/common/entities/base.entity.ts`: 包含标准字段的基础实体
 - `src/common/dto/result.dto.ts`: 标准化API响应格式
+- `src/modules/news/entities/news-summary.entity.ts`: 新闻摘要实体
+- `src/modules/news/services/news-scheduler.service.ts`: 新闻定时任务服务
+- `src/modules/analysis/analysis.controller.ts`: 简化后的分析控制器（仅股票分析接口）
+- `src/agents/unified/unified-orchestrator.service.ts`: MCP统一智能体协调服务
 - `prompt_templates.md`: AI智能体提示词模板

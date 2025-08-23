@@ -6,7 +6,7 @@ import { AnalysisService } from "./analysis.service";
 import { AnalysisRecord } from "./entities/analysis-record.entity";
 
 /**
- * 分析模块 - 提供智能体分析服务
+ * 分析模块 - 基于MCP统一智能体的股票分析服务
  */
 @Module({
   imports: [TypeOrmModule.forFeature([AnalysisRecord]), AgentsModule],
