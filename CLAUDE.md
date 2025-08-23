@@ -494,11 +494,19 @@ this.businessLogger.apiCall("POST", "/api/news/crawl", {
 ```
 
 **重要特性**:
-- **自动格式化**: 所有日志自动转换为标准JSON格式
+- **简洁格式**: 使用易读的文本格式，不使用JSON格式
 - **敏感信息过滤**: 自动隐藏API密钥、Authorization等敏感请求头
 - **简化调用**: 提供 `debug(message)`, `warn(message)` 等简化方法
 - **上下文支持**: 可选的context参数用于记录额外信息
 - **错误堆栈**: 自动提取Error对象的message和stack信息
+
+**日志格式示例**:
+```
+[SERVICE_INFO] 服务已启动
+[HTTP_REQUEST] HTTP请求 GET https://example.com | Context: params={"date":"2025-08-16"}
+[HTTP_RESPONSE] HTTP响应 200 | Duration: 1200ms
+[SERVICE_ERROR] 业务操作失败: 爬取新闻数据 | Error: 网络连接超时
+```
 
 ### 安全最佳实践
 - 永远不要在代码中暴露API密钥或机密信息
@@ -625,9 +633,11 @@ this.businessLogger.apiCall("POST", "/api/news/crawl", {
 ### 4. 新闻爬虫模块
 - **抽象工厂模式**: 支持灵活扩展不同新闻数据源
 - **当前数据源**: 新闻联播(央视权威新闻发布平台)
+- **实时落盘机制**: 每获取一条新闻立即保存，避免批量处理时数据丢失风险
 - **智能去重**: 基于URL的新闻去重机制
 - **异步处理**: 后台爬取任务，不阻塞API响应
 - **日期范围爬取**: 支持指定起止日期的批量采集
+- **容错性**: 单条新闻获取失败不影响其他新闻的保存
 
 **新闻数据字段**:
 - 新闻标题(title)
@@ -638,6 +648,40 @@ this.businessLogger.apiCall("POST", "/api/news/crawl", {
 - 新闻日期(newsDate)
 - 分析状态(analyzed)
 - 地域标记(region)
+
+#### 实时落盘机制设计
+
+**架构原理**:
+```
+爬取URL → 解析新闻内容 → 立即执行保存回调 → 继续下一条
+            ↓
+      [实时数据库保存]
+       - 重复性检查
+       - 数据验证
+       - 事务保证
+```
+
+**核心特性**:
+- **即时保存**: 每获取一条新闻立即调用`saveNewsCallback`进行落盘
+- **异常隔离**: 单条新闻保存失败不影响其他新闻的获取和保存
+- **数据一致性**: 保持原有的URL重复性检查机制
+- **回滚安全**: 数据库事务确保保存的原子性
+- **详细日志**: 每次保存操作都有相应的日志记录
+
+**方法签名**:
+```typescript
+// 单日新闻爬取
+crawlNews(date: string, saveNewsCallback?: (news: RawNews) => Promise<void>): Promise<RawNews[]>
+
+// 日期范围新闻爬取  
+crawlNewsRange(startDate: string, endDate: string, saveNewsCallback?: (news: RawNews) => Promise<void>): Promise<RawNews[]>
+```
+
+**使用优势**:
+- **容错性**: 网络异常或程序中断时已保存的数据不会丢失
+- **内存优化**: 避免在内存中累积大量新闻数据
+- **实时反馈**: 可以立即看到爬取和保存的进度
+- **性能稳定**: 降低因批量保存导致的数据库压力峰值
 
 ## 📝 关键文件
 - `src/main.ts`: 应用启动入口

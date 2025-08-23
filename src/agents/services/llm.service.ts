@@ -3,7 +3,8 @@
  * 支持多适配器架构，具备更好的扩展性和错误处理
  */
 
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Injectable, OnModuleInit } from "@nestjs/common";
+import { BusinessLogger, LogCategory } from "../../common/utils/business-logger.util";
 import { ConfigService } from "@nestjs/config";
 import {
   BaseLLMAdapter,
@@ -54,7 +55,7 @@ interface ProviderStatus {
 
 @Injectable()
 export class LLMService implements OnModuleInit {
-  private readonly logger = new Logger(LLMService.name);
+  private readonly businessLogger = new BusinessLogger(LLMService.name);
   private adapters = new Map<string, BaseLLMAdapter>();
   private providerStats = new Map<string, ProviderStatus>();
   private config: LLMServiceConfig;
@@ -91,10 +92,10 @@ export class LLMService implements OnModuleInit {
       retryDelay: this.configService.get<number>("LLM_RETRY_DELAY", 1000),
     };
 
-    this.logger.log(
+    this.businessLogger.serviceInfo(
       `LLM服务配置: 主提供商=${this.config.primaryProvider}, ` +
         `后备提供商=[${this.config.fallbackProviders.join(",")}], ` +
-        `启用后备=${this.config.enableFallback}`,
+        `启用后备=${this.config.enableFallback}`
     );
   }
 
@@ -110,13 +111,14 @@ export class LLMService implements OnModuleInit {
         await adapter.initialize();
         this.registerAdapter(adapter);
       } catch (error) {
-        this.logger.error(
-          `适配器 ${adapter.name} 初始化失败: ${error.message}`,
+        this.businessLogger.serviceError(
+          `适配器 ${adapter.name} 初始化失败`,
+          error
         );
       }
     }
 
-    this.logger.log(`已注册 ${this.adapters.size} 个LLM适配器`);
+    this.businessLogger.serviceInfo(`已注册 ${this.adapters.size} 个LLM适配器`);
   }
 
   /**
@@ -133,8 +135,8 @@ export class LLMService implements OnModuleInit {
       averageResponseTime: 0,
     });
 
-    this.logger.log(
-      `已注册LLM适配器: ${adapter.name} (可用: ${adapter.isAvailable()})`,
+    this.businessLogger.serviceInfo(
+      `已注册LLM适配器: ${adapter.name} (可用: ${adapter.isAvailable()})`
     );
   }
 
@@ -225,8 +227,8 @@ export class LLMService implements OnModuleInit {
         lastError = error;
         this.updateProviderStats(providerName, 0, true);
         
-        this.logger.warn(
-          `提供商 ${providerName} 调用失败: ${error.message}`,
+        this.businessLogger.warn(
+          `提供商 ${providerName} 调用失败: ${error.message}`
         );
 
         // 如果不是主提供商且启用了后备，继续尝试下一个
@@ -263,8 +265,8 @@ export class LLMService implements OnModuleInit {
         
         if (attempt < this.config.maxRetries) {
           const delay = this.config.retryDelay * Math.pow(2, attempt - 1);
-          this.logger.debug(
-            `${adapter.name} 重试 ${attempt}/${this.config.maxRetries}，等待 ${delay}ms`,
+          this.businessLogger.debug(
+            `${adapter.name} 重试 ${attempt}/${this.config.maxRetries}，等待 ${delay}ms`
           );
           await this.sleep(delay);
         }
@@ -336,8 +338,9 @@ export class LLMService implements OnModuleInit {
         if (result.status === "fulfilled") {
           results.push(result.value);
         } else {
-          this.logger.error(
-            `批量生成第 ${i + index} 个请求失败: ${result.reason}`,
+          this.businessLogger.serviceError(
+            `批量生成第 ${i + index} 个请求失败`,
+            result.reason
           );
           // 添加错误响应
           results.push({

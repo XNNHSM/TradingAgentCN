@@ -193,49 +193,44 @@ export class NewsService {
       }
       
       const crawler = this.newsCrawlerFactory.createCrawler(source);
-      const newsItems = await crawler.crawlNews(date);
-      
-      if (newsItems.length === 0) {
-        this.businessLogger.serviceInfo(`No news found for ${source} on ${date}`, { source, date });
-        return Result.success([]);
-      }
-      
-      // 保存新闻到数据库
       const savedNews: RawNews[] = [];
-      for (const newsItem of newsItems) {
-        try {
-          // 检查是否已存在相同URL的新闻
-          const existing = await this.rawNewsRepository.findOne({ 
-            where: { url: newsItem.url } 
-          });
+      
+      // 创建保存回调函数，在每获取一条新闻后立即落盘
+      const saveNewsCallback = async (newsItem: RawNews): Promise<void> => {
+        // 检查是否已存在相同URL的新闻
+        const existing = await this.rawNewsRepository.findOne({ 
+          where: { url: newsItem.url } 
+        });
+        
+        if (!existing) {
+          // 转换为 CreateNewsDto 并调用 create 方法
+          const createDto = this.convertToCreateDto(newsItem);
+          const createResult = await this.create(createDto);
           
-          if (!existing) {
-            // 转换为 CreateNewsDto 并调用 create 方法
-            const createDto = this.convertToCreateDto(newsItem);
-            const createResult = await this.create(createDto);
-            
-            if (createResult.code === 0) {
-              savedNews.push(createResult.data);
-            } else {
-              this.businessLogger.serviceError(`Failed to create news: ${newsItem.title}`, undefined, {
-                url: newsItem.url,
-                title: newsItem.title,
-                error: createResult.message
-              });
-            }
+          if (createResult.code === 0) {
+            savedNews.push(createResult.data);
+            this.businessLogger.debug(`Immediately saved news: ${newsItem.title}`);
           } else {
-            this.businessLogger.debug(`News already exists, skipping: ${newsItem.title}`);
+            this.businessLogger.serviceError(`Failed to create news: ${newsItem.title}`, undefined, {
+              url: newsItem.url,
+              title: newsItem.title,
+              error: createResult.message,
+              source,
+              date
+            });
+            throw new Error(`Failed to save news: ${createResult.message}`);
           }
-        } catch (error) {
-          this.businessLogger.serviceError(`Error saving news: ${newsItem.title}`, error, { 
-            url: newsItem.url,
-            title: newsItem.title 
-          });
+        } else {
+          this.businessLogger.debug(`News already exists, skipping: ${newsItem.title}`);
         }
-      }
+      };
+      
+      // 使用回调函数进行实时落盘的爬取
+      const newsItems = await crawler.crawlNews(date, saveNewsCallback);
       
       this.businessLogger.serviceInfo(`Crawled and saved ${savedNews.length} news items from ${source}`, {
         count: savedNews.length,
+        totalCrawled: newsItems.length,
         source,
         date
       });
@@ -257,53 +252,44 @@ export class NewsService {
       }
       
       const crawler = this.newsCrawlerFactory.createCrawler(source);
-      const newsItems = await crawler.crawlNewsRange(startDate, endDate);
-      
-      if (newsItems.length === 0) {
-        this.businessLogger.serviceInfo(`No news found for ${source} between ${startDate} and ${endDate}`, {
-          source,
-          startDate,
-          endDate
-        });
-        return Result.success([]);
-      }
-      
-      // 保存新闻到数据库
       const savedNews: RawNews[] = [];
-      for (const newsItem of newsItems) {
-        try {
-          // 检查是否已存在相同URL的新闻
-          const existing = await this.rawNewsRepository.findOne({ 
-            where: { url: newsItem.url } 
-          });
+      
+      // 创建保存回调函数，在每获取一条新闻后立即落盘
+      const saveNewsCallback = async (newsItem: RawNews): Promise<void> => {
+        // 检查是否已存在相同URL的新闻
+        const existing = await this.rawNewsRepository.findOne({ 
+          where: { url: newsItem.url } 
+        });
+        
+        if (!existing) {
+          // 转换为 CreateNewsDto 并调用 create 方法
+          const createDto = this.convertToCreateDto(newsItem);
+          const createResult = await this.create(createDto);
           
-          if (!existing) {
-            // 转换为 CreateNewsDto 并调用 create 方法
-            const createDto = this.convertToCreateDto(newsItem);
-            const createResult = await this.create(createDto);
-            
-            if (createResult.code === 0) {
-              savedNews.push(createResult.data);
-            } else {
-              this.businessLogger.serviceError(`Failed to create news: ${newsItem.title}`, undefined, {
-                url: newsItem.url,
-                title: newsItem.title,
-                error: createResult.message
-              });
-            }
+          if (createResult.code === 0) {
+            savedNews.push(createResult.data);
+            this.businessLogger.debug(`Immediately saved news: ${newsItem.title}`);
           } else {
-            this.businessLogger.debug(`News already exists, skipping: ${newsItem.title}`);
+            this.businessLogger.serviceError(`Failed to create news: ${newsItem.title}`, undefined, {
+              url: newsItem.url,
+              title: newsItem.title,
+              error: createResult.message,
+              source,
+              date: newsItem.newsDate
+            });
+            throw new Error(`Failed to save news: ${createResult.message}`);
           }
-        } catch (error) {
-          this.businessLogger.serviceError(`Error saving news: ${newsItem.title}`, error, { 
-            url: newsItem.url,
-            title: newsItem.title 
-          });
+        } else {
+          this.businessLogger.debug(`News already exists, skipping: ${newsItem.title}`);
         }
-      }
+      };
+      
+      // 使用回调函数进行实时落盘的爬取
+      const newsItems = await crawler.crawlNewsRange(startDate, endDate, saveNewsCallback);
       
       this.businessLogger.serviceInfo(`Crawled and saved ${savedNews.length} news items from ${source} (${startDate} to ${endDate})`, {
         count: savedNews.length,
+        totalCrawled: newsItems.length,
         source,
         startDate,
         endDate

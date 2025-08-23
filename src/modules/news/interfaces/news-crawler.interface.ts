@@ -1,6 +1,9 @@
 import { RawNews, NewsRegion } from '../entities/raw-news.entity';
 import { BusinessLogger, LogCategory } from '../../../common/utils/business-logger.util';
 
+/**
+ * 新闻文章数据接口
+ */
 export interface NewsArticleData {
   title: string;
   content: string;
@@ -8,10 +11,24 @@ export interface NewsArticleData {
   newsDate: string;
 }
 
+/**
+ * 爬虫请求头接口
+ */
 export interface CrawlerHeaders {
   [key: string]: string;
 }
 
+/**
+ * 抽象新闻爬虫服务类
+ * 
+ * 提供新闻爬取的基础功能和通用方法，支持实时落盘机制。
+ * 
+ * 核心特性:
+ * - 实时落盘: 通过可选的saveNewsCallback参数，支持每获取一条新闻立即保存
+ * - 容错性: 单条新闻获取失败不影响其他新闻的处理
+ * - 异常隔离: 保存失败的新闻不会中断整个爬取流程  
+ * - 统一日志: 使用BusinessLogger进行统一的日志记录
+ */
 export abstract class AbstractNewsCrawlerService {
   protected static readonly DELAY_MILLISECONDS = 1000;
   protected readonly businessLogger: BusinessLogger;
@@ -68,8 +85,11 @@ export abstract class AbstractNewsCrawlerService {
 
   /**
    * 爬取指定日期的新闻
+   * @param date 爬取日期，格式: YYYY-MM-dd
+   * @param saveNewsCallback 可选的保存回调函数，用于实时落盘每条获取到的新闻
+   * @returns 爬取到的新闻列表
    */
-  async crawlNews(date: string): Promise<RawNews[]> {
+  async crawlNews(date: string, saveNewsCallback?: (news: RawNews) => Promise<void>): Promise<RawNews[]> {
     const results: RawNews[] = [];
     const targetUrls = await this.getTargetUrls(date);
     
@@ -77,6 +97,19 @@ export abstract class AbstractNewsCrawlerService {
       try {
         const news = await this.crawlNewsFromUrl(url, date);
         if (news) {
+          // 如果提供了保存回调，立即保存新闻
+          if (saveNewsCallback) {
+            try {
+              await saveNewsCallback(news);
+              this.businessLogger.debug(`Successfully saved news: ${news.title}`);
+            } catch (saveError) {
+              this.businessLogger.businessError('保存新闻数据', saveError, { 
+                url: news.url, 
+                title: news.title,
+                date 
+              });
+            }
+          }
           results.push(news);
         }
         await this.delay(AbstractNewsCrawlerService.DELAY_MILLISECONDS);
@@ -90,8 +123,12 @@ export abstract class AbstractNewsCrawlerService {
 
   /**
    * 爬取指定日期范围的新闻
+   * @param startDate 开始日期，格式: YYYY-MM-dd
+   * @param endDate 结束日期，格式: YYYY-MM-dd
+   * @param saveNewsCallback 可选的保存回调函数，用于实时落盘每条获取到的新闻
+   * @returns 爬取到的新闻列表
    */
-  async crawlNewsRange(startDate: string, endDate: string): Promise<RawNews[]> {
+  async crawlNewsRange(startDate: string, endDate: string, saveNewsCallback?: (news: RawNews) => Promise<void>): Promise<RawNews[]> {
     const results: RawNews[] = [];
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -99,7 +136,7 @@ export abstract class AbstractNewsCrawlerService {
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
       const dateStr = date.toISOString().split('T')[0];
       try {
-        const dayResults = await this.crawlNews(dateStr);
+        const dayResults = await this.crawlNews(dateStr, saveNewsCallback);
         results.push(...dayResults);
         await this.delay(AbstractNewsCrawlerService.DELAY_MILLISECONDS);
       } catch (error) {
@@ -123,7 +160,7 @@ export abstract class AbstractNewsCrawlerService {
       const content = this.extractContent(document);
 
       if (!title || !content) {
-        this.businessLogger.warn(LogCategory.SERVICE_ERROR, 'Could not find title or content', url, { url });
+        this.businessLogger.warn(LogCategory.SERVICE_ERROR, 'Could not find title or content', url, { title, content, url });
         return null;
       }
 

@@ -143,12 +143,12 @@ export class BusinessLogger {
     params?: Record<string, any>,
     headers?: Record<string, string>
   ): void {
-    this.info(LogCategory.API_CALL, JSON.stringify({
-      method,
-      url,
-      params,
-      headers: this.sanitizeHeaders(headers),
-    }), url);
+    const message = `API调用 ${method} ${url}`;
+    const context = {
+      ...(params && { params }),
+      ...(headers && { headers: this.sanitizeHeaders(headers) })
+    };
+    this.info(LogCategory.API_CALL, message, url, context);
   }
 
   /**
@@ -160,11 +160,12 @@ export class BusinessLogger {
     data?: any,
     duration?: string
   ): void {
-    this.info(LogCategory.API_SUCCESS, JSON.stringify({
-      status,
-      data,
-      duration,
-    }), url);
+    const message = `API调用成功 ${status}`;
+    const context = {
+      ...(data && { data }),
+      ...(duration && { duration })
+    };
+    this.info(LogCategory.API_SUCCESS, message, url, context);
   }
 
   /**
@@ -176,14 +177,12 @@ export class BusinessLogger {
     status?: number,
     duration?: string
   ): void {
-    const errorMessage = error instanceof Error ? error.message : error;
-    const errorStack = error instanceof Error ? error.stack : undefined;
-
-    this.error(LogCategory.API_ERROR, JSON.stringify({
-      status,
-      error: errorMessage,
-      duration,
-    }), error, url);
+    const message = `API调用失败${status ? ` ${status}` : ''}`;
+    const context = {
+      ...(status && { status }),
+      ...(duration && { duration })
+    };
+    this.error(LogCategory.API_ERROR, message, error, url, context);
   }
 
   /**
@@ -195,12 +194,12 @@ export class BusinessLogger {
     params?: Record<string, any>,
     headers?: Record<string, string>
   ): void {
-    this.info(LogCategory.HTTP_REQUEST, JSON.stringify({
-      method,
-      url,
-      params,
-      headers: this.sanitizeHeaders(headers),
-    }), url);
+    const message = `HTTP请求 ${method} ${url}`;
+    const context = {
+      ...(params && { params }),
+      ...(headers && { headers: this.sanitizeHeaders(headers) })
+    };
+    this.info(LogCategory.HTTP_REQUEST, message, url, context);
   }
 
   /**
@@ -212,11 +211,12 @@ export class BusinessLogger {
     data?: any,
     duration?: string
   ): void {
-    this.info(LogCategory.HTTP_RESPONSE, JSON.stringify({
-      status,
-      data,
-      duration,
-    }), url);
+    const message = `HTTP响应 ${status}`;
+    const context = {
+      ...(data && { data }),
+      ...(duration && { duration })
+    };
+    this.info(LogCategory.HTTP_RESPONSE, message, url, context);
   }
 
   /**
@@ -228,11 +228,12 @@ export class BusinessLogger {
     status?: number,
     duration?: string
   ): void {
-    this.error(LogCategory.HTTP_ERROR, JSON.stringify({
-      status,
-      error: error instanceof Error ? error.message : error,
-      duration,
-    }), error, url);
+    const message = `HTTP请求失败${status ? ` ${status}` : ''}`;
+    const context = {
+      ...(status && { status }),
+      ...(duration && { duration })
+    };
+    this.error(LogCategory.HTTP_ERROR, message, error, url, context);
   }
 
   /**
@@ -243,11 +244,8 @@ export class BusinessLogger {
     error: Error | string,
     context?: Record<string, any>
   ): void {
-    this.error(LogCategory.BUSINESS_ERROR, JSON.stringify({
-      operation,
-      error: error instanceof Error ? error.message : error,
-      ...context,
-    }), error);
+    const message = `业务操作失败: ${operation}`;
+    this.error(LogCategory.BUSINESS_ERROR, message, error, '', context);
   }
 
   /**
@@ -268,17 +266,31 @@ export class BusinessLogger {
    * 统一日志记录方法
    */
   public log(level: LogLevel, data: BusinessLogData): void {
-    const logData = {
-      category: data.category,
-      message: data.message,
-      url: data.url || '',
-      ...(data.context && { context: data.context }),
-      ...(data.duration && { duration: data.duration }),
-      ...(data.error && { error: data.error }),
-      ...(data.stack && { stack: data.stack }),
-    };
-
-    const logMessage = JSON.stringify(logData);
+    // 构建简单的日志消息，不使用JSON格式
+    let logMessage = `[${data.category}] ${data.message}`;
+    
+    // 添加URL信息
+    if (data.url) {
+      logMessage += ` | URL: ${data.url}`;
+    }
+    
+    // 添加持续时间
+    if (data.duration) {
+      logMessage += ` | Duration: ${data.duration}`;
+    }
+    
+    // 添加错误信息
+    if (data.error) {
+      logMessage += ` | Error: ${data.error}`;
+    }
+    
+    // 添加上下文信息（简化格式）
+    if (data.context && Object.keys(data.context).length > 0) {
+      const contextStr = Object.entries(data.context)
+        .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+        .join(', ');
+      logMessage += ` | Context: ${contextStr}`;
+    }
 
     switch (level) {
       case LogLevel.DEBUG:
@@ -288,7 +300,11 @@ export class BusinessLogger {
         this.logger.warn(logMessage);
         break;
       case LogLevel.ERROR:
-        this.logger.error(logMessage);
+        if (data.stack) {
+          this.logger.error(logMessage + `\nStack: ${data.stack}`);
+        } else {
+          this.logger.error(logMessage);
+        }
         break;
       case LogLevel.INFO:
       default:
