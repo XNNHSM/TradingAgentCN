@@ -8,6 +8,7 @@ import {
 } from "../interfaces/agent.interface";
 import { LLMService } from "../services/llm.service";
 import { MCPClientService } from "../services/mcp-client.service";
+import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
 
 /**
  * 综合分析师智能体
@@ -20,6 +21,7 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
     llmService: LLMService,
     configService: ConfigService,
     private readonly mcpClient: MCPClientService,
+    executionRecordService: AgentExecutionRecordService,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
@@ -90,6 +92,7 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
       llmService,
       undefined, // 不使用旧的dataToolkit
       config,
+      executionRecordService,
     );
   }
 

@@ -44,13 +44,123 @@ export class AgentExecutionShardingService {
     // 确保表存在
     await this.ensureTableExists(agentType);
     
-    // 创建动态Repository
-    const repository = this.dataSource.getRepository(AgentExecutionRecord);
-    // 动态设置表名
-    repository.metadata.tableName = tableName;
+    // 使用QueryBuilder方式操作指定表，而不是修改元数据
+    const baseRepository = this.dataSource.getRepository(AgentExecutionRecord);
     
-    this.repositoryCache.set(tableName, repository);
-    return repository;
+    // 创建一个包装的Repository，重写save等方法来指定正确的表名
+    const wrappedRepository = {
+      ...baseRepository,
+      
+      save: async (entity: AgentExecutionRecord | AgentExecutionRecord[]): Promise<AgentExecutionRecord | AgentExecutionRecord[]> => {
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        
+        try {
+          if (Array.isArray(entity)) {
+            const results: AgentExecutionRecord[] = [];
+            for (const e of entity) {
+              const result = await this.saveToTable(queryRunner, tableName, e);
+              results.push(result);
+            }
+            return results;
+          } else {
+            return await this.saveToTable(queryRunner, tableName, entity);
+          }
+        } finally {
+          await queryRunner.release();
+        }
+      },
+      
+      update: async (criteria: any, partialEntity: any): Promise<any> => {
+        return await this.dataSource
+          .createQueryBuilder()
+          .update(tableName)
+          .set(partialEntity)
+          .where(criteria)
+          .execute();
+      },
+      
+      findOne: async (options: any): Promise<AgentExecutionRecord | null> => {
+        const result = await this.dataSource
+          .createQueryBuilder(AgentExecutionRecord, 'record')
+          .from(tableName, 'record')
+          .where(options.where || {})
+          .getOne();
+        return result as AgentExecutionRecord | null;
+      },
+      
+      find: async (options: any = {}): Promise<AgentExecutionRecord[]> => {
+        const results = await this.dataSource
+          .createQueryBuilder(AgentExecutionRecord, 'record')
+          .from(tableName, 'record')
+          .where(options.where || {})
+          .limit(options.take)
+          .offset(options.skip)
+          .getMany();
+        return results as AgentExecutionRecord[];
+      }
+    } as Repository<AgentExecutionRecord>;
+    
+    this.repositoryCache.set(tableName, wrappedRepository);
+    return wrappedRepository;
+  }
+
+  /**
+   * 保存记录到指定表
+   */
+  private async saveToTable(queryRunner: any, tableName: string, entity: AgentExecutionRecord): Promise<AgentExecutionRecord> {
+    const fields = [
+      'sessionId', 'agentType', 'agentName', 'agentRole', 'stockCode', 'stockName',
+      'executionDate', 'startTime', 'endTime', 'processingTimeMs', 'executionStatus',
+      'llmModel', 'inputPrompt', 'inputTokens', 'outputTokens', 'totalTokens', 'estimatedCost',
+      'analysisResult', 'structuredResult', 'score', 'recommendation', 'confidence',
+      'keyInsights', 'risks', 'supportingData', 'toolCalls', 'toolResults',
+      'contextData', 'previousResults', 'metadata', 'errorMessage', 'errorStack',
+      'analysisType', 'userAgent', 'environment', 'createdAt', 'updatedAt'
+    ];
+    
+    // JSON字段列表，需要序列化处理
+    const jsonFields = [
+      'structuredResult', 'keyInsights', 'risks', 'supportingData', 
+      'toolCalls', 'toolResults', 'contextData', 'previousResults', 'metadata'
+    ];
+    
+    const values = fields.map(field => {
+      let value = entity[field];
+      
+      // 处理undefined值
+      if (value === undefined) {
+        // 对于时间字段，如果未设置则使用当前时间
+        if (field === 'createdAt' || field === 'updatedAt') {
+          return new Date();
+        }
+        return null;
+      }
+      
+      // 对JSON字段进行序列化
+      if (jsonFields.includes(field) && value !== null) {
+        try {
+          return JSON.stringify(value);
+        } catch (error) {
+          this.logger.warn(`序列化JSON字段${field}失败: ${error.message}`);
+          return null;
+        }
+      }
+      
+      return value;
+    });
+    
+    const placeholders = fields.map((_, index) => `$${index + 1}`).join(', ');
+    const fieldNames = fields.map(f => `"${f}"`).join(', ');
+    
+    const insertSQL = `
+      INSERT INTO ${tableName} (${fieldNames})
+      VALUES (${placeholders})
+      RETURNING *
+    `;
+    
+    const result = await queryRunner.query(insertSQL, values);
+    return result[0] as AgentExecutionRecord;
   }
 
   /**
@@ -69,19 +179,61 @@ export class AgentExecutionShardingService {
       if (!tableExists) {
         this.logger.log(`创建分表: ${tableName}`);
         
-        // 创建分表SQL(基于主表结构)
+        // 创建分表SQL(PostgreSQL不支持LIKE语法，需要手动创建)
         const createTableSQL = `
-          CREATE TABLE ${tableName} LIKE agent_execution_records;
+          CREATE TABLE ${tableName} (
+            id SERIAL PRIMARY KEY,
+            "sessionId" VARCHAR(50) NOT NULL,
+            "agentType" VARCHAR(50) NOT NULL,
+            "agentName" VARCHAR(100) NOT NULL,
+            "agentRole" VARCHAR(200) NOT NULL,
+            "stockCode" VARCHAR(20) NOT NULL,
+            "stockName" VARCHAR(100),
+            "executionDate" TIMESTAMP NOT NULL,
+            "startTime" TIMESTAMP NOT NULL,
+            "endTime" TIMESTAMP NOT NULL,
+            "processingTimeMs" INTEGER NOT NULL,
+            "executionStatus" VARCHAR(20) DEFAULT 'success',
+            "llmModel" VARCHAR(50) NOT NULL,
+            "inputPrompt" TEXT NOT NULL,
+            "inputTokens" INTEGER,
+            "outputTokens" INTEGER,
+            "totalTokens" INTEGER,
+            "estimatedCost" DECIMAL(10,6),
+            "analysisResult" TEXT NOT NULL,
+            "structuredResult" JSONB,
+            "score" SMALLINT,
+            "recommendation" VARCHAR(20),
+            "confidence" DECIMAL(3,2),
+            "keyInsights" JSONB,
+            "risks" JSONB,
+            "supportingData" JSONB,
+            "toolCalls" JSONB,
+            "toolResults" JSONB,
+            "contextData" JSONB,
+            "previousResults" JSONB,
+            "metadata" JSONB,
+            "errorMessage" TEXT,
+            "errorStack" TEXT,
+            "analysisType" VARCHAR(50),
+            "userAgent" VARCHAR(20),
+            "environment" VARCHAR(50),
+            "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            "deletedAt" TIMESTAMP,
+            "version" INTEGER DEFAULT 1
+          );
         `;
         
         await queryRunner.query(createTableSQL);
         
-        // 创建分表特定的索引
+        // 创建分表特定的索引 (修正PostgreSQL列名)
         const indexSQL = [
-          `CREATE INDEX idx_${agentType}_stock_execution ON ${tableName} (stock_code, execution_date);`,
-          `CREATE INDEX idx_${agentType}_session ON ${tableName} (session_id);`,
-          `CREATE INDEX idx_${agentType}_execution_date ON ${tableName} (execution_date);`,
-          `CREATE INDEX idx_${agentType}_status ON ${tableName} (execution_status);`,
+          `CREATE INDEX idx_${agentType}_stock_execution ON ${tableName} ("stockCode", "executionDate");`,
+          `CREATE INDEX idx_${agentType}_session ON ${tableName} ("sessionId");`,
+          `CREATE INDEX idx_${agentType}_execution_date ON ${tableName} ("executionDate");`,
+          `CREATE INDEX idx_${agentType}_status ON ${tableName} ("executionStatus");`,
+          `CREATE INDEX idx_${agentType}_agent_type ON ${tableName} ("agentType");`,
         ];
         
         for (const sql of indexSQL) {

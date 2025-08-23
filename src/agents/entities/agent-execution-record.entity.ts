@@ -1,12 +1,10 @@
 import { 
   Entity, 
   Column, 
-  PrimaryGeneratedColumn, 
-  Index, 
-  CreateDateColumn,
-  UpdateDateColumn
+  Index
 } from 'typeorm';
 import { AgentType, TradingRecommendation } from '../interfaces/agent.interface';
+import { BaseEntity } from '../../common/entities/base.entity';
 
 /**
  * Agent执行记录实体 - 分表存储
@@ -18,9 +16,7 @@ import { AgentType, TradingRecommendation } from '../interfaces/agent.interface'
 @Index(['agentType', 'executionDate'])  
 @Index(['sessionId'])
 @Index(['executionDate'])
-export class AgentExecutionRecord {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+export class AgentExecutionRecord extends BaseEntity {
 
   // === 基础信息 ===
   @Column({ type: 'varchar', length: 50 })
@@ -125,19 +121,6 @@ export class AgentExecutionRecord {
 
   @Column({ type: 'text', nullable: true })
   errorStack: string; // 错误堆栈
-
-  // === 审计字段 ===
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn() 
-  updatedAt: Date;
-
-  @Column({ type: 'timestamp', nullable: true })
-  deletedAt: Date; // 软删除
-
-  @Column({ type: 'int', default: 1 })
-  version: number; // 乐观锁版本号
 
   // === 统计字段 ===
   @Column({ type: 'varchar', length: 50, nullable: true })

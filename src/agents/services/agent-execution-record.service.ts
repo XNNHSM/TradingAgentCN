@@ -259,7 +259,7 @@ export class AgentExecutionRecordService {
   /**
    * 删除执行记录
    */
-  async deleteExecutionRecord(agentType: AgentType, recordId: string): Promise<boolean> {
+  async deleteExecutionRecord(agentType: AgentType, recordId: number): Promise<boolean> {
     try {
       const repository = await this.shardingService.getRepository(agentType);
       
