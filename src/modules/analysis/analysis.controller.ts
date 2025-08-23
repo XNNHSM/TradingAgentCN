@@ -17,7 +17,7 @@ import { AnalysisRecord } from "./entities/analysis-record.entity";
  * 分析控制器 - 智能体分析接口
  */
 @ApiTags("智能体分析")
-@Controller("api/v1/analysis")
+@Controller("/analysis")
 export class AnalysisController {
   constructor(private readonly analysisService: AnalysisService) {}
 
