@@ -138,7 +138,7 @@ describe('NewsService', () => {
 
   describe('getSupportedSources', () => {
     it('should return supported news sources', () => {
-      const supportedSources = [NewsSource.JJRB, NewsSource.XHMRDX, NewsSource.XWLB];
+      const supportedSources = [NewsSource.XWLB];
       mockCrawlerFactory.getSupportedSources.mockReturnValue(supportedSources);
 
       const result = service.getSupportedSources();

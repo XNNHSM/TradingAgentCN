@@ -5,8 +5,6 @@ import { NewsService } from './news.service';
 import { NewsController } from './news.controller';
 import { RawNews } from './entities/raw-news.entity';
 import { NewsCrawlerFactory } from './factories/news-crawler.factory';
-import { JJRBCrawlerService } from './crawlers/jjrb-crawler.service';
-import { XHMRDXCrawlerService } from './crawlers/xhmrdx-crawler.service';
 import { XWLBCrawlerService } from './crawlers/xwlb-crawler.service';
 
 @Module({
@@ -18,8 +16,6 @@ import { XWLBCrawlerService } from './crawlers/xwlb-crawler.service';
   providers: [
     NewsService,
     NewsCrawlerFactory,
-    JJRBCrawlerService,
-    XHMRDXCrawlerService,
     XWLBCrawlerService,
   ],
   exports: [NewsService, NewsCrawlerFactory],

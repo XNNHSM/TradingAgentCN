@@ -172,6 +172,16 @@ src/
     │   ├── health.controller.ts
     │   ├── health.module.ts
     │   └── health.service.ts
+    ├── news/            # 新闻爬虫模块
+    │   ├── crawlers/    # 爬虫服务实现
+    │   │   └── xwlb-crawler.service.ts  # 新闻联播爬虫
+    │   ├── dto/         # 新闻相关DTOs
+    │   ├── entities/    # 新闻实体类
+    │   ├── factories/   # 爬虫工厂
+    │   ├── interfaces/  # 爬虫接口定义
+    │   ├── news.controller.ts
+    │   ├── news.module.ts
+    │   └── news.service.ts
     ├── user/            # 用户管理(待实现)
     └── watchlist/       # 自选股管理
         ├── dto/         # 自选股DTOs
@@ -611,6 +621,23 @@ this.businessLogger.apiCall("POST", "/api/news/crawl", {
 - **实时更新**: 直连阿里云百炼数据源
 - **高可靠性**: 自动重试和错误处理机制
 - **智能缓存**: 减少重复调用，提高响应速度
+
+### 4. 新闻爬虫模块
+- **抽象工厂模式**: 支持灵活扩展不同新闻数据源
+- **当前数据源**: 新闻联播(央视权威新闻发布平台)
+- **智能去重**: 基于URL的新闻去重机制
+- **异步处理**: 后台爬取任务，不阻塞API响应
+- **日期范围爬取**: 支持指定起止日期的批量采集
+
+**新闻数据字段**:
+- 新闻标题(title)
+- 新闻正文(content)
+- 原文链接(url)
+- 数据源代码(sourceCode)
+- 数据源名称(sourceName)
+- 新闻日期(newsDate)
+- 分析状态(analyzed)
+- 地域标记(region)
 
 ## 📝 关键文件
 - `src/main.ts`: 应用启动入口

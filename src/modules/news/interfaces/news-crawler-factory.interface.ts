@@ -1,8 +1,6 @@
 import { AbstractNewsCrawlerService } from './news-crawler.interface';
 
 export enum NewsSource {
-  JJRB = 'jjrb',        // 经济日报
-  XHMRDX = 'xhmrdx',    // 新华每日电讯
   XWLB = 'xwlb',        // 新闻联播
 }
 

@@ -1,26 +1,26 @@
 # News Module - 新闻爬虫模块
 
-新闻模块提供了一个基于抽象工厂模式的新闻爬虫系统，专注于从多个权威新闻源自动采集新闻数据。
+新闻模块提供了一个基于抽象工厂模式的新闻爬虫系统，当前专注于从新闻联播权威新闻源自动采集新闻数据。
 
 ## 🎯 核心特性
 
 - **🏭 抽象工厂模式**: 支持不同新闻源的统一接口，便于扩展
-- **📰 多数据源支持**: 内置经济日报、新华每日电讯、新闻联播三大权威媒体
+- **📰 权威数据源**: 内置新闻联播权威媒体数据源，支持扩展其他数据源
 - **🌍 地域标记**: 自动标记新闻为国内或国外来源
 - **🔄 智能去重**: 基于URL的新闻去重机制，避免重复存储
 - **📅 日期范围爬取**: 灵活指定起止日期进行批量采集
-- **⚡ 并发处理**: 多数据源并发爬取，大幅提升采集效率
+- **⚡ 高效处理**: 优化的数据采集流程，保证采集效率
 - **🚀 异步执行**: 爬取任务后台执行，接口快速响应不阻塞
 - **📊 详细日志**: 完整记录爬取进度和结果，便于监控和调试
-- **🛡️ 错误容错**: 单个源失败不影响其他源的正常工作
+- **🛡️ 错误容错**: 完整的错误处理机制，保证系统稳定性
 
 ## 📰 支持的新闻源
 
 | 新闻源代码 | 新闻源名称 | 描述 | 地域 |
 |-----------|------------|------|------|
-| `jjrb` | 经济日报 | 国家级经济类权威报纸，专注经济政策和商业资讯 | 🇨🇳 国内 |
-| `xhmrdx` | 新华每日电讯 | 新华社发行的综合性日报，权威时政新闻 | 🇨🇳 国内 |
 | `xwlb` | 新闻联播 | 央视新闻联播，国家重要新闻发布平台 | 🇨🇳 国内 |
+
+> **扩展说明**: 系统采用抽象工厂模式设计，支持快速扩展其他权威新闻源。
 
 ## 🔗 API 接口文档
 
@@ -49,7 +49,7 @@ Content-Type: application/json
 {
   "startDate": "2025-08-01",
   "endDate": "2025-08-21",
-  "sources": ["jjrb", "xhmrdx"]
+  "sources": ["xwlb"]
 }
 ```
 
@@ -88,7 +88,7 @@ Content-Type: application/json
 {
   "code": 0,
   "message": "操作成功", 
-  "data": ["jjrb", "xhmrdx", "xwlb"],
+  "data": ["xwlb"],
   "timestamp": "2025-08-21T10:30:00.000Z"
 }
 ```
@@ -143,17 +143,9 @@ CREATE INDEX idx_raw_news_region ON raw_news (region);
 
 ### 数据源配置
 
-在 `.env` 文件中配置各新闻源的基础URL和代码：
+在 `.env` 文件中配置新闻源的基础URL和代码：
 
 ```bash
-# 经济日报配置
-CRAWLER_JJRB_BASE_URL=https://paper.ce.cn/pc
-CRAWLER_JJRB_CODE=jjrb
-
-# 新华每日电讯配置  
-CRAWLER_XHMRDX_BASE_URL=https://mrdx.cn
-CRAWLER_XHMRDX_CODE=xhmrdx
-
 # 新闻联播配置
 CRAWLER_XWLB_BASE_URL=https://tv.cctv.com/lm/xwlb
 CRAWLER_XWLB_CODE=xwlb
@@ -225,22 +217,16 @@ export class SinaFinanceCrawlerService extends AbstractNewsCrawlerService {
 ```typescript
 // 在 interfaces/news-crawler-factory.interface.ts 中添加
 export enum NewsSource {
-  JJRB = 'jjrb',
-  XHMRDX = 'xhmrdx', 
   XWLB = 'xwlb',
-  SINA_FINANCE = 'sina_finance',  // 新增
+  SINA_FINANCE = 'sina_finance',  // 新增示例
 }
 
 // 在 factories/news-crawler.factory.ts 中添加
 createCrawler(source: NewsSource): AbstractNewsCrawlerService {
   switch (source) {
-    case NewsSource.JJRB:
-      return this.jjrbCrawlerService;
-    case NewsSource.XHMRDX:
-      return this.xhmrdxCrawlerService;
     case NewsSource.XWLB:
       return this.xwlbCrawlerService;
-    case NewsSource.SINA_FINANCE:  // 新增
+    case NewsSource.SINA_FINANCE:  // 新增示例
       return this.sinaFinanceCrawlerService;
     default:
       throw new Error(`Unsupported news source: ${source}`);
@@ -258,10 +244,8 @@ createCrawler(source: NewsSource): AbstractNewsCrawlerService {
   providers: [
     NewsService,
     NewsCrawlerFactory,
-    JJRBCrawlerService,
-    XHMRDXCrawlerService,
     XWLBCrawlerService,
-    SinaFinanceCrawlerService,  // 新增
+    SinaFinanceCrawlerService,  // 新增示例
   ],
   exports: [NewsService, NewsCrawlerFactory],
 })
@@ -271,7 +255,7 @@ export class NewsModule {}
 #### 4️⃣ 添加配置
 
 ```bash
-# 在 .env 中添加配置
+# 在 .env 中添加配置示例
 CRAWLER_SINA_FINANCE_BASE_URL=https://finance.sina.com.cn
 CRAWLER_SINA_FINANCE_CODE=sina_finance
 ```
@@ -303,7 +287,7 @@ export class MyService {
     this.newsService.startCrawlingTask({
       startDate: '2025-08-21',
       endDate: '2025-08-21',
-      sources: ['jjrb', 'xhmrdx']
+      sources: ['xwlb']
     });
     
     console.log('指定数据源爬取任务已启动');
@@ -333,7 +317,7 @@ curl -X POST http://localhost:3000/news/crawl \
   -d '{
     "startDate": "2025-08-21", 
     "endDate": "2025-08-21",
-    "sources": ["jjrb", "xhmrdx"]
+    "sources": ["xwlb"]
   }'
 
 # 获取支持的数据源
@@ -371,7 +355,7 @@ export class NewsScheduleService {
 ## ⚠️ 注意事项
 
 ### 🚀 性能优化
-- **并发处理**: 多数据源并发爬取，提升整体效率
+- **高效处理**: 优化的数据采集流程，提升处理效率
 - **请求延迟**: 默认每次请求间隔1秒，避免对目标网站造成压力
 - **连接池**: 使用HTTP连接池，减少连接开销
 

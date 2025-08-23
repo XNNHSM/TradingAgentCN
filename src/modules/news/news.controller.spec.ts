@@ -37,7 +37,7 @@ describe('NewsController', () => {
       const crawlDto: CrawlNewsDto = {
         startDate: '2025-08-21',
         endDate: '2025-08-21',
-        sources: [NewsSource.JJRB, NewsSource.XHMRDX],
+        sources: [NewsSource.XWLB],
       };
 
       const result = await controller.crawlNews(crawlDto);
@@ -63,7 +63,7 @@ describe('NewsController', () => {
 
   describe('getSupportedSources', () => {
     it('should return supported news sources', async () => {
-      const supportedSources = [NewsSource.JJRB, NewsSource.XHMRDX, NewsSource.XWLB];
+      const supportedSources = [NewsSource.XWLB];
       const expectedResult = {
         code: 0,
         data: supportedSources,
