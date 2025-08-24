@@ -223,7 +223,7 @@ export class AgentConfigService {
     return {
       // 股票数据
       stockData: {
-        provider: this.configService.get<string>("STOCK_DATA_PROVIDER", "mock"),
+        provider: this.configService.get<string>("STOCK_DATA_PROVIDER", "mcp"),
         apiUrl: this.configService.get<string>("STOCK_DATA_API_URL"),
         apiKey: this.configService.get<string>("STOCK_DATA_API_KEY"),
         timeout: this.configService.get<number>("STOCK_DATA_TIMEOUT", 10),
@@ -232,7 +232,7 @@ export class AgentConfigService {
 
       // 新闻数据
       newsData: {
-        provider: this.configService.get<string>("NEWS_DATA_PROVIDER", "mock"),
+        provider: this.configService.get<string>("NEWS_DATA_PROVIDER", "crawler"),
         apiUrl: this.configService.get<string>("NEWS_DATA_API_URL"),
         apiKey: this.configService.get<string>("NEWS_DATA_API_KEY"),
         timeout: this.configService.get<number>("NEWS_DATA_TIMEOUT", 10),
@@ -243,7 +243,7 @@ export class AgentConfigService {
       financialData: {
         provider: this.configService.get<string>(
           "FINANCIAL_DATA_PROVIDER",
-          "mock",
+          "mcp",
         ),
         apiUrl: this.configService.get<string>("FINANCIAL_DATA_API_URL"),
         apiKey: this.configService.get<string>("FINANCIAL_DATA_API_KEY"),

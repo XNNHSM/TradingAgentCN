@@ -9,7 +9,7 @@ import { AgentContext } from "../../agents/interfaces/agent.interface";
 import { AnalysisRecord } from "./entities/analysis-record.entity";
 import { CreateAnalysisDto } from "./dto/create-analysis.dto";
 import { Result } from "../../common/dto/result.dto";
-import { UnifiedOrchestratorService } from "../../agents/unified/unified-orchestrator.service";
+import { AgentsTemporalClientService } from "../../agents/temporal/agents-temporal-client.service";
 
 /**
  * 分析服务 - 基于MCP统一智能体的股票分析服务
@@ -21,7 +21,7 @@ export class AnalysisService {
   constructor(
     @InjectRepository(AnalysisRecord)
     private readonly analysisRepository: Repository<AnalysisRecord>,
-    private readonly unifiedOrchestrator: UnifiedOrchestratorService,
+    private readonly agentsTemporalClient: AgentsTemporalClientService,
   ) {}
 
   /**
@@ -47,24 +47,39 @@ export class AnalysisService {
       const startTime = Date.now();
 
       try {
-        // 使用MCP统一智能体协调器执行分析
-        const orchestratorResult = await this.unifiedOrchestrator.analyzeStock(context);
+        // 生成会话ID
+        const sessionId = `analysis_session_${Date.now()}`;
+        
+        // 使用Temporal工作流执行分析
+        const workflowHandle = await this.agentsTemporalClient.startStockAnalysisWorkflow({
+          stockCode: dto.stockCode,
+          stockName: dto.stockName,
+          sessionId,
+          metadata: dto.metadata || {},
+        });
+        
+        if (!workflowHandle) {
+          throw new Error('无法启动股票分析工作流');
+        }
+        
+        // 等待工作流完成
+        const workflowResult = await workflowHandle.result();
         
         // 转换为AnalysisService期望的格式
         analysisResult = {
           stockCode: dto.stockCode,
           stockName: dto.stockName,
-          executionTime: orchestratorResult.processingTime,
+          executionTime: workflowResult.processingTime,
           timestamp: new Date(),
-          sessionId: orchestratorResult.sessionId,
-          finalScore: orchestratorResult.finalRecommendation.score,
-          finalRecommendation: orchestratorResult.finalRecommendation.recommendation,
-          confidence: orchestratorResult.finalRecommendation.confidence,
-          keyInsights: orchestratorResult.finalRecommendation.keyInsights,
-          majorRisks: orchestratorResult.finalRecommendation.risks,
-          comprehensiveAnalysis: orchestratorResult.results[0]?.analysis,
-          tradingStrategy: orchestratorResult.results[1]?.analysis,
-          fullReport: orchestratorResult.finalRecommendation.analysis,
+          sessionId: workflowResult.sessionId,
+          finalScore: workflowResult.finalRecommendation.score,
+          finalRecommendation: workflowResult.finalRecommendation.recommendation,
+          confidence: workflowResult.finalRecommendation.confidence,
+          keyInsights: workflowResult.finalRecommendation.keyInsights,
+          majorRisks: workflowResult.finalRecommendation.risks,
+          comprehensiveAnalysis: workflowResult.results[0]?.analysis,
+          tradingStrategy: workflowResult.results[1]?.analysis,
+          fullReport: workflowResult.finalRecommendation.analysis,
         };
       } catch (error) {
         this.logger.error(`分析执行失败: ${error.message}`, error.stack);

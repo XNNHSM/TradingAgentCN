@@ -7,10 +7,13 @@ import { MCPClientService } from './services/mcp-client.service';
 import { LLMService } from './services/llm.service';
 import { DashScopeAdapter } from './services/llm-adapters/dashscope-adapter';
 
+// 智能体模块专属Temporal服务
+import { AgentsTemporalClientService } from './temporal/agents-temporal-client.service';
+import { AgentsWorkerService } from './temporal/agents-worker.service';
+
 // 新的统一智能体
 import { ComprehensiveAnalystAgent } from './unified/comprehensive-analyst.agent';
 import { TradingStrategistAgent } from './unified/trading-strategist.agent';
-import { UnifiedOrchestratorService } from './unified/unified-orchestrator.service';
 
 // 执行记录相关（保持兼容）
 import { AgentExecutionRecord } from './entities/agent-execution-record.entity';
@@ -36,11 +39,14 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     // 核心服务
     MCPClientService,
     LLMService,
+    
+    // 智能体模块专属Temporal服务
+    AgentsTemporalClientService,
+    AgentsWorkerService,
 
     // 统一智能体
     ComprehensiveAnalystAgent,
     TradingStrategistAgent,
-    UnifiedOrchestratorService,
 
     // 执行记录服务
     AgentExecutionRecordService,
@@ -51,10 +57,13 @@ import { ExecutionRecordsController } from './execution-records/execution-record
   ],
   exports: [
     // 对外提供的主要服务
-    UnifiedOrchestratorService,
     MCPClientService,
     ComprehensiveAnalystAgent,
     TradingStrategistAgent,
+    
+    // Temporal服务导出
+    AgentsTemporalClientService,
+    AgentsWorkerService,
     
     // 兼容性导出
     AgentExecutionRecordService,
@@ -64,23 +73,32 @@ import { ExecutionRecordsController } from './execution-records/execution-record
 export class AgentsModule {
   constructor(
     private readonly mcpClient: MCPClientService,
+    private readonly agentsWorkerService: AgentsWorkerService,
   ) {}
 
   /**
-   * 模块初始化时自动连接MCP服务
+   * 模块初始化时自动连接MCP服务和启动Temporal Workers
    */
   async onModuleInit() {
     try {
+      // 初始化MCP服务
       await this.mcpClient.initialize();
+      
+      // 启动智能体模块专属的Temporal Workers
+      await this.agentsWorkerService.startWorkers();
     } catch (error) {
-      console.warn('MCP服务初始化失败，将在首次使用时重试:', error.message);
+      console.warn('模块初始化部分失败，将在使用时重试:', error.message);
     }
   }
 
   /**
-   * 模块销毁时断开MCP连接
+   * 模块销毁时断开MCP连接和停止Temporal Workers
    */
   async onModuleDestroy() {
+    // 停止Temporal Workers
+    await this.agentsWorkerService.shutdown();
+    
+    // 断开MCP连接
     await this.mcpClient.disconnect();
   }
 }

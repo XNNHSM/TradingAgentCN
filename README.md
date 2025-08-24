@@ -18,11 +18,12 @@
 - **数据获取**: MCP (Model Context Protocol) 统一接口
 - **主要LLM**: 阿里云百炼(DashScope)
 - **数据库**: PostgreSQL + Redis
+- **工作流引擎**: Temporal - 分布式工作流协调和状态管理
 - **部署**: Docker 容器化
 
-### 新一代MCP架构设计
+### 新一代MCP + Temporal架构设计
 ```
-API接口层 → NestJS服务层 → 统一智能体框架 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
+API接口层 → NestJS服务层 → Temporal工作流引擎 → 统一智能体框架 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
 ```
 
 ### 智能体架构 (重构后)
@@ -52,6 +53,7 @@ API接口层 → NestJS服务层 → 统一智能体框架 → MCP协议层 → 
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7.0+
+- Temporal Server (通过Docker)
 - npm 或 yarn
 
 ### 安装依赖
@@ -80,6 +82,18 @@ REDIS_PORT=6379
 
 # 阿里云百炼API配置 (必需)
 DASHSCOPE_API_KEY=your_dashscope_api_key
+
+# Temporal 工作流配置
+TEMPORAL_HOST=localhost
+TEMPORAL_PORT=7233
+# 注意: TEMPORAL_NAMESPACE 和 TEMPORAL_TASK_QUEUE 已移除
+# 现在由各模块根据新规范自行管理
+WORKFLOW_EXECUTION_TIMEOUT=30m
+ACTIVITY_EXECUTION_TIMEOUT=5m
+ACTIVITY_RETRY_ATTEMPTS=3
+
+# 环境标识 (用于 Temporal namespace 和 taskQueue 命名)
+NODE_ENV=dev  # dev | test | stg | prd
 
 # MCP智能体配置 (可选)
 COMPREHENSIVE_ANALYST_MODEL=qwen-plus
@@ -271,6 +285,19 @@ src/
 │   │   └── unified-orchestrator.service.ts # 统一协调服务
 │   ├── interfaces/  # 智能体接口定义
 │   └── agents.module.ts # 智能体模块
+├── workflows/       # Temporal 工作流模块
+│   ├── orchestrators/  # 工作流协调器
+│   │   ├── stock-analysis.workflow.ts        # 股票分析工作流
+│   │   ├── news-crawling.workflow.ts         # 新闻爬取工作流
+│   │   └── daily-report.workflow.ts          # 每日报告工作流
+│   ├── activities/     # 业务活动定义
+│   │   ├── stock.activities.ts               # 股票相关活动
+│   │   ├── news.activities.ts                # 新闻相关活动
+│   │   └── analysis.activities.ts            # 分析相关活动
+│   └── temporal/       # Temporal 配置
+│       ├── client.ts                         # Temporal 客户端
+│       ├── worker.ts                         # Temporal Worker
+│       └── types.ts                          # 类型定义
 ├── app.module.ts    # 应用主模块
 └── main.ts          # 应用入口
 ```
@@ -287,6 +314,13 @@ src/
 - 使用统一的日志记录格式和错误处理机制
 - 所有分析结果必须包含置信度评分(0-100)
 - 工具调用必须处理超时和重试机制
+
+### Temporal工作流开发规范
+- **工作流协调**: 所有复杂业务流程通过Temporal工作流管理
+- **原子化活动**: 每个Service方法作为单一Activity，保证原子性
+- **状态管理**: 工作流状态由Temporal自动管理，支持故障恢复
+- **错误重试**: 通过活动重试策略处理临时性错误
+- **监控追踪**: 所有工作流执行状态可通过Web UI实时监控
 
 ### 缓存策略  
 - 开发阶段缓存功能暂时禁用 (ENABLE_CACHE=false)
@@ -353,6 +387,18 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker-compose up -d
 docker-compose --profile redis-ui up -d
 ```
 
+**启动Temporal工作流服务**:
+```bash
+# 启动Temporal服务集群
+docker-compose up temporal -d
+
+# 查看Temporal Web UI (默认端口8088)
+open http://localhost:8088
+
+# 查看Temporal服务状态
+docker-compose ps temporal temporal-admin-tools
+```
+
 ### 手动构建
 ```bash
 # 构建镜像
@@ -383,6 +429,70 @@ docker run -d \
 | `REDIS_PORT` | `6379` | Redis端口 |
 | `REDIS_PASSWORD` | `""` | Redis密码（空为无密码） |
 | `REDIS_COMMANDER_PORT` | `8081` | Redis管理界面端口 |
+| `TEMPORAL_VERSION` | `1.22` | Temporal Server版本 |
+| `TEMPORAL_UI_PORT` | `8088` | Temporal Web UI端口 |
+| `TEMPORAL_HOST_PORT` | `7233` | Temporal Server端口 |
+
+## ⚡ Temporal 工作流规范
+
+### Namespace 命名规范
+**格式**: `{模块名}-{环境}`
+
+```bash
+# 示例
+agents-dev      # 智能体模块开发环境
+agents-prd      # 智能体模块生产环境
+news-dev        # 新闻模块开发环境
+news-prd        # 新闻模块生产环境
+watchlist-dev   # 自选股模块开发环境
+analysis-prd    # 分析模块生产环境
+```
+
+### TaskQueue 命名规范
+**格式**: `{模块名}-{业务域}-{环境}`
+
+```bash
+# 智能体模块
+agents-analysis-dev     # 股票分析任务队列(开发环境)
+agents-batch-dev        # 批量分析任务队列(开发环境)
+agents-analysis-prd     # 股票分析任务队列(生产环境)
+
+# 新闻模块
+news-crawling-dev       # 新闻爬取任务队列(开发环境)
+news-processing-dev     # 新闻处理任务队列(开发环境)
+news-crawling-prd       # 新闻爬取任务队列(生产环境)
+
+# 自选股模块
+watchlist-monitoring-dev    # 自选股监控任务队列(开发环境)
+watchlist-alerts-prd        # 自选股提醒任务队列(生产环境)
+```
+
+### 配置方式
+- 🚫 **移除全局配置**: 不再使用 `TEMPORAL_NAMESPACE` 和 `TEMPORAL_TASK_QUEUE` 环境变量
+- ✅ **模块自定义**: 每个业务模块根据规范自行定义 namespace 和 taskQueue
+- ✅ **环境隔离**: 通过 `NODE_ENV` 环境变量区分不同环境
+
+### 使用示例
+```typescript
+// 客户端配置
+const environment = process.env.NODE_ENV || 'dev';
+const namespace = `agents-${environment}`;
+const client = new Client({ connection, namespace });
+
+// 工作流启动
+const taskQueue = `agents-analysis-${environment}`;
+const handle = await client.workflow.start(stockAnalysisWorkflow, {
+  taskQueue,
+  workflowId: `stock-analysis-${stockCode}-${Date.now()}`,
+});
+
+// Worker配置  
+const worker = await Worker.create({
+  workflowsPath: require.resolve('./workflows'),
+  activities,
+  taskQueue: `agents-analysis-${environment}`,
+});
+```
 
 ## 📊 监控与日志
 
@@ -391,6 +501,8 @@ docker run -d \
 - 提供健康检查端点用于监控
 - MCP连接状态实时监控
 - 智能体分析性能指标跟踪
+- **Temporal Web UI**: http://localhost:8088 - 工作流执行状态监控
+- **工作流追踪**: 完整的执行历史、失败重试、性能指标
 
 ## 🧪 测试指南
 

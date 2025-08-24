@@ -8,15 +8,25 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3000}
-      DB_HOST: postgres
+      # 数据库配置 - 支持外部和内部PostgreSQL
+      DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-test_123!}
       DB_DATABASE: ${DB_DATABASE:-trading_agent}
-      REDIS_HOST: redis
+      # Redis配置 - 支持外部和内部Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
+      # Temporal配置 - 支持外部和内部Temporal
+      TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
+      TEMPORAL_PORT: ${TEMPORAL_PORT:-7233}
+      # 注意: TEMPORAL_NAMESPACE 和 TEMPORAL_TASK_QUEUE 已移除
+      # 现在由各模块自行管理 namespace 和 taskQueue
+      WORKFLOW_EXECUTION_TIMEOUT: ${WORKFLOW_EXECUTION_TIMEOUT:-30m}
+      ACTIVITY_EXECUTION_TIMEOUT: ${ACTIVITY_EXECUTION_TIMEOUT:-5m}
+      ACTIVITY_RETRY_ATTEMPTS: ${ACTIVITY_RETRY_ATTEMPTS:-3}
       # API Keys
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -45,17 +55,15 @@ services:
       ENABLE_AGENT_LOGS: ${ENABLE_AGENT_LOGS:-true}
       # Log Level
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # 依赖关系 - 只有在使用内部服务时才设置依赖
+    # 使用 --profile internal-services 时启用内部中间件依赖
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
     networks:
       - trading-network
 
+  # PostgreSQL 数据库服务 - 内部Docker服务
   postgres:
     image: postgres:${POSTGRES_VERSION:-15}
     ports:
@@ -77,7 +85,11 @@ services:
       start_period: ${POSTGRES_HEALTHCHECK_START_PERIOD:-30s}
     networks:
       - trading-network
+    profiles:
+      - internal-services
+      - postgres
 
+  # Redis 缓存服务 - 内部Docker服务
   redis:
     image: redis:${REDIS_VERSION:-7-alpine}
     ports:
@@ -109,6 +121,9 @@ services:
       retries: ${REDIS_HEALTHCHECK_RETRIES:-5}
     networks:
       - trading-network
+    profiles:
+      - internal-services
+      - redis
 
   # 可选：Redis管理界面
   redis-commander:
@@ -125,6 +140,65 @@ services:
       - trading-network
     profiles:
       - redis-ui
+
+  # Temporal服务 - 分布式工作流引擎 (使用共享PostgreSQL)
+  temporal:
+    image: temporalio/auto-setup:${TEMPORAL_VERSION:-1.22}
+    ports:
+      - "${TEMPORAL_HOST_PORT:-7233}:7233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-test_123!}
+      - POSTGRES_SEEDS=postgres
+      - TEMPORAL_STORE_PASSWORD=${POSTGRES_PASSWORD:-test_123!}
+      # 使用独立的数据库名称，避免与主应用冲突
+      - POSTGRES_DATABASE=${TEMPORAL_DB_NAME:-temporal}
+      - TEMPORAL_VISIBILITY_STORE=sql
+      - TEMPORAL_VISIBILITY_STORE_PASSWORD=${POSTGRES_PASSWORD:-test_123!}
+    volumes:
+      - ${TEMPORAL_LOCAL_CONFIG_DIR:-./config/temporal}:/etc/temporal/config/dynamicconfig:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - trading-network
+    profiles:
+      - internal-services
+      - temporal
+
+  temporal-ui:
+    image: temporalio/ui:${TEMPORAL_UI_VERSION:-2.21.3}
+    ports:
+      - "${TEMPORAL_UI_PORT:-8088}:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - temporal
+    restart: unless-stopped
+    networks:
+      - trading-network
+    profiles:
+      - internal-services
+      - temporal
+
+  # Temporal Admin Tools（可选）
+  temporal-admin-tools:
+    image: temporalio/admin-tools:${TEMPORAL_VERSION:-1.22}
+    stdin_open: true
+    tty: true
+    environment:
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+    restart: "no"
+    networks:
+      - trading-network
+    profiles:
+      - temporal-admin
 
 volumes:
   postgres_data:

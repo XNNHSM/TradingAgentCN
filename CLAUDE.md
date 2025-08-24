@@ -11,11 +11,12 @@ TradingAgentCN 是一个基于大语言模型(LLM)的智能交易决策系统，
 - **数据获取协议**: 阿里云百炼MCP (Model Context Protocol)
 - **主要LLM**: 阿里云百炼(DashScope) - qwen-plus/qwen-max
 - **数据库**: PostgreSQL + Redis
+- **工作流引擎**: Temporal - 分布式工作流协调和状态管理
 - **部署方案**: Docker 容器化
 
-### 新一代MCP架构
+### 新一代MCP + Temporal架构
 ```
-API接口层 → NestJS服务层 → 统一智能体服务 → MCP客户端 → 阿里云百炼MCP → 股票数据服务
+API接口层 → NestJS服务层 → Temporal工作流引擎 → 统一智能体服务 → MCP客户端 → 阿里云百炼MCP → 股票数据服务
 ```
 
 ### 核心组件
@@ -23,6 +24,7 @@ API接口层 → NestJS服务层 → 统一智能体服务 → MCP客户端 → 
 2. **统一智能体引擎**: 综合分析师 + 交易策略师 (取代原8个智能体)
 3. **MCP数据获取**: 通过阿里云百炼MCP协议获取实时股票数据
 4. **智能决策**: 综合技术面、基本面、消息面的一体化分析
+5. **Temporal工作流**: 分布式任务调度、状态管理和容错处理
 
 ## 🚀 开发命令
 
@@ -138,9 +140,29 @@ docker-compose --profile redis-ui up -d
 docker build -t trading-agent-cn .
 ```
 
+### Temporal 工作流管理
+```bash
+# 启动 Temporal 服务集群
+docker-compose up temporal -d
+
+# 查看 Temporal Web UI (默认端口 8088)
+open http://localhost:8088
+
+# 查看 Temporal 服务状态
+docker-compose ps temporal temporal-admin-tools
+
+# 重启 Temporal 服务
+docker-compose restart temporal
+
+# 查看 Temporal 日志
+docker-compose logs -f temporal
+```
+
 ## 📁 项目结构
 
 ```
+├── docs/                   # 文档目录
+│   └── temporal-best-practices.md  # Temporal最佳实践指南
 src/
 ├── agents/                 # MCP智能体模块
 │   ├── base/              # 智能体基础类
@@ -199,6 +221,382 @@ src/
         ├── watchlist.controller.ts
         ├── watchlist.module.ts
         └── watchlist.service.ts
+```
+
+## 🔄 Temporal 工作流架构
+
+### Temporal 设计原则
+本工程使用 **Temporal** 作为分布式工作流协调引擎，遵循以下原则:
+
+- **所有工作流(Workflow)通过 Orchestrator 进行维护**
+- **每个业务服务(Service)提供原子化的方法，作为活动(Activity)**
+- **工作流负责协调，活动负责执行具体业务逻辑**
+- **通过 Temporal 实现状态管理、错误重试和故障恢复**
+
+### 工作流组织架构
+```
+workflows/                    # Temporal 工作流定义
+├── orchestrators/            # 工作流协调器
+│   ├── stock-analysis.workflow.ts        # 股票分析工作流
+│   ├── news-crawling.workflow.ts         # 新闻爬取工作流
+│   ├── daily-report.workflow.ts          # 每日报告生成工作流
+│   └── portfolio-monitoring.workflow.ts  # 投资组合监控工作流
+├── activities/               # 业务活动定义
+│   ├── stock.activities.ts               # 股票相关活动
+│   ├── news.activities.ts                # 新闻相关活动
+│   ├── analysis.activities.ts            # 分析相关活动
+│   ├── notification.activities.ts        # 通知相关活动
+│   └── data-collection.activities.ts     # 数据收集活动
+└── temporal/                 # Temporal 配置和客户端
+    ├── client.ts             # Temporal 客户端配置
+    ├── worker.ts             # Temporal Worker 配置
+    └── types.ts              # 工作流和活动类型定义
+```
+
+### 核心工作流示例
+
+#### 1. 股票分析工作流 (Stock Analysis Workflow)
+```typescript
+// workflows/orchestrators/stock-analysis.workflow.ts
+@Workflow()
+export class StockAnalysisWorkflow {
+  @WorkflowMethod()
+  async executeStockAnalysis(input: StockAnalysisInput): Promise<StockAnalysisResult> {
+    // 1. 数据收集活动
+    const marketData = await proxyActivities<DataCollectionActivities>({
+      startToCloseTimeout: '5m'
+    }).collectStockData(input.stockCode);
+    
+    // 2. 技术分析活动
+    const technicalAnalysis = await proxyActivities<AnalysisActivities>({
+      startToCloseTimeout: '3m'
+    }).performTechnicalAnalysis(marketData);
+    
+    // 3. 基本面分析活动
+    const fundamentalAnalysis = await proxyActivities<AnalysisActivities>({
+      startToCloseTimeout: '3m'
+    }).performFundamentalAnalysis(marketData);
+    
+    // 4. 综合决策活动
+    const finalDecision = await proxyActivities<AnalysisActivities>({
+      startToCloseTimeout: '2m'
+    }).generateTradingDecision(technicalAnalysis, fundamentalAnalysis);
+    
+    // 5. 结果通知活动
+    await proxyActivities<NotificationActivities>({
+      startToCloseTimeout: '1m'
+    }).sendAnalysisResult(finalDecision);
+    
+    return finalDecision;
+  }
+}
+```
+
+#### 2. 活动实现示例 (Activities Implementation)
+```typescript
+// workflows/activities/stock.activities.ts
+export interface StockActivities {
+  validateStockCode(stockCode: string): Promise<boolean>;
+  fetchStockPrice(stockCode: string): Promise<StockPrice>;
+  calculateTechnicalIndicators(priceData: StockPrice[]): Promise<TechnicalIndicators>;
+}
+
+@Injectable()
+export class StockActivitiesImpl implements StockActivities {
+  constructor(
+    private readonly mcpClientService: McpClientService,
+    private readonly businessLogger: BusinessLogger
+  ) {}
+  
+  @Activity()
+  async validateStockCode(stockCode: string): Promise<boolean> {
+    // 原子化操作: 股票代码验证
+    return await this.mcpClientService.validateStock(stockCode);
+  }
+  
+  @Activity()
+  async fetchStockPrice(stockCode: string): Promise<StockPrice> {
+    // 原子化操作: 获取股票价格
+    return await this.mcpClientService.getStockRealtimeData(stockCode);
+  }
+  
+  @Activity()
+  async calculateTechnicalIndicators(priceData: StockPrice[]): Promise<TechnicalIndicators> {
+    // 原子化操作: 计算技术指标
+    return await this.analysisService.calculateIndicators(priceData);
+  }
+}
+```
+
+### Temporal 集成规范
+
+#### 1. Namespace 命名规范 ⭐
+**命名规则**: `{模块名}-{环境}`
+
+**环境标识**:
+- `dev`: 开发环境
+- `test`: 测试环境  
+- `stg`: 预发布环境
+- `prd`: 生产环境
+
+**示例**:
+```bash
+# 新闻模块
+news-dev        # 新闻模块开发环境
+news-test       # 新闻模块测试环境
+news-prd        # 新闻模块生产环境
+
+# 智能体模块
+agents-dev      # 智能体模块开发环境
+agents-prd      # 智能体模块生产环境
+
+# 自选股模块
+watchlist-dev   # 自选股模块开发环境
+watchlist-prd   # 自选股模块生产环境
+
+# 分析模块
+analysis-dev    # 分析模块开发环境
+analysis-prd    # 分析模块生产环境
+```
+
+**Namespace 配置示例**:
+```typescript
+// 在各模块的 Temporal 客户端中
+const client = new Client({
+  connection,
+  namespace: `${MODULE_NAME}-${NODE_ENV}`, // 如: 'news-dev'
+});
+```
+
+#### 2. TaskQueue 命名规范 ⭐
+**命名规则**: `{模块名}-{业务域}-{环境}`
+
+**规范说明**:
+- 🚫 **不使用全局配置**: 移除 `TEMPORAL_TASK_QUEUE` 环境变量
+- ✅ **模块自定义**: 每个业务模块自行定义 taskQueue 名称
+- ✅ **业务隔离**: 不同业务使用不同的 taskQueue
+- ✅ **环境隔离**: 不同环境使用不同的 taskQueue
+
+**TaskQueue 命名示例**:
+```bash
+# 新闻模块
+news-crawling-dev       # 新闻爬取任务队列(开发环境)
+news-processing-dev     # 新闻处理任务队列(开发环境)
+news-crawling-prd       # 新闻爬取任务队列(生产环境)
+
+# 智能体模块
+agents-analysis-dev     # 股票分析任务队列(开发环境)
+agents-batch-dev        # 批量分析任务队列(开发环境)
+agents-analysis-prd     # 股票分析任务队列(生产环境)
+
+# 自选股模块
+watchlist-monitoring-dev    # 自选股监控任务队列(开发环境)
+watchlist-alerts-dev        # 自选股提醒任务队列(开发环境)
+
+# 分析模块
+analysis-reports-dev    # 分析报告任务队列(开发环境)
+analysis-alerts-dev     # 分析提醒任务队列(开发环境)
+```
+
+**TaskQueue 使用示例**:
+```typescript
+// 在工作流启动时指定 taskQueue
+const handle = await client.workflow.start(stockAnalysisWorkflow, {
+  taskQueue: `agents-analysis-${NODE_ENV}`,  // agents-analysis-dev
+  workflowId: `stock-analysis-${stockCode}-${Date.now()}`,
+  args: [{ stockCode, metadata }],
+});
+
+// Worker 监听特定的 taskQueue
+const worker = await Worker.create({
+  workflowsPath: require.resolve('./workflows'),
+  activities,
+  taskQueue: `news-crawling-${NODE_ENV}`,   // news-crawling-dev
+});
+```
+
+#### 3. TaskQueue 最佳实践规范
+
+**🎯 队列粒度划分**:
+- **按业务功能划分**: 不同业务功能使用独立队列
+- **按执行特性划分**: CPU密集型 vs IO密集型任务分离
+- **按优先级划分**: 高优先级任务使用专门队列
+
+**⚡ 性能优化策略**:
+```typescript
+// 高并发队列配置
+const highThroughputWorker = await Worker.create({
+  taskQueue: 'agents-batch-prd',
+  maxConcurrentActivityTaskExecutions: 20,
+  maxConcurrentWorkflowTaskExecutions: 10,
+});
+
+// CPU密集型队列配置  
+const computeIntensiveWorker = await Worker.create({
+  taskQueue: 'analysis-compute-prd',
+  maxConcurrentActivityTaskExecutions: 4,  // 限制并发
+});
+
+// IO密集型队列配置
+const ioIntensiveWorker = await Worker.create({
+  taskQueue: 'news-crawling-prd', 
+  maxConcurrentActivityTaskExecutions: 50, // 高并发
+});
+```
+
+**📊 监控和报警**:
+```typescript
+// 队列监控指标
+interface TaskQueueMetrics {
+  queueName: string;
+  pendingTasks: number;
+  runningTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  averageExecutionTime: number;
+}
+
+// 队列健康检查
+export class TaskQueueHealthCheck {
+  async checkQueueHealth(queueName: string): Promise<QueueHealth> {
+    // 检查队列积压情况
+    // 检查Worker连接状态 
+    // 检查任务执行成功率
+  }
+}
+```
+
+#### 4. 工作流设计原则
+- **单一职责**: 每个工作流专注于一个业务场景
+- **原子活动**: 每个活动(Activity)执行单一、原子化的业务操作
+- **无状态**: 活动应该是无状态的，所有状态由工作流管理
+- **容错性**: 通过重试策略和补偿机制处理失败
+
+#### 2. 活动(Activity)规范
+- **服务注入**: 通过依赖注入获取业务服务
+- **错误处理**: 抛出明确的业务异常，由工作流处理重试逻辑
+- **超时配置**: 每个活动设置合适的超时时间
+- **日志记录**: 使用 BusinessLogger 记录活动执行状态
+
+#### 3. 工作流调度策略
+- **定时触发**: 使用 Temporal 的定时器功能替代传统 Cron 任务
+- **事件驱动**: 支持外部事件触发工作流执行
+- **并发控制**: 通过工作流配置控制并发执行数量
+- **状态查询**: 提供工作流执行状态查询接口
+
+### Temporal 配置管理
+
+#### 1. 环境变量配置 (更新后)
+```bash
+# Temporal 服务配置
+TEMPORAL_HOST=localhost
+TEMPORAL_PORT=7233
+# 注意: 移除了 TEMPORAL_NAMESPACE 和 TEMPORAL_TASK_QUEUE 配置
+# namespace 和 taskQueue 由各模块自行管理
+
+# 工作流配置
+WORKFLOW_EXECUTION_TIMEOUT=30m
+ACTIVITY_EXECUTION_TIMEOUT=5m
+ACTIVITY_RETRY_ATTEMPTS=3
+
+# 环境标识 (用于 namespace 和 taskQueue 命名)
+NODE_ENV=dev  # dev | test | stg | prd
+```
+
+#### 2. Worker 配置 (更新后)
+```typescript
+// 模块级别 Worker 配置示例
+// src/modules/news/temporal/news-worker.ts
+export const createNewsWorker = () => {
+  const environment = process.env.NODE_ENV || 'dev';
+  
+  return Worker.create({
+    workflowsPath: require.resolve('./workflows'),
+    activities: newsActivities,
+    taskQueue: `news-crawling-${environment}`,  // 动态生成
+    maxConcurrentActivityTaskExecutions: 20,
+    maxConcurrentWorkflowTaskExecutions: 5,
+  });
+};
+
+// src/modules/agents/temporal/agents-worker.ts  
+export const createAgentsWorker = () => {
+  const environment = process.env.NODE_ENV || 'dev';
+  
+  return Worker.create({
+    workflowsPath: require.resolve('./workflows'),
+    activities: analysisActivities,
+    taskQueue: `agents-analysis-${environment}`, // 动态生成
+    maxConcurrentActivityTaskExecutions: 10,
+    maxConcurrentWorkflowTaskExecutions: 3,
+  });
+};
+```
+
+#### 3. 客户端配置 (更新后)
+```typescript
+// 模块级别客户端配置示例
+// src/modules/news/temporal/news-client.ts
+export class NewsTemporalClient {
+  private client: Client;
+  
+  constructor() {
+    const environment = process.env.NODE_ENV || 'dev';
+    const namespace = `news-${environment}`;
+    
+    this.client = new Client({
+      connection,
+      namespace, // news-dev, news-prd 等
+    });
+  }
+  
+  async startNewsCrawlingWorkflow(input: NewsCrawlingInput) {
+    const environment = process.env.NODE_ENV || 'dev';
+    const taskQueue = `news-crawling-${environment}`;
+    
+    return await this.client.workflow.start(newsCrawlingWorkflow, {
+      taskQueue,
+      workflowId: `news-crawling-${input.date}-${Date.now()}`,
+      args: [input],
+    });
+  }
+}
+```
+```
+
+### 工作流监控和管理
+
+#### 1. Web UI 监控
+- **访问地址**: http://localhost:8088
+- **功能特性**: 
+  - 工作流执行状态查看
+  - 活动执行历史追踪
+  - 失败任务重试管理
+  - 性能指标监控
+
+#### 2. 程序化监控
+```typescript
+// 获取工作流执行状态
+const handle = client.workflow.getHandle(workflowId);
+const description = await handle.describe();
+const result = await handle.result();
+```
+
+### 替代传统任务调度
+
+#### 迁移 Cron 任务到 Temporal
+- **新闻爬取定时任务** → 新闻爬取工作流 (每日 1:00 AM)
+- **股票分析定时任务** → 股票分析工作流 (每日 9:00 AM)
+- **系统监控任务** → 系统监控工作流 (每小时)
+
+#### 优势对比
+```
+传统 Cron 任务           Temporal 工作流
+├─ 单机执行             ├─ 分布式执行
+├─ 状态难管理           ├─ 完整状态追踪
+├─ 错误难恢复           ├─ 自动错误重试
+├─ 监控能力有限         ├─ 丰富的监控界面
+└─ 扩展性差             └─ 水平扩展能力
 ```
 
 ## 🗄️ 数据库架构
@@ -274,6 +672,58 @@ src/
 - 模式: `模块:方法:参数`
 - 示例: `watchlist:list:userId123`
 - 所有缓存键必须设置TTL过期时间
+
+## ⚠️ 数据安全与测试规范
+
+### Mock数据使用规则 (重要)
+🚨 **严格禁止在非单元测试代码中使用Mock数据**:
+
+- **禁止场景**: 在业务代码、服务类、控制器、Activities、工作流中使用任何形式的Mock数据
+- **允许场景**: 仅在单元测试文件（`.spec.ts`、`.test.ts`）中使用Mock数据
+- **问题风险**: Mock数据会导致：
+  - 生产环境隐藏的逻辑错误
+  - 调试困难，问题排查复杂
+  - 数据不一致性
+  - 业务逻辑验证失效
+
+#### ❌ 错误示例
+```typescript
+// 业务代码中不应该有这样的逻辑
+if (process.env.NODE_ENV === 'test') {
+  return { mockData: 'test' }; // 禁止！
+}
+
+// Activity中不应该有Mock逻辑
+async function getStockData(params) {
+  if (isTestEnvironment()) {
+    return mockStockData; // 禁止！
+  }
+  // ... 真实API调用
+}
+```
+
+#### ✅ 正确做法
+```typescript
+// 业务代码：始终调用真实服务或抛出明确错误
+async function getStockData(params) {
+  try {
+    return await realApiCall(params);
+  } catch (error) {
+    logger.error('API调用失败', error);
+    throw new Error('数据获取失败，请检查网络连接和API配置');
+  }
+}
+
+// 单元测试：使用Jest Mock
+// ✅ 在 .spec.ts 文件中
+const mockApiCall = jest.fn().mockResolvedValue(testData);
+```
+
+#### 替代方案
+1. **错误处理**: 在无法获取真实数据时，抛出明确的错误信息
+2. **配置管理**: 使用环境变量控制API端点，而非Mock逻辑
+3. **测试环境**: 搭建独立的测试API服务，而非使用Mock数据
+4. **单元测试**: 仅在测试文件中使用Jest的Mock功能
 
 ## 🔧 API 标准
 

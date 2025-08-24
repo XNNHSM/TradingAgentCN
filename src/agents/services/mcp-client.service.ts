@@ -119,63 +119,82 @@ export class MCPClientService {
    * 获取股票基本信息
    */
   private async getStockBasicInfo(params: { stock_code: string }): Promise<string> {
-    // MCP API调用实现
-    const mockData = {
-      code: params.stock_code,
-      name: "示例股票",
-      exchange: "上海证券交易所",
-      industry: "信息技术",
-      market_cap: "1000亿元",
-      pe_ratio: 25.5,
-      pb_ratio: 3.2,
-    };
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_stock_basic_info',
+          parameters: params,
+        }),
+      });
 
-    return `# ${params.stock_code} 股票基本信息
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      return `# ${params.stock_code} 股票基本信息
 
 ## 基本信息
-- 股票代码: ${mockData.code}
-- 股票名称: ${mockData.name}
-- 交易所: ${mockData.exchange}
-- 所属行业: ${mockData.industry}
-- 市值: ${mockData.market_cap}
-- 市盈率: ${mockData.pe_ratio}
-- 市净率: ${mockData.pb_ratio}
+- 股票代码: ${data.stock_code || params.stock_code}
+- 股票名称: ${data.stock_name || '未知'}
+- 交易所: ${data.market || '未知'}
+- 所属行业: ${data.industry || '未知'}
+- 市值: ${data.market_cap || '未知'}
+- 市盈率: ${data.pe_ratio || '未知'}
+- 市净率: ${data.pb_ratio || '未知'}
 
 数据来源: 阿里云百炼MCP股票数据服务`;
+    } catch (error) {
+      this.logger.businessError('获取股票基本信息失败', error, { stock_code: params.stock_code });
+      throw new Error(`获取股票基本信息失败: ${error.message}`);
+    }
   }
 
   /**
    * 获取股票实时数据
    */
   private async getStockRealtimeData(params: { stock_code: string }): Promise<string> {
-    const mockData = {
-      code: params.stock_code,
-      name: "示例股票",
-      price: 50.25,
-      change: 1.25,
-      change_percent: 2.55,
-      volume: 1500000,
-      turnover: 75000000,
-      high: 51.20,
-      low: 49.80,
-      open: 50.00,
-      prev_close: 49.00,
-    };
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_stock_realtime_data',
+          parameters: params,
+        }),
+      });
 
-    return `# ${params.stock_code} 实时行情
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const change = data.change || 0;
+      const changePercent = data.change_percent || 0;
+      const volume = data.volume || 0;
+      const turnover = data.turnover || 0;
+
+      return `# ${params.stock_code} 实时行情
 
 ## 实时数据
-- 当前价格: ¥${mockData.price}
-- 涨跌额: ¥${mockData.change > 0 ? '+' : ''}${mockData.change}
-- 涨跌幅: ${mockData.change_percent > 0 ? '+' : ''}${mockData.change_percent}%
-- 成交量: ${(mockData.volume / 10000).toFixed(2)}万手
-- 成交额: ¥${(mockData.turnover / 100000000).toFixed(2)}亿
-- 最高价: ¥${mockData.high}
-- 最低价: ¥${mockData.low}
-- 开盘价: ¥${mockData.open}
-- 昨收价: ¥${mockData.prev_close}
+- 当前价格: ¥${data.current_price || '未知'}
+- 涨跌额: ¥${change > 0 ? '+' : ''}${change}
+- 涨跌幅: ${changePercent > 0 ? '+' : ''}${changePercent}%
+- 成交量: ${(volume / 10000).toFixed(2)}万手
+- 成交额: ¥${(turnover / 100000000).toFixed(2)}亿
+- 最高价: ¥${data.high || '未知'}
+- 最低价: ¥${data.low || '未知'}
+- 开盘价: ¥${data.open || '未知'}
+- 昨收价: ¥${data.prev_close || '未知'}
 
 数据来源: 阿里云百炼MCP股票数据服务`;
+    } catch (error) {
+      this.logger.businessError('获取股票实时数据失败', error, { stock_code: params.stock_code });
+      throw new Error(`获取股票实时数据失败: ${error.message}`);
+    }
   }
 
   /**
@@ -187,26 +206,50 @@ export class MCPClientService {
     end_date: string;
     period?: string;
   }): Promise<string> {
-    return `# ${params.stock_code} 历史数据
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_stock_historical_data',
+          parameters: params,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const dataCount = data.data?.length || 0;
+      
+      return `# ${params.stock_code} 历史数据
 
 ## 数据概览
 - 查询期间: ${params.start_date} 至 ${params.end_date}
 - 数据周期: ${params.period || '日线'}
-- 数据条数: 60条
+- 数据条数: ${dataCount}条
 
 ## 价格概览
-- 期间最高: ¥52.80
-- 期间最低: ¥47.20
-- 期间涨幅: +8.5%
-- 平均成交量: 120万手
-- 平均换手率: 2.3%
+- 期间最高: ¥${data.period_high || '未知'}
+- 期间最低: ¥${data.period_low || '未知'}
+- 期间涨幅: ${data.period_return || '未知'}
+- 平均成交量: ${data.avg_volume || '未知'}
+- 平均换手率: ${data.avg_turnover_rate || '未知'}
 
 ## 趋势分析
-- 短期趋势(5日): 上涨
-- 中期趋势(20日): 震荡上行  
-- 长期趋势(60日): 稳步上升
+- 短期趋势(5日): ${data.trend_short || '未知'}
+- 中期趋势(20日): ${data.trend_medium || '未知'}
+- 长期趋势(60日): ${data.trend_long || '未知'}
 
 数据来源: 阿里云百炼MCP股票数据服务`;
+    } catch (error) {
+      this.logger.businessError('获取历史数据失败', error, { 
+        stock_code: params.stock_code,
+        date_range: `${params.start_date} - ${params.end_date}`
+      });
+      throw new Error(`获取历史数据失败: ${error.message}`);
+    }
   }
 
   /**
@@ -216,35 +259,58 @@ export class MCPClientService {
     stock_code: string;
     period?: number;
   }): Promise<string> {
-    return `# ${params.stock_code} 技术指标分析
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_stock_technical_indicators',
+          parameters: params,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const indicators = data.indicators || {};
+      
+      return `# ${params.stock_code} 技术指标分析
 
 ## 移动平均线
-- MA5: ¥50.15
-- MA10: ¥49.80
-- MA20: ¥49.20
-- MA60: ¥48.50
+- MA5: ¥${indicators.MA5 || '未知'}
+- MA10: ¥${indicators.MA10 || '未知'}
+- MA20: ¥${indicators.MA20 || '未知'}
+- MA60: ¥${indicators.MA60 || '未知'}
 
 ## MACD指标
-- MACD: 0.85
-- 信号线: 0.72
-- 柱状图: 0.13
+- MACD: ${indicators.MACD || '未知'}
+- 信号线: ${indicators.MACD_SIGNAL || '未知'}
+- 柱状图: ${indicators.MACD_HISTOGRAM || '未知'}
 
 ## RSI指标
-- RSI(14): 68.5
-- 状态: 接近超买区域
+- RSI(14): ${indicators.RSI || '未知'}
+- 状态: ${indicators.RSI_STATUS || '未知'}
 
 ## 布林带
-- 上轨: ¥51.50
-- 中轨: ¥49.80
-- 下轨: ¥48.10
-- 当前位置: 中上轨区域
+- 上轨: ¥${indicators.BOLL_UPPER || '未知'}
+- 中轨: ¥${indicators.BOLL_MIDDLE || '未知'}
+- 下轨: ¥${indicators.BOLL_LOWER || '未知'}
+- 当前位置: ${indicators.BOLL_POSITION || '未知'}
 
 ## KDJ指标
-- K值: 72.3
-- D值: 68.9
-- J值: 78.1
+- K值: ${indicators.KDJ_K || '未知'}
+- D值: ${indicators.KDJ_D || '未知'}
+- J值: ${indicators.KDJ_J || '未知'}
 
 数据来源: 阿里云百炼MCP股票数据服务`;
+    } catch (error) {
+      this.logger.businessError('获取技术指标失败', error, { 
+        stock_code: params.stock_code
+      });
+      throw new Error(`获取技术指标失败: ${error.message}`);
+    }
   }
 
   /**
@@ -255,91 +321,141 @@ export class MCPClientService {
     report_type?: string;
     period?: string;
   }): Promise<string> {
-    return `# ${params.stock_code} 财务数据
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_stock_financial_data',
+          parameters: params,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const financial = data.financial_data || {};
+      
+      return `# ${params.stock_code} 财务数据
 
 ## 财务概览
-- 总资产: 500亿元
-- 净资产: 200亿元
-- 营业收入: 300亿元
-- 净利润: 50亿元
-- 每股收益: 2.5元
+- 总资产: ${financial.total_assets || '未知'}
+- 净资产: ${financial.shareholders_equity || '未知'}
+- 营业收入: ${financial.revenue || '未知'}
+- 净利润: ${financial.net_income || '未知'}
+- 每股收益: ${financial.eps || '未知'}
 
 ## 财务比率
-- ROE: 25%
-- ROA: 10%
-- 毛利率: 35%
-- 净利率: 16.7%
-- 资产负债率: 60%
+- ROE: ${financial.roe || '未知'}
+- ROA: ${financial.roa || '未知'}
+- 毛利率: ${financial.gross_margin || '未知'}
+- 净利率: ${financial.net_margin || '未知'}
+- 资产负债率: ${financial.debt_ratio || '未知'}
 
 ## 成长性指标
-- 营收增长率: 15%
-- 净利润增长率: 20%
-- 每股收益增长率: 18%
+- 营收增长率: ${financial.revenue_growth || '未知'}
+- 净利润增长率: ${financial.profit_growth || '未知'}
+- 每股收益增长率: ${financial.eps_growth || '未知'}
 
 数据来源: 阿里云百炼MCP股票数据服务`;
+    } catch (error) {
+      this.logger.businessError('获取财务数据失败', error, { 
+        stock_code: params.stock_code,
+        report_type: params.report_type 
+      });
+      throw new Error(`获取财务数据失败: ${error.message}`);
+    }
   }
 
   /**
    * 获取市场概览
    */
   private async getMarketOverview(_params: any): Promise<string> {
-    return `# A股市场概览
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_market_overview',
+          parameters: _params || {},
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const market = data.market_summary || {};
+      const stats = data.market_stats || {};
+      
+      return `# A股市场概览
 
 ## 主要指数
-- 上证指数: 3,250.5 (+1.2%)
-- 深证成指: 11,850.8 (+1.5%)
-- 创业板指: 2,450.2 (+2.1%)
-- 科创50: 1,180.5 (+1.8%)
+- 上证指数: ${market.shanghai_index?.value || '未知'} (${market.shanghai_index?.change_percent || '未知'})
+- 深证成指: ${market.shenzhen_index?.value || '未知'} (${market.shenzhen_index?.change_percent || '未知'})
+- 创业板指: ${market.gem_index?.value || '未知'} (${market.gem_index?.change_percent || '未知'})
+- 科创50: ${market.star_index?.value || '未知'} (${market.star_index?.change_percent || '未知'})
 
 ## 市场统计
-- 上涨股票: 2,856只
-- 下跌股票: 1,542只
-- 平盘股票: 125只
-- 涨停股票: 45只
-- 跌停股票: 8只
+- 上涨股票: ${stats.rising_stocks || '未知'}只
+- 下跌股票: ${stats.falling_stocks || '未知'}只
+- 平盘股票: ${stats.flat_stocks || '未知'}只
+- 涨停股票: ${stats.limit_up_stocks || '未知'}只
+- 跌停股票: ${stats.limit_down_stocks || '未知'}只
 
 ## 成交情况
-- 沪市成交额: 3,500亿元
-- 深市成交额: 4,200亿元
-- 总成交额: 7,700亿元
+- 沪市成交额: ${stats.sh_turnover || '未知'}
+- 深市成交额: ${stats.sz_turnover || '未知'}
+- 总成交额: ${data.trading_volume || '未知'}
 
 数据来源: 阿里云百炼MCP股票数据服务`;
+    } catch (error) {
+      this.logger.businessError('获取市场概览失败', error);
+      throw new Error(`获取市场概览失败: ${error.message}`);
+    }
   }
 
   /**
    * 搜索股票
    */
   private async searchStocks(params: { keyword: string }): Promise<string> {
-    return `# 股票搜索结果 - "${params.keyword}"
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'search_stocks',
+          parameters: params,
+        }),
+      });
 
-## 搜索到 5 只相关股票
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
 
-### 1. 科技股份 (000001)
-- 股票名称: 科技股份
-- 所属行业: 信息技术
-- 当前价格: ¥25.80
-
-### 2. 创新科技 (000002) 
-- 股票名称: 创新科技
-- 所属行业: 软件服务
-- 当前价格: ¥18.50
-
-### 3. 智能制造 (300001)
-- 股票名称: 智能制造
-- 所属行业: 机械制造  
-- 当前价格: ¥32.40
-
-### 4. 数字经济 (688001)
-- 股票名称: 数字经济
-- 所属行业: 互联网
-- 当前价格: ¥45.20
-
-### 5. 新能源股 (002001)
-- 股票名称: 新能源股
-- 所属行业: 新能源
-- 当前价格: ¥28.90
-
-数据来源: 阿里云百炼MCP股票数据服务`;
+      const data = await response.json();
+      const results = data.results || [];
+      const total = data.total || 0;
+      
+      let resultText = `# 股票搜索结果 - "${params.keyword}"\n\n## 搜索到 ${total} 只相关股票\n\n`;
+      
+      results.forEach((stock: any, index: number) => {
+        resultText += `### ${index + 1}. ${stock.stock_name || '未知'} (${stock.stock_code || '未知'})\n`;
+        resultText += `- 股票名称: ${stock.stock_name || '未知'}\n`;
+        resultText += `- 所属行业: ${stock.industry || '未知'}\n`;
+        resultText += `- 当前价格: ¥${stock.current_price || '未知'}\n\n`;
+      });
+      
+      resultText += `数据来源: 阿里云百炼MCP股票数据服务`;
+      
+      return resultText;
+    } catch (error) {
+      this.logger.businessError('股票搜索失败', error, { keyword: params.keyword });
+      throw new Error(`股票搜索失败: ${error.message}`);
+    }
   }
 
   /**
@@ -350,26 +466,43 @@ export class MCPClientService {
     keyword: string;
     days?: number;
   }): Promise<string> {
-    return `# 股票新闻 - "${params.keyword}"
+    try {
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          tool: 'get_stock_news',
+          parameters: params,
+        }),
+      });
 
-## 相关新闻 (最近${params.days || 7}天)
+      if (!response.ok) {
+        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+      }
 
-### 1. 【公司公告】年报发布，业绩超预期
-- 发布时间: 2025-08-19 09:30
-- 来源: 上海证券报
-- 内容摘要: 公司发布2024年年报，净利润同比增长25%...
-
-### 2. 【行业动态】科技板块集体上涨
-- 发布时间: 2025-08-18 15:20  
-- 来源: 证券时报
-- 内容摘要: 受利好政策刺激，科技板块普遍上涨...
-
-### 3. 【市场分析】机构看好后市发展
-- 发布时间: 2025-08-17 10:15
-- 来源: 中国证券报
-- 内容摘要: 多家机构发布研报，看好公司长期发展...
-
-数据来源: 阿里云百炼MCP股票数据服务`;
+      const data = await response.json();
+      const news = data.news || [];
+      const total = data.total || 0;
+      
+      let newsText = `# 股票新闻 - "${params.keyword}"\n\n## 相关新闻 (最近${params.days || 7}天)\n\n`;
+      
+      news.forEach((article: any, index: number) => {
+        newsText += `### ${index + 1}. ${article.title || '未知标题'}\n`;
+        newsText += `- 发布时间: ${article.publish_time || '未知时间'}\n`;
+        newsText += `- 来源: ${article.source || '未知来源'}\n`;
+        newsText += `- 内容摘要: ${article.summary || '无摘要'}\n\n`;
+      });
+      
+      newsText += `数据来源: 阿里云百炼MCP股票数据服务`;
+      
+      return newsText;
+    } catch (error) {
+      this.logger.businessError('获取股票新闻失败', error, { 
+        stock_code: params.stock_code,
+        keyword: params.keyword 
+      });
+      throw new Error(`获取股票新闻失败: ${error.message}`);
+    }
   }
 
   /**
