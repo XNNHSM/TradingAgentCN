@@ -48,7 +48,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
    * 处理单个股票的深度分析任务
    */
   private async startAnalysisWorker(activities: any): Promise<void> {
-    const taskQueue = `agents-analysis-${this.environment}`;
+    const taskQueue = 'agents-analysis'; // 简化任务队列名称
 
     try {
       const worker = await Worker.create({
@@ -90,7 +90,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
       totalWorkers: this.workers.length,
       workers: [
         {
-          taskQueue: `agents-analysis-${this.environment}`,
+          taskQueue: 'agents-analysis',
           maxConcurrentActivities: 10,
           maxConcurrentWorkflows: 3,
         },

@@ -1,6 +1,6 @@
 /**
- * 智能体模块专属 Temporal 客户端服务
- * 严格按照新的命名规范: agents-{environment}
+ * 智能体模块 Temporal 客户端服务
+ * 使用 default 命名空间简化配置
  */
 
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
@@ -26,13 +26,13 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
   private readonly environment: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.environment = this.configService.get('NODE_ENV', 'dev');
-    this.namespace = `agents-${this.environment}`;
+    this.environment = this.configService.get('NODE_ENV', 'development');
+    this.namespace = 'default'; // 统一使用 default 命名空间
     this.initializeClient();
   }
 
   /**
-   * 初始化智能体模块专属 Temporal 客户端
+   * 初始化智能体模块 Temporal 客户端
    */
   private async initializeClient(): Promise<void> {
     try {
@@ -41,7 +41,7 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
         address: `${this.configService.get('TEMPORAL_HOST', 'localhost')}:${this.configService.get('TEMPORAL_PORT', '7233')}`,
       });
 
-      // 创建客户端 - 使用智能体模块专属命名空间
+      // 创建客户端 - 使用 default 命名空间
       this.client = new Client({
         connection: this.connection,
         namespace: this.namespace,
@@ -60,6 +60,7 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
     }
   }
 
+
   /**
    * 启动股票分析工作流
    * 使用股票代码+日期作为workflowId保证当天同一股票不重复执行
@@ -71,7 +72,7 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
     }
 
     try {
-      const taskQueue = `agents-analysis-${this.environment}`;
+      const taskQueue = 'agents-analysis'; // 简化任务队列名称
       
       // 使用股票代码+当前日期作为workflowId，确保当天同一股票不重复执行
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD格式

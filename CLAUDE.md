@@ -81,14 +81,14 @@ npm test -- src/agents/services/mcp-client.service.spec.ts
 # 运行综合分析师测试
 npm test -- src/agents/unified/comprehensive-analyst.agent.spec.ts
 
-# 运行统一协调服务测试
-npm test -- src/agents/unified/unified-orchestrator.service.spec.ts
-
 # 运行基础智能体测试
 npm test -- src/agents/base/base-agent.spec.ts
 
 # 运行LLM服务测试
 npm test -- src/agents/services/llm.service.spec.ts
+
+# 运行Temporal客户端测试
+npm test -- src/agents/temporal/agents-temporal-client.service.spec.ts
 
 # 运行新闻定时任务测试
 npm test -- src/modules/news/services/news-scheduler.service.spec.ts
@@ -102,6 +102,7 @@ npm test -- src/modules/news/entities/news-summary.entity.spec.ts
 - **API密钥要求**: 需要配置有效的 `DASHSCOPE_API_KEY` 才能运行完整测试
 - **网络依赖**: 测试依赖阿里云百炼MCP服务 (https://dashscope.aliyuncs.com/api/v1/mcps/qtf_mcp)
 - **模拟数据**: MCP客户端在测试环境中使用模拟数据，保证测试稳定性
+- **Temporal配置**: 统一使用 `default` 命名空间，简化Temporal配置管理
 - **日期格式**: 统一使用 `YYYY-MM-dd` 格式 (如: 2025-08-16)
 - **时间格式**: 统一使用 `YYYY-MM-dd HH:mm:ss` 格式 (如: 2025-08-16 14:30:25)
 
@@ -986,9 +987,10 @@ this.businessLogger.apiCall("POST", "/api/news/crawl", {
 1. **安装依赖**: `npm install`
 2. **配置环境**: 复制 `.env.example` 到 `.env` 并配置
 3. **启动数据库**: 确保PostgreSQL和Redis正在运行
-4. **运行开发模式**: `npm run start:dev`
-5. **访问API文档**: http://localhost:3000/api-docs
-6. **运行测试**: `npm run test`
+4. **启动Temporal服务**: `docker-compose -f docker-compose.temporal.yml up -d` (使用默认的 default 命名空间)
+5. **运行开发模式**: `npm run start:dev`
+6. **访问API文档**: http://localhost:3000/api-docs
+7. **运行测试**: `npm run test`
 
 ## 🏗️ 详细架构图
 
