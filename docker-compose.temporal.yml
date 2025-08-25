@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Temporal 开发环境服务
+  temporal:
+    container_name: temporal-dev
+    depends_on:
+      - postgresql
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+    image: temporalio/auto-setup:1.22
+    ports:
+      - 7233:7233    # gRPC endpoint  
+      - 8233:8233    # Web UI
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+    networks:
+      - temporal-network
+
+  # PostgreSQL 数据库 (Temporal 专用)
+  postgresql:
+    container_name: temporal-postgresql
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+    image: postgres:13
+    ports:
+      - 5433:5432  # 使用不同端口避免与应用数据库冲突
+    volumes:
+      - temporal_postgres_data:/var/lib/postgresql/data
+    networks:
+      - temporal-network
+
+  # Temporal Web UI (可选)
+  temporal-ui:
+    container_name: temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    image: temporalio/ui:2.21.3
+    ports:
+      - 8080:8080   # Web UI 界面
+    networks:
+      - temporal-network
+
+volumes:
+  temporal_postgres_data:
+    driver: local
+
+networks:
+  temporal-network:
+    driver: bridge
+
+# 使用方法:
+# 启动 Temporal 服务: docker-compose -f docker-compose.temporal.yml up -d
+# 停止服务: docker-compose -f docker-compose.temporal.yml down
+# 查看日志: docker-compose -f docker-compose.temporal.yml logs temporal
+# 访问 Web UI: http://localhost:8080
+# 访问 gRPC: localhost:7233

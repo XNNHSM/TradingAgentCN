@@ -1,0 +1,47 @@
+# Temporal dynamic configuration for development with SQL/PostgreSQL
+# This file contains runtime configuration settings for Temporal server
+
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+
+system.advancedVisibilityWritingMode:
+  - value: "on"
+
+frontend.enableClientVersionCheck:
+  - value: true
+
+history.defaultWorkflowTaskTimeout:
+  - value: "10s"
+  
+history.maxAutoResetPoints:
+  - value: 20
+
+matching.longPollExpirationInterval:
+  - value: "60s"
+
+matching.minTaskThrottlingBurstSize:
+  - value: 1
+
+# Configure retention period for completed workflows (7 days)
+system.defaultWorkflowRetentionTTL:
+  - value: "168h"
+
+# Rate limiting
+frontend.rps:
+  - value: 1000
+
+# Maximum concurrent workflow task executions
+frontend.maxConcurrentWorkflowTaskExecutionSize:
+  - value: 1000
+
+# History service configuration
+history.rps:
+  - value: 3000
+
+# Matching service configuration  
+matching.rps:
+  - value: 3000
+
+# Worker service configuration
+worker.rps:
+  - value: 3000

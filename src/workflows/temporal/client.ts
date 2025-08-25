@@ -35,16 +35,13 @@ export class TemporalClientService {
       });
 
       // 创建客户端
-      // 根据新规范使用动态 namespace: agents-{environment}
-      const environment = this.configService.get('NODE_ENV', 'dev');
-      const namespace = `agents-${environment}`;
-      
+      // 统一使用 default namespace，简化配置管理
       this.client = new Client({
         connection: this.connection,
-        namespace,
+        namespace: 'default',
       });
       
-      this.logger.log(`Temporal客户端连接到 namespace: ${namespace}`);
+      this.logger.log(`Temporal客户端连接到 namespace: default`);
 
       this.logger.log('Temporal客户端初始化成功');
     } catch (error) {

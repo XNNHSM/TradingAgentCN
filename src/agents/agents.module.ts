@@ -11,9 +11,11 @@ import { DashScopeAdapter } from './services/llm-adapters/dashscope-adapter';
 import { AgentsTemporalClientService } from './temporal/agents-temporal-client.service';
 import { AgentsWorkerService } from './temporal/agents-worker.service';
 
-// 新的统一智能体
+// 新的统一智能体架构
+import { DataCollectorAgent } from './unified/data-collector.agent';
 import { ComprehensiveAnalystAgent } from './unified/comprehensive-analyst.agent';
 import { TradingStrategistAgent } from './unified/trading-strategist.agent';
+import { UnifiedOrchestratorService } from './unified/unified-orchestrator.service';
 
 // 执行记录相关（保持兼容）
 import { AgentExecutionRecord } from './entities/agent-execution-record.entity';
@@ -44,9 +46,11 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     AgentsTemporalClientService,
     AgentsWorkerService,
 
-    // 统一智能体
+    // 统一智能体架构
+    DataCollectorAgent,
     ComprehensiveAnalystAgent,
     TradingStrategistAgent,
+    UnifiedOrchestratorService,
 
     // 执行记录服务
     AgentExecutionRecordService,
@@ -58,8 +62,10 @@ import { ExecutionRecordsController } from './execution-records/execution-record
   exports: [
     // 对外提供的主要服务
     MCPClientService,
+    DataCollectorAgent,
     ComprehensiveAnalystAgent,
     TradingStrategistAgent,
+    UnifiedOrchestratorService,
     
     // Temporal服务导出
     AgentsTemporalClientService,

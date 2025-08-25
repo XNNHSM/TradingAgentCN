@@ -337,51 +337,38 @@ export class StockActivitiesImpl implements StockActivities {
 ### Temporal 集成规范
 
 #### 1. Namespace 命名规范 ⭐
-**命名规则**: `{模块名}-{环境}`
+**统一规范**: 所有模块统一使用 `default` 命名空间
 
-**环境标识**:
-- `dev`: 开发环境
-- `test`: 测试环境  
-- `stg`: 预发布环境
-- `prd`: 生产环境
+**设计原则**:
+- ✅ **简化配置**: 统一使用 `default` 命名空间，简化 Temporal 配置管理
+- ✅ **环境隔离**: 通过 TaskQueue 名称实现环境和模块隔离
+- ✅ **管理简便**: 减少 namespace 管理复杂度，降低运维成本
 
-**示例**:
-```bash
-# 新闻模块
-news-dev        # 新闻模块开发环境
-news-test       # 新闻模块测试环境
-news-prd        # 新闻模块生产环境
-
-# 智能体模块
-agents-dev      # 智能体模块开发环境
-agents-prd      # 智能体模块生产环境
-
-# 自选股模块
-watchlist-dev   # 自选股模块开发环境
-watchlist-prd   # 自选股模块生产环境
-
-# 分析模块
-analysis-dev    # 分析模块开发环境
-analysis-prd    # 分析模块生产环境
-```
-
-**Namespace 配置示例**:
+**配置示例**:
 ```typescript
-// 在各模块的 Temporal 客户端中
+// 所有模块统一使用 default namespace
 const client = new Client({
   connection,
-  namespace: `${MODULE_NAME}-${NODE_ENV}`, // 如: 'news-dev'
+  namespace: 'default', // 统一使用 default
 });
 ```
 
+**优势说明**:
+- 🎯 **配置统一**: 无需为不同模块创建不同的 namespace
+- 🔧 **运维简化**: 所有工作流在同一个 namespace 下管理
+- 📊 **监控集中**: Web UI 界面统一查看所有工作流状态
+
 #### 2. TaskQueue 命名规范 ⭐
 **命名规则**: `{模块名}-{业务域}-{环境}`
+
+**核心作用**: 由于统一使用 `default` namespace，TaskQueue 承担了环境和模块隔离的重要职责
 
 **规范说明**:
 - 🚫 **不使用全局配置**: 移除 `TEMPORAL_TASK_QUEUE` 环境变量
 - ✅ **模块自定义**: 每个业务模块自行定义 taskQueue 名称
 - ✅ **业务隔离**: 不同业务使用不同的 taskQueue
-- ✅ **环境隔离**: 不同环境使用不同的 taskQueue
+- ✅ **环境隔离**: 通过 taskQueue 名称区分不同环境
+- 🎯 **主要隔离机制**: 在统一 namespace 下通过 taskQueue 实现完整隔离
 
 **TaskQueue 命名示例**:
 ```bash
@@ -406,15 +393,22 @@ analysis-alerts-dev     # 分析提醒任务队列(开发环境)
 
 **TaskQueue 使用示例**:
 ```typescript
-// 在工作流启动时指定 taskQueue
+// 统一使用 default namespace，通过 taskQueue 隔离
+const client = new Client({
+  connection,
+  namespace: 'default', // 统一 namespace
+});
+
+// 在工作流启动时指定 taskQueue 实现隔离
 const handle = await client.workflow.start(stockAnalysisWorkflow, {
   taskQueue: `agents-analysis-${NODE_ENV}`,  // agents-analysis-dev
   workflowId: `stock-analysis-${stockCode}-${Date.now()}`,
   args: [{ stockCode, metadata }],
 });
 
-// Worker 监听特定的 taskQueue
+// Worker 监听特定的 taskQueue 实现模块和环境隔离
 const worker = await Worker.create({
+  connection, // 连接到 default namespace
   workflowsPath: require.resolve('./workflows'),
   activities,
   taskQueue: `news-crawling-${NODE_ENV}`,   // news-crawling-dev
@@ -497,29 +491,29 @@ export class TaskQueueHealthCheck {
 # Temporal 服务配置
 TEMPORAL_HOST=localhost
 TEMPORAL_PORT=7233
-# 注意: 移除了 TEMPORAL_NAMESPACE 和 TEMPORAL_TASK_QUEUE 配置
-# namespace 和 taskQueue 由各模块自行管理
+# 统一使用 default namespace，通过 taskQueue 实现隔离
 
 # 工作流配置
 WORKFLOW_EXECUTION_TIMEOUT=30m
 ACTIVITY_EXECUTION_TIMEOUT=5m
 ACTIVITY_RETRY_ATTEMPTS=3
 
-# 环境标识 (用于 namespace 和 taskQueue 命名)
+# 环境标识 (用于 taskQueue 命名和环境隔离)
 NODE_ENV=dev  # dev | test | stg | prd
 ```
 
 #### 2. Worker 配置 (更新后)
 ```typescript
-// 模块级别 Worker 配置示例
+// 模块级别 Worker 配置示例 (统一使用 default namespace)
 // src/modules/news/temporal/news-worker.ts
 export const createNewsWorker = () => {
   const environment = process.env.NODE_ENV || 'dev';
   
   return Worker.create({
+    connection, // 连接到 default namespace
     workflowsPath: require.resolve('./workflows'),
     activities: newsActivities,
-    taskQueue: `news-crawling-${environment}`,  // 动态生成
+    taskQueue: `news-crawling-${environment}`,  // 通过 taskQueue 实现隔离
     maxConcurrentActivityTaskExecutions: 20,
     maxConcurrentWorkflowTaskExecutions: 5,
   });
@@ -530,9 +524,10 @@ export const createAgentsWorker = () => {
   const environment = process.env.NODE_ENV || 'dev';
   
   return Worker.create({
+    connection, // 连接到 default namespace
     workflowsPath: require.resolve('./workflows'),
     activities: analysisActivities,
-    taskQueue: `agents-analysis-${environment}`, // 动态生成
+    taskQueue: `agents-analysis-${environment}`, // 通过 taskQueue 实现隔离
     maxConcurrentActivityTaskExecutions: 10,
     maxConcurrentWorkflowTaskExecutions: 3,
   });
@@ -541,33 +536,29 @@ export const createAgentsWorker = () => {
 
 #### 3. 客户端配置 (更新后)
 ```typescript
-// 模块级别客户端配置示例
+// 模块级别客户端配置示例 (统一使用 default namespace)
 // src/modules/news/temporal/news-client.ts
 export class NewsTemporalClient {
   private client: Client;
   
   constructor() {
-    const environment = process.env.NODE_ENV || 'dev';
-    const namespace = `news-${environment}`;
-    
     this.client = new Client({
       connection,
-      namespace, // news-dev, news-prd 等
+      namespace: 'default', // 统一使用 default namespace
     });
   }
   
   async startNewsCrawlingWorkflow(input: NewsCrawlingInput) {
     const environment = process.env.NODE_ENV || 'dev';
-    const taskQueue = `news-crawling-${environment}`;
+    const taskQueue = `news-crawling-${environment}`; // 通过 taskQueue 实现隔离
     
     return await this.client.workflow.start(newsCrawlingWorkflow, {
-      taskQueue,
+      taskQueue, // news-crawling-dev, news-crawling-prd 等
       workflowId: `news-crawling-${input.date}-${Date.now()}`,
       args: [input],
     });
   }
 }
-```
 ```
 
 ### 工作流监控和管理
@@ -767,40 +758,78 @@ const mockApiCall = jest.fn().mockResolvedValue(testData);
 
 ## 🎯 MCP统一智能体系统
 
-### 新一代智能体架构
+### 🚨 MCP 服务调用原则 (重要)
+
+**核心原则**: 避免不同智能体重复调用同一个 MCP 服务，以控制成本和提高效率
+
+#### **成本控制策略**:
+- 🚫 **禁止重复调用**: 不同智能体不应该调用相同的 MCP 服务获取相同数据
+- ✅ **数据共享机制**: 创建专门的数据获取智能体，其他智能体调用该智能体获取分析结果
+- 💰 **成本考量**: MCP 服务将来可能收费，必须严格控制调用次数
+- 🔄 **流程优化**: 避免在分析流程中出现重复的数据获取和分析步骤
+
+#### **实现策略**:
+```
+数据获取智能体 (DataCollectorAgent)
+├── 负责所有 MCP 服务调用
+├── 缓存和整理股票基础数据
+└── 提供标准化数据接口给其他智能体
+
+分析智能体层
+├── 综合分析师 → 调用数据获取智能体
+├── 交易策略师 → 调用数据获取智能体 + 分析师结果
+└── 避免直接调用 MCP 服务
+```
+
+### 新一代智能体架构 (优化后)
 ```
 MCP智能体系统/
+├── 数据获取智能体 (DataCollectorAgent) 🆕
+│   ├── 股票基本信息获取 (get_stock_basic_info)
+│   ├── 实时行情数据获取 (get_stock_realtime_data)
+│   ├── 历史价格数据获取 (get_stock_historical_data)
+│   ├── 技术指标计算 (get_stock_technical_indicators)
+│   ├── 财务数据获取 (get_stock_financial_data)
+│   └── 新闻数据获取 (get_stock_news)
 ├── 综合分析师 (ComprehensiveAnalystAgent)
-│   ├── 技术分析 (整合原市场分析师)
-│   ├── 基本面分析 (整合原基本面分析师)
-│   └── 新闻情绪分析 (整合原新闻分析师)
+│   ├── 技术分析 → 调用数据获取智能体
+│   ├── 基本面分析 → 调用数据获取智能体
+│   └── 新闻情绪分析 → 调用数据获取智能体
 ├── 交易策略师 (TradingStrategistAgent)
-│   ├── 多空观点对比 (整合原多头/空头研究员)
-│   ├── 交易决策制定 (整合原交易智能体)
-│   └── 风险管控方案 (整合原风险管理员)
+│   ├── 多空观点对比 → 基于分析师结果
+│   ├── 交易决策制定 → 基于分析师结果 + 数据智能体
+│   └── 风险管控方案 → 基于分析师结果
 └── 统一协调服务 (UnifiedOrchestratorService)
-    ├── MCP数据获取 (通过阿里云百炼MCP协议)
-    ├── 智能体协调 (综合分析师 → 交易策略师)
+    ├── 智能体协调 (数据获取 → 综合分析 → 交易策略)
+    ├── 数据缓存管理 (避免重复调用)
     └── 最终决策生成 (权重: 综合分析70% + 交易策略30%)
 ```
 
-### MCP决策工作流
+### MCP决策工作流 (优化后)
 
 #### 自动流程(定时任务)
 1. 每天早上9点启动定时任务
 2. 检查是否为交易日，非交易日结束流程
 3. 获取已添加的自选股列表
-4. 通过MCP协议获取股票数据、财务数据、新闻数据
-5. 启动综合分析师进行全面分析
-6. 启动交易策略师制定交易方案
-7. 统一协调服务生成最终买卖建议
+4. **🆕 数据获取智能体**: 一次性通过MCP协议获取所有必要数据
+   - 股票基本信息、实时行情、历史数据
+   - 技术指标计算、财务数据、相关新闻
+5. **综合分析师**: 基于数据智能体结果进行全面分析
+6. **交易策略师**: 基于分析师结果制定交易方案
+7. **统一协调服务**: 整合所有结果生成最终买卖建议
 
 #### 手动分析流程
 1. 接收HTTP请求，用户输入股票代码
 2. 验证股票代码格式和有效性
-3. 通过MCP协议实时获取股票相关数据
-4. 两阶段智能体分析: 综合分析 → 交易策略
+3. **🆕 数据获取智能体**: 一次性获取股票相关所有数据 (避免重复调用)
+4. **分析阶段**: 综合分析师 → 交易策略师 (基于共享数据)
 5. 返回统一的投资建议和风险评估
+
+#### **🎯 核心优化点**:
+- ✅ **单次数据获取**: 每个股票只调用一次MCP服务
+- ✅ **数据共享**: 所有智能体共享同一份数据
+- ✅ **成本控制**: 大幅减少MCP服务调用次数
+- ✅ **效率提升**: 避免重复的网络请求和数据解析
 
 ## 🌐 数据源
 

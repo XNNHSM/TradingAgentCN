@@ -7,20 +7,20 @@ import {
   AgentConfig,
 } from "../interfaces/agent.interface";
 import { LLMService } from "../services/llm.service";
-import { MCPClientService } from "../services/mcp-client.service";
 import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
+import { DataCollectorAgent, ComprehensiveStockData } from "./data-collector.agent";
 
 /**
- * 交易策略师智能体
+ * 交易策略师智能体 (优化版)
  * 整合了原有的多头研究员、空头研究员、交易员和风险管理员的功能
  * 专注于制定具体的交易策略和风险管控方案
+ * 🎯 避免直接调用MCP服务，接收综合分析师提供的共享数据，控制成本
  */
 @Injectable()
 export class TradingStrategistAgent extends BaseAgent {
   constructor(
     llmService: LLMService,
     configService: ConfigService,
-    private readonly mcpClient: MCPClientService,
     executionRecordService: AgentExecutionRecordService,
   ) {
     const config: Partial<AgentConfig> = {
@@ -52,16 +52,15 @@ export class TradingStrategistAgent extends BaseAgent {
 - **风险优先**: 始终把风险控制放在第一位
 - **实战经验**: 基于市场实战经验提供建议
 
-🔧 **可用工具**
-您可以调用以下MCP工具：
-- get_stock_basic_info: 股票基本信息
-- get_stock_realtime_data: 实时行情数据  
-- get_stock_historical_data: 历史价格数据
-- get_stock_technical_indicators: 技术指标
-- get_market_overview: 市场整体情况
+📊 **数据来源说明**
+您将接收由综合分析师提供的完整股票分析数据，包括：
+- 综合分析师的专业分析报告和评分
+- 技术面、基本面、消息面的详细分析
+- 股票基础数据、行情数据、技术指标数据
+- 财务数据和相关新闻的情感分析
 
 📊 **策略框架**
-1. **多空对比分析**: 客观分析多空双方观点
+1. **多空对比分析**: 基于综合分析结果，客观分析多空双方观点
 2. **交易时机判断**: 确定具体的买卖时点
 3. **仓位管理**: 制定科学的仓位配置方案
 4. **风险控制**: 设计完善的止损止盈机制
@@ -77,7 +76,8 @@ export class TradingStrategistAgent extends BaseAgent {
 - 必须包含完整的风险控制方案
 - 必须给出明确的仓位管理建议
 - 必须考虑不同市场环境下的应对策略
-- 使用图表和表格清晰展示策略要点`,
+- 使用图表和表格清晰展示策略要点
+- 基于综合分析师的数据和结论进行策略制定`,
     };
 
     super(
@@ -106,15 +106,9 @@ export class TradingStrategistAgent extends BaseAgent {
 
     prompt += `**策略制定任务**:
 
-## 第一步：数据收集与市场环境分析
-请调用以下工具收集必要信息：
-1. get_stock_realtime_data - 获取最新行情
-2. get_stock_technical_indicators - 获取技术指标  
-3. get_stock_historical_data - 获取60天历史数据
-4. get_market_overview - 获取市场整体环境
-5. get_stock_basic_info - 获取基本面信息
+请基于综合分析师提供的专业分析报告制定交易策略：
 
-## 第二步：制定综合交易策略
+## 制定综合交易策略
 
 ### 🎭 1. 多空观点对比
 #### 📈 看多观点分析
@@ -256,11 +250,6 @@ export class TradingStrategistAgent extends BaseAgent {
   protected async preprocessContext(
     context: AgentContext,
   ): Promise<AgentContext> {
-    // 确保MCP客户端已初始化
-    if (!this.mcpClient.isConnectedToMCP()) {
-      await this.mcpClient.initialize();
-    }
-
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
@@ -274,56 +263,18 @@ export class TradingStrategistAgent extends BaseAgent {
   }
 
   /**
-   * 重写分析方法，预先获取MCP数据，然后调用普通LLM生成
+   * 制定交易策略，基于综合分析师提供的分析报告
    */
-  protected async performAnalysis(context: AgentContext): Promise<string> {
-    const { stockCode, stockName } = context;
+  async analyzeWithComprehensiveData(context: AgentContext, comprehensiveAnalysis: string): Promise<string> {
+    const { stockCode } = context;
 
-    // 第一步：预先获取交易策略所需的MCP数据
-    this.logger.debug(`开始为股票 ${stockCode} 获取交易策略数据`);
+    this.logger.debug(`开始为股票 ${stockCode} 制定交易策略`);
     
-    let mcpData = "";
-    
-    try {
-      // 1. 获取实时行情数据
-      const realtimeData = await this.mcpClient.callTool('get_stock_realtime_data', { stock_code: stockCode });
-      mcpData += `\n\n## 实时行情数据\n${realtimeData}`;
-      
-      // 2. 获取技术指标
-      const technicalData = await this.mcpClient.callTool('get_stock_technical_indicators', {
-        stock_code: stockCode,
-        period: 20
-      });
-      mcpData += `\n\n## 技术指标分析\n${technicalData}`;
-      
-      // 3. 获取历史数据(60天)
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const historicalData = await this.mcpClient.callTool('get_stock_historical_data', {
-        stock_code: stockCode,
-        start_date: startDate,
-        end_date: endDate
-      });
-      mcpData += `\n\n## 历史价格数据(60天)\n${historicalData}`;
-      
-      // 4. 获取市场概览
-      const marketOverview = await this.mcpClient.callTool('get_market_overview', {});
-      mcpData += `\n\n## 市场整体情况\n${marketOverview}`;
-      
-      // 5. 获取股票基本信息
-      const basicInfo = await this.mcpClient.callTool('get_stock_basic_info', { stock_code: stockCode });
-      mcpData += `\n\n## 股票基本信息\n${basicInfo}`;
-      
-    } catch (error) {
-      this.logger.error('交易策略MCP数据获取失败', error);
-      mcpData += `\n\n## 数据获取异常\n由于数据源问题，部分数据可能不完整: ${error.message}`;
-    }
-    
-    // 第二步：构建包含数据的完整提示词
+    // 构建策略制定提示词
     const strategyPrompt = await this.buildPrompt(context);
-    const fullPrompt = `${strategyPrompt}\n\n# 实时数据参考\n${mcpData}\n\n请基于以上数据制定专业的交易策略，确保所有建议都有数据支撑。`;
+    const fullPrompt = `${strategyPrompt}\n\n# 综合分析师报告\n${comprehensiveAnalysis}\n\n请基于以上综合分析报告制定专业的交易策略，确保所有建议都有分析支撑。`;
     
-    // 第三步：调用普通LLM生成策略结果
+    // 调用LLM生成交易策略
     const fullSystemPrompt = this.config.systemPrompt
       ? `${this.config.systemPrompt}\n\n${fullPrompt}`
       : fullPrompt;
@@ -335,7 +286,34 @@ export class TradingStrategistAgent extends BaseAgent {
       timeout: this.config.timeout * 1000,
     };
 
-    this.logger.debug('开始交易策略LLM生成，基于预获取的MCP数据');
+    this.logger.debug('开始生成交易策略，基于综合分析师报告');
+    
+    return await this.llmService.generate(fullSystemPrompt, llmConfig);
+  }
+
+  /**
+   * 保留原有的performAnalysis方法以维持兼容性，但不再直接调用MCP服务
+   */
+  protected async performAnalysis(context: AgentContext): Promise<string> {
+    // 交易策略师现在需要依赖外部提供的综合分析数据
+    // 这个方法通常不会被直接调用，而是通过analyzeWithComprehensiveData方法
+    const { stockCode } = context;
+    
+    this.logger.warn(`交易策略师 performAnalysis 被直接调用，股票: ${stockCode}，建议使用 analyzeWithComprehensiveData 方法`);
+    
+    const strategyPrompt = await this.buildPrompt(context);
+    const fullPrompt = `${strategyPrompt}\n\n# 注意\n由于缺少综合分析师的分析报告，请基于一般市场知识制定交易策略框架。\n\n请制定通用的交易策略框架。`;
+    
+    const fullSystemPrompt = this.config.systemPrompt
+      ? `${this.config.systemPrompt}\n\n${fullPrompt}`
+      : fullPrompt;
+
+    const llmConfig = {
+      model: this.config.model,
+      temperature: this.config.temperature,
+      maxTokens: this.config.maxTokens,
+      timeout: this.config.timeout * 1000,
+    };
     
     return await this.llmService.generate(fullSystemPrompt, llmConfig);
   }

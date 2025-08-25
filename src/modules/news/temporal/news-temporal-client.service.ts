@@ -32,7 +32,7 @@ export class NewsTemporalClientService implements OnModuleDestroy {
 
   constructor(private readonly configService: ConfigService) {
     const environment = this.configService.get('NODE_ENV', 'dev');
-    this.namespace = `news-${environment}`;
+    this.namespace = 'default'; // 统一使用 default namespace
     this.taskQueue = `news-crawling-${environment}`;
   }
 

@@ -7,21 +7,21 @@ import {
   AgentConfig,
 } from "../interfaces/agent.interface";
 import { LLMService } from "../services/llm.service";
-import { MCPClientService } from "../services/mcp-client.service";
 import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
+import { DataCollectorAgent, ComprehensiveStockData } from "./data-collector.agent";
 
 /**
- * 综合分析师智能体
+ * 综合分析师智能体 (优化版)
  * 整合了原有的市场分析师、基本面分析师和新闻分析师的功能
- * 使用MCP协议获取数据，提供全面的股票分析
+ * 🎯 避免直接调用MCP服务，通过数据获取智能体获取数据，控制成本
  */
 @Injectable()
 export class ComprehensiveAnalystAgent extends BaseAgent {
   constructor(
     llmService: LLMService,
     configService: ConfigService,
-    private readonly mcpClient: MCPClientService,
     executionRecordService: AgentExecutionRecordService,
+    private readonly dataCollector: DataCollectorAgent,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
@@ -52,26 +52,24 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
 3. **新闻情绪分析**: 解读市场情绪、政策影响、行业动态
 4. **综合评估**: 整合多维度信息，给出明确投资建议
 
-🔧 **可用工具**
-您可以调用以下MCP工具获取数据：
-- get_stock_basic_info: 获取股票基本信息
-- get_stock_realtime_data: 获取实时行情数据
-- get_stock_historical_data: 获取历史价格数据
-- get_stock_technical_indicators: 获取技术指标数据
-- get_stock_financial_data: 获取财务数据
-- get_market_overview: 获取市场概览
-- get_stock_news: 获取相关新闻
-- search_stocks: 搜索股票信息
+📊 **数据来源说明**
+您将收到由数据获取智能体预先收集的综合股票数据，包括：
+- 股票基本信息: 公司基础信息、股本结构等
+- 实时行情数据: 当前价格、成交量、涨跌幅等
+- 历史价格数据: 过去30天的价格走势
+- 技术指标数据: MA、MACD、RSI、KDJ等技术指标
+- 财务数据: 主要财务指标和报表数据
+- 相关新闻分析: 已进行情感分析的相关新闻摘要
 
 📊 **分析框架**
-1. **数据收集**: 主动调用工具获取全面数据
+1. **数据解读**: 深入分析预提供的综合数据
 2. **多维度分析**: 技术面 + 基本面 + 消息面
 3. **风险评估**: 识别关键风险点和机会
 4. **投资建议**: 给出明确的买入/持有/卖出建议
 5. **目标价格**: 提供具体的价格预期
 
 📋 **输出要求**
-- 必须使用MCP工具获取实时数据
+- 基于提供的实时数据进行深入分析
 - 分析要详细、专业、有条理
 - 必须给出0-100分的综合评分
 - 必须提供明确的投资建议
@@ -79,10 +77,10 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
 - 使用表格总结关键要点
 
 🚨 **重要提醒**
-- 分析前必须调用相关工具获取最新数据
-- 基于真实数据进行分析，避免空洞的泛泛而谈
+- 所有分析基于预提供的真实数据
 - 给出的建议要有数据支撑和逻辑依据
-- 重视风险控制，不盲目乐观或悲观`,
+- 重视风险控制，不盲目乐观或悲观
+- 如果数据不完整，要明确指出并相应调整分析结论`,
     };
 
     super(
@@ -111,19 +109,9 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
     }
 
     prompt += `**分析任务**:
-请按照以下步骤进行全面分析：
+请基于提供的综合股票数据进行全面分析：
 
-## 第一步：数据收集
-请使用以下工具获取必要数据：
-1. 调用 get_stock_basic_info 获取股票基本信息
-2. 调用 get_stock_realtime_data 获取最新行情数据
-3. 调用 get_stock_historical_data 获取历史数据（最近60天）
-4. 调用 get_stock_technical_indicators 获取技术指标
-5. 调用 get_stock_financial_data 获取财务数据
-6. 调用 get_stock_news 获取相关新闻（关键词使用股票名称或行业）
-7. 调用 get_market_overview 获取市场整体情况
-
-## 第二步：综合分析报告
+## 综合分析报告
 
 ### 📊 1. 股票概况
 - 基本信息汇总
@@ -207,10 +195,11 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
 ---
 
 **重要说明**: 
-- 请确保分析基于获取的实时数据
+- 请确保分析基于提供的实时数据
 - 所有建议要有数据支撑和逻辑依据  
 - 评分要客观公正，避免极端化
 - 风险提示要充分，投资需谨慎
+- 如果某些数据缺失，请明确说明并调整分析策略
 
 请开始您的专业分析！`;
 
@@ -220,11 +209,6 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
   protected async preprocessContext(
     context: AgentContext,
   ): Promise<AgentContext> {
-    // 确保MCP客户端已初始化
-    if (!this.mcpClient.isConnectedToMCP()) {
-      await this.mcpClient.initialize();
-    }
-
     // 确保有基本的时间范围
     if (!context.timeRange) {
       const endDate = new Date();
@@ -238,64 +222,46 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 重写分析方法，预先获取MCP数据，然后调用普通LLM生成
+   * 重写分析方法，使用数据获取智能体统一获取MCP数据
    */
-  protected async performAnalysis(context: AgentContext): Promise<string> {
+  public async performAnalysis(context: AgentContext): Promise<string> {
     const { stockCode, stockName } = context;
 
-    // 第一步：预先获取所有需要的MCP数据
-    this.logger.debug(`开始为股票 ${stockCode} 获取MCP数据`);
+    this.logger.debug(`开始为股票 ${stockCode} 获取综合数据`);
+    
+    // 第一步：通过数据获取智能体获取所有需要的数据
+    const dataResult = await this.dataCollector.collectStockData(stockCode);
     
     let mcpData = "";
     
-    try {
-      // 1. 获取股票基本信息
-      const basicInfo = await this.mcpClient.callTool('get_stock_basic_info', { stock_code: stockCode });
-      mcpData += `\n\n## 股票基本信息\n${basicInfo}`;
+    if (dataResult.success && dataResult.data) {
+      const data = dataResult.data;
       
-      // 2. 获取实时行情数据  
-      const realtimeData = await this.mcpClient.callTool('get_stock_realtime_data', { stock_code: stockCode });
-      mcpData += `\n\n## 实时行情数据\n${realtimeData}`;
+      // 将综合数据转换为分析用的格式
+      mcpData += `\n\n## 股票基本信息\n${JSON.stringify(data.basicInfo, null, 2)}`;
+      mcpData += `\n\n## 实时行情数据\n${JSON.stringify(data.realtimeData, null, 2)}`;
+      mcpData += `\n\n## 历史价格数据\n${JSON.stringify(data.historicalData, null, 2)}`;
+      mcpData += `\n\n## 技术指标分析\n${JSON.stringify(data.technicalIndicators, null, 2)}`;
+      mcpData += `\n\n## 财务数据\n${JSON.stringify(data.financialData, null, 2)}`;
       
-      // 3. 获取历史数据(60天)
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const historicalData = await this.mcpClient.callTool('get_stock_historical_data', {
-        stock_code: stockCode,
-        start_date: startDate,
-        end_date: endDate
-      });
-      mcpData += `\n\n## 历史价格数据(60天)\n${historicalData}`;
+      // 格式化新闻数据
+      if (data.relatedNews && data.relatedNews.length > 0) {
+        mcpData += `\n\n## 相关新闻分析\n`;
+        data.relatedNews.forEach((news, index) => {
+          mcpData += `### 新闻 ${index + 1}\n`;
+          mcpData += `**标题**: ${news.title}\n`;
+          mcpData += `**摘要**: ${news.summary}\n`;
+          mcpData += `**情感**: ${news.sentiment}\n`;
+          mcpData += `**发布时间**: ${news.publishTime}\n\n`;
+        });
+      }
       
-      // 4. 获取技术指标
-      const technicalData = await this.mcpClient.callTool('get_stock_technical_indicators', {
-        stock_code: stockCode,
-        period: 20
-      });
-      mcpData += `\n\n## 技术指标分析\n${technicalData}`;
+      mcpData += `\n\n## 数据获取时间\n${data.timestamp}`;
       
-      // 5. 获取财务数据
-      const financialData = await this.mcpClient.callTool('get_stock_financial_data', {
-        stock_code: stockCode,
-        report_type: 'balance',
-        period: 'quarterly'
-      });
-      mcpData += `\n\n## 财务数据\n${financialData}`;
-      
-      // 6. 获取相关新闻
-      const newsData = await this.mcpClient.callTool('get_stock_news', {
-        keyword: stockName || stockCode,
-        days: 7
-      });
-      mcpData += `\n\n## 相关新闻(7天)\n${newsData}`;
-      
-      // 7. 获取市场概览
-      const marketOverview = await this.mcpClient.callTool('get_market_overview', {});
-      mcpData += `\n\n## 市场概览\n${marketOverview}`;
-      
-    } catch (error) {
-      this.logger.error('MCP数据获取失败', error);
-      mcpData += `\n\n## 数据获取异常\n由于数据源问题，部分数据可能不完整: ${error.message}`;
+      this.logger.debug(`股票 ${stockCode} 综合数据获取成功`);
+    } else {
+      this.logger.error(`股票 ${stockCode} 数据获取失败: ${dataResult.error}`);
+      mcpData = `\n\n## 数据获取异常\n由于数据源问题，无法获取完整数据: ${dataResult.error}`;
     }
     
     // 第二步：构建包含数据的完整提示词
@@ -314,7 +280,7 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
       timeout: this.config.timeout * 1000,
     };
 
-    this.logger.debug('开始LLM分析生成，基于预获取的MCP数据');
+    this.logger.debug('开始LLM分析生成，基于数据获取智能体提供的综合数据');
     
     return await this.llmService.generate(fullSystemPrompt, llmConfig);
   }
