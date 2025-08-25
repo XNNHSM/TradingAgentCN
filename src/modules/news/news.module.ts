@@ -7,7 +7,10 @@ import { RawNews } from './entities/raw-news.entity';
 import { NewsSummary } from './entities/news-summary.entity';
 import { NewsCrawlerFactory } from './factories/news-crawler.factory';
 import { XWLBCrawlerService } from './crawlers/xwlb-crawler.service';
-import { NewsSchedulerService } from './services/news-scheduler.service';
+// Temporal 相关服务
+import { NewsTemporalClientService } from './temporal/news-temporal-client.service';
+import { NewsWorkerService } from './temporal/news-worker.service';
+import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler.service';
 
 @Module({
   imports: [
@@ -19,8 +22,16 @@ import { NewsSchedulerService } from './services/news-scheduler.service';
     NewsService,
     NewsCrawlerFactory,
     XWLBCrawlerService,
-    NewsSchedulerService,
+    // Temporal 服务
+    NewsTemporalClientService,
+    NewsWorkerService,
+    NewsTemporalSchedulerService,
   ],
-  exports: [NewsService, NewsCrawlerFactory],
+  exports: [
+    NewsService, 
+    NewsCrawlerFactory, 
+    NewsTemporalClientService,
+    NewsTemporalSchedulerService,
+  ],
 })
 export class NewsModule {}

@@ -90,8 +90,8 @@ npm test -- src/agents/services/llm.service.spec.ts
 # 运行Temporal客户端测试
 npm test -- src/agents/temporal/agents-temporal-client.service.spec.ts
 
-# 运行新闻定时任务测试
-npm test -- src/modules/news/services/news-scheduler.service.spec.ts
+# 运行新闻 Temporal 调度测试
+npm test -- src/modules/news/temporal/news-temporal-scheduler.service.spec.ts
 
 # 运行新闻摘要实体测试
 npm test -- src/modules/news/entities/news-summary.entity.spec.ts
@@ -211,7 +211,12 @@ src/
     │   ├── factories/   # 爬虫工厂
     │   ├── interfaces/  # 爬虫接口定义
     │   ├── services/    # 新闻相关服务
-    │   │   └── news-scheduler.service.ts # 新闻定时任务服务
+    │   │   └── news-temporal-scheduler.service.ts # Temporal 新闻调度服务
+    │   ├── temporal/    # Temporal 工作流
+    │   │   ├── news-crawling.workflow.ts         # 新闻爬取工作流
+    │   │   ├── news.activities.ts               # 新闻爬取活动
+    │   │   ├── news-temporal-client.service.ts  # Temporal 客户端
+    │   │   └── news-worker.service.ts           # Temporal Worker
     │   ├── news.controller.ts
     │   ├── news.module.ts
     │   └── news.service.ts
@@ -1145,12 +1150,12 @@ crawlNewsRange(startDate: string, endDate: string, saveNewsCallback?: (news: Raw
 - **实时反馈**: 可以立即看到爬取和保存的进度
 - **性能稳定**: 降低因批量保存导致的数据库压力峰值
 
-#### 新闻定时任务系统
+#### 新闻 Temporal 调度系统
 
-**定时调度服务(NewsSchedulerService)**:
+**Temporal 调度服务(NewsTemporalSchedulerService)**:
 - **执行时间**: 每天凌晨1点（中国时区）
-- **Cron表达式**: `'0 1 * * *'`
-- **任务范围**: 自动爬取前一天所有支持数据源的新闻
+- **调度表达式**: `'0 1 * * *'`
+- **任务范围**: 通过 Temporal 工作流自动爬取前一天所有支持数据源的新闻
 
 **核心特性**:
 - **自动化执行**: 无需人工干预，系统自动完成每日新闻采集
@@ -1194,7 +1199,9 @@ getScheduleStatus(): {
 - `src/common/entities/base.entity.ts`: 包含标准字段的基础实体
 - `src/common/dto/result.dto.ts`: 标准化API响应格式
 - `src/modules/news/entities/news-summary.entity.ts`: 新闻摘要实体
-- `src/modules/news/services/news-scheduler.service.ts`: 新闻定时任务服务
+- `src/modules/news/services/news-temporal-scheduler.service.ts`: 新闻 Temporal 调度服务
+- `src/modules/news/temporal/news-crawling.workflow.ts`: 新闻爬取 Temporal 工作流
+- `src/modules/news/temporal/news.activities.ts`: 新闻爬取活动实现
 - `src/modules/analysis/analysis.controller.ts`: 简化后的分析控制器（仅股票分析接口）
 - `src/agents/unified/unified-orchestrator.service.ts`: MCP统一智能体协调服务
 - `prompt_templates.md`: AI智能体提示词模板
