@@ -22,22 +22,21 @@ export interface IAgent {
  * 智能体类型枚举
  */
 export enum AgentType {
-  // 原有智能体类型（保留兼容性）
-  MARKET_ANALYST = "market_analyst", // 市场分析师
-  FUNDAMENTAL_ANALYST = "fundamental_analyst", // 基本面分析师
-  NEWS_ANALYST = "news_analyst", // 新闻分析师
-  BULL_RESEARCHER = "bull_researcher", // 多头研究员
-  BEAR_RESEARCHER = "bear_researcher", // 空头研究员
-  RESEARCH_MANAGER = "research_manager", // 研究管理员
-  TRADER = "trader", // 交易员
-  CONSERVATIVE_TRADER = "conservative_trader", // 保守型交易员
-  AGGRESSIVE_TRADER = "aggressive_trader", // 激进型交易员
-  RISK_MANAGER = "risk_manager", // 风险管理员
-  REFLECTION_AGENT = "reflection_agent", // 反思智能体
-
-  // 新的统一智能体类型（基于MCP）
-  COMPREHENSIVE_ANALYST = "comprehensive_analyst", // 综合分析师（整合市场、基本面、新闻分析）
-  TRADING_STRATEGIST = "trading_strategist", // 交易策略师（整合研究员、交易员、风险管理）
+  // === MCP 按需调用架构（当前架构）===
+  
+  // 🆕 第一层: 数据获取和基础分析智能体 (直接调用MCP服务)
+  BASIC_DATA_AGENT = "basic_data_agent", // 基础数据智能体 - 基本信息和实时数据
+  TECHNICAL_ANALYST_NEW = "technical_analyst_new", // 技术分析智能体 - 历史数据和技术指标
+  FUNDAMENTAL_ANALYST_NEW = "fundamental_analyst_new", // 基本面分析智能体 - 财务数据
+  NEWS_ANALYST_NEW = "news_analyst_new", // 新闻分析智能体 - 新闻数据
+  
+  // 🆕 第二层: 高级分析智能体 (基于第一层结果)
+  SOCIAL_MEDIA_ANALYST = "social_media_analyst", // 社交媒体分析师（情绪分析+讨论热点）
+  QUANTITATIVE_TRADER = "quantitative_trader", // 量化交易员（数据驱动+统计模型）
+  MACRO_ECONOMIST = "macro_economist", // 宏观经济分析师（政策+经济环境分析）
+  
+  // 🆕 第三层: 决策协调智能体
+  UNIFIED_ORCHESTRATOR = "unified_orchestrator", // 统一协调器（智能体协调+决策整合）
 }
 
 /**

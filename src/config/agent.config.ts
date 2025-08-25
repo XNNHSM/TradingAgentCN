@@ -110,74 +110,74 @@ export class AgentConfigService {
   }
 
   /**
-   * 获取智能体配置
+   * 获取智能体配置 (新的按需调用架构)
    */
   getAgentConfigs() {
     const llmConfig = this.getLLMConfig();
 
     return {
-      // 市场分析师配置
-      marketAnalyst: this.buildAgentConfig("MARKET_ANALYST", {
-        model: llmConfig.dashscope.models.standard,
-        temperature: 0.7,
-        maxTokens: 2500,
-        timeout: 45,
+      // 基础数据智能体配置
+      basicDataAgent: this.buildAgentConfig("BASIC_DATA_AGENT", {
+        model: llmConfig.dashscope.models.fast,
+        temperature: 0.3,
+        maxTokens: 1500,
+        timeout: 30,
       }),
 
-      // 基本面分析师配置
-      fundamentalAnalyst: this.buildAgentConfig("FUNDAMENTAL_ANALYST", {
+      // 技术分析智能体配置
+      technicalAnalyst: this.buildAgentConfig("TECHNICAL_ANALYST_NEW", {
+        model: llmConfig.dashscope.models.standard,
+        temperature: 0.5,
+        maxTokens: 3000,
+        timeout: 60,
+      }),
+
+      // 基本面分析智能体配置
+      fundamentalAnalyst: this.buildAgentConfig("FUNDAMENTAL_ANALYST_NEW", {
         model: llmConfig.dashscope.models.premium,
+        temperature: 0.4,
+        maxTokens: 3500,
+        timeout: 75,
+      }),
+
+      // 新闻分析智能体配置
+      newsAnalyst: this.buildAgentConfig("NEWS_ANALYST_NEW", {
+        model: llmConfig.dashscope.models.standard,
         temperature: 0.6,
         maxTokens: 3000,
         timeout: 60,
       }),
 
-      // 新闻分析师配置
-      newsAnalyst: this.buildAgentConfig("NEWS_ANALYST", {
+      // 社交媒体分析师配置
+      socialMediaAnalyst: this.buildAgentConfig("SOCIAL_MEDIA_ANALYST", {
         model: llmConfig.dashscope.models.standard,
         temperature: 0.7,
-        maxTokens: 2500,
+        maxTokens: 3000,
         timeout: 45,
       }),
 
-      // 多头研究员配置
-      bullResearcher: this.buildAgentConfig("BULL_RESEARCHER", {
-        model: llmConfig.dashscope.models.standard,
-        temperature: 0.8,
-        maxTokens: 2500,
-        timeout: 45,
+      // 量化交易员配置
+      quantitativeTrader: this.buildAgentConfig("QUANTITATIVE_TRADER", {
+        model: llmConfig.dashscope.models.premium,
+        temperature: 0.3,
+        maxTokens: 3500,
+        timeout: 60,
       }),
 
-      // 空头研究员配置
-      bearResearcher: this.buildAgentConfig("BEAR_RESEARCHER", {
-        model: llmConfig.dashscope.models.standard,
-        temperature: 0.7,
-        maxTokens: 2500,
-        timeout: 45,
+      // 宏观经济分析师配置
+      macroEconomist: this.buildAgentConfig("MACRO_ECONOMIST", {
+        model: llmConfig.dashscope.models.premium,
+        temperature: 0.6,
+        maxTokens: 4000,
+        timeout: 60,
       }),
 
-      // 保守型交易员配置
-      conservativeTrader: this.buildAgentConfig("CONSERVATIVE_TRADER", {
-        model: llmConfig.dashscope.models.standard,
-        temperature: 0.5,
-        maxTokens: 2500,
-        timeout: 45,
-      }),
-
-      // 激进型交易员配置
-      aggressiveTrader: this.buildAgentConfig("AGGRESSIVE_TRADER", {
-        model: llmConfig.dashscope.models.standard,
-        temperature: 0.8,
-        maxTokens: 2500,
-        timeout: 45,
-      }),
-
-      // 反思智能体配置
-      reflectionAgent: this.buildAgentConfig("REFLECTION_AGENT", {
+      // 统一协调器配置
+      unifiedOrchestrator: this.buildAgentConfig("UNIFIED_ORCHESTRATOR", {
         model: llmConfig.dashscope.models.premium,
         temperature: 0.4,
-        maxTokens: 3000,
-        timeout: 60,
+        maxTokens: 4500,
+        timeout: 90,
       }),
     };
   }
@@ -337,7 +337,7 @@ export class AgentConfigService {
   }
 
   /**
-   * 获取当前使用的模型信息
+   * 获取当前使用的模型信息 (新的按需调用架构)
    */
   getCurrentModels() {
     const configs = this.getAgentConfigs();
@@ -346,14 +346,14 @@ export class AgentConfigService {
     return {
       provider: llmConfig.primaryProvider,
       models: {
-        marketAnalyst: configs.marketAnalyst.model,
+        basicDataAgent: configs.basicDataAgent.model,
+        technicalAnalyst: configs.technicalAnalyst.model,
         fundamentalAnalyst: configs.fundamentalAnalyst.model,
         newsAnalyst: configs.newsAnalyst.model,
-        bullResearcher: configs.bullResearcher.model,
-        bearResearcher: configs.bearResearcher.model,
-        conservativeTrader: configs.conservativeTrader.model,
-        aggressiveTrader: configs.aggressiveTrader.model,
-        reflectionAgent: configs.reflectionAgent.model,
+        socialMediaAnalyst: configs.socialMediaAnalyst.model,
+        quantitativeTrader: configs.quantitativeTrader.model,
+        macroEconomist: configs.macroEconomist.model,
+        unifiedOrchestrator: configs.unifiedOrchestrator.model,
       },
     };
   }

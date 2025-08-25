@@ -72,7 +72,7 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
     }
 
     try {
-      const taskQueue = 'agents-analysis'; // 简化任务队列名称
+      const taskQueue = 'stock-analysis'; // 简化的业务功能名称
       
       // 使用股票代码+当前日期作为workflowId，确保当天同一股票不重复执行
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD格式

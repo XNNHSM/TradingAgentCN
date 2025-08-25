@@ -452,10 +452,9 @@ analysis-prd    # 分析模块生产环境
 **格式**: `{模块名}-{业务域}-{环境}`
 
 ```bash
-# 智能体模块
-agents-analysis-dev     # 股票分析任务队列(开发环境)
-agents-batch-dev        # 批量分析任务队列(开发环境)
-agents-analysis-prd     # 股票分析任务队列(生产环境)
+# 核心业务功能
+stock-analysis          # 股票分析任务队列
+portfolio-monitoring    # 投资组合监控任务队列
 
 # 新闻模块
 news-crawling-dev       # 新闻爬取任务队列(开发环境)
@@ -480,7 +479,7 @@ const namespace = `agents-${environment}`;
 const client = new Client({ connection, namespace });
 
 // 工作流启动
-const taskQueue = `agents-analysis-${environment}`;
+const taskQueue = 'stock-analysis';
 const handle = await client.workflow.start(stockAnalysisWorkflow, {
   taskQueue,
   workflowId: `stock-analysis-${stockCode}-${Date.now()}`,
@@ -490,7 +489,7 @@ const handle = await client.workflow.start(stockAnalysisWorkflow, {
 const worker = await Worker.create({
   workflowsPath: require.resolve('./workflows'),
   activities,
-  taskQueue: `agents-analysis-${environment}`,
+  taskQueue: 'stock-analysis',
 });
 ```
 

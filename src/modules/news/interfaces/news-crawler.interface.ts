@@ -1,5 +1,6 @@
 import { RawNews, NewsRegion } from '../entities/raw-news.entity';
 import { BusinessLogger, LogCategory } from '../../../common/utils/business-logger.util';
+import { NewsLink, NewsContent } from '../temporal/news.activities';
 
 /**
  * 新闻文章数据接口
@@ -208,4 +209,20 @@ export abstract class AbstractNewsCrawlerService {
   protected delay(milliseconds: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
   }
+
+  // ============================================================================
+  // 新的粒度化方法（可选实现，用于支持Temporal子工作流）
+  // ============================================================================
+
+  /**
+   * 获取指定日期的新闻链接列表（可选实现）
+   * 如果不实现此方法，将使用 crawlNews 的回退机制
+   */
+  async getNewsLinks?(date: string): Promise<NewsLink[]>;
+
+  /**
+   * 爬取单个新闻的详细内容（可选实现）  
+   * 如果不实现此方法，将返回错误
+   */
+  async crawlSingleNews?(newsLink: NewsLink): Promise<NewsContent>;
 }

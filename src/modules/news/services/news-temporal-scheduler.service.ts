@@ -56,12 +56,83 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
       this.businessLogger.serviceInfo('每日新闻爬取定时调度创建成功');
     } catch (error) {
       // 如果调度已存在，记录信息但不抛出错误
-      if (error instanceof Error && error.message.includes('already exists')) {
-        this.businessLogger.serviceInfo('每日新闻爬取定时调度已存在，跳过创建');
+      if (error instanceof Error && (
+        error.message.includes('already exists') || 
+        error.message.includes('Schedule already exists and is running')
+      )) {
+        this.businessLogger.serviceInfo('每日新闻爬取定时调度已存在，跳过创建', {
+          scheduleId: `daily-news-crawling-${this.configService.get('NODE_ENV', 'dev')}`,
+          errorMessage: error.message
+        });
       } else {
         this.businessLogger.serviceError('创建每日新闻爬取定时调度失败', error);
         throw error;
       }
+    }
+  }
+
+  /**
+   * 启动基于日期范围的新闻爬取工作流 (新增)
+   */
+  async startNewsRangeCrawlWorkflow(
+    startDate: string,
+    endDate: string,
+    sources?: string[]
+  ): Promise<{
+    success: boolean;
+    workflowId: string;
+    message: string;
+  }> {
+    try {
+      this.businessLogger.serviceInfo('启动日期范围新闻爬取工作流', {
+        startDate,
+        endDate,
+        sources: sources || '所有支持的数据源'
+      });
+
+      // 计算日期范围内的所有日期
+      const dates = this.generateDateRange(startDate, endDate);
+      const workflowId = `range-news-crawling-${startDate}-to-${endDate}-${Date.now()}`;
+
+      // 为每个日期启动独立的工作流
+      const workflowPromises = dates.map(async (date) => {
+        const dateWorkflowId = `${workflowId}-${date}`;
+        return await this.newsTemporalClient.startNewsCrawlingWorkflow(
+          {
+            date,
+            sources
+          },
+          dateWorkflowId
+        );
+      });
+
+      // 启动所有工作流（并发执行）
+      const workflows = await Promise.all(workflowPromises);
+
+      this.businessLogger.serviceInfo('日期范围新闻爬取工作流启动成功', {
+        startDate,
+        endDate,
+        totalDays: dates.length,
+        workflowCount: workflows.length,
+        mainWorkflowId: workflowId
+      });
+
+      return {
+        success: true,
+        workflowId,
+        message: `成功启动 ${dates.length} 个日期的新闻爬取工作流 (${startDate} 至 ${endDate})`
+      };
+    } catch (error) {
+      this.businessLogger.serviceError('启动日期范围新闻爬取工作流失败', error, {
+        startDate,
+        endDate,
+        sources
+      });
+      return {
+        success: false,
+        workflowId: '',
+        message: `启动失败: ${error instanceof Error ? error.message : String(error)}`
+      };
     }
   }
 
@@ -201,14 +272,61 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
       this.businessLogger.serviceInfo('工作流执行结果获取成功', {
         workflowId,
         success: result.success,
-        totalCrawled: result.totalCrawled,
+        totalCrawled: result.totalCrawledNews,
       });
 
-      return result;
+      // 转换新结果格式到旧格式（向后兼容）
+      return {
+        success: result.success,
+        date: result.date,
+        totalCrawled: result.totalCrawledNews,
+        successSources: result.successfulSources,
+        failedSources: result.failedSources,
+        results: this.convertSourceResultsToLegacyFormat(result.sourceResults),
+        duration: result.duration,
+        message: result.message,
+      };
     } catch (error) {
       this.businessLogger.serviceError('获取工作流执行结果失败', error, { workflowId });
       throw error;
     }
+  }
+
+  /**
+   * 生成日期范围内的所有日期数组
+   */
+  private generateDateRange(startDate: string, endDate: string): string[] {
+    const dates: string[] = [];
+    const current = new Date(startDate);
+    const end = new Date(endDate);
+
+    // 验证日期格式和范围
+    if (current > end) {
+      throw new Error('开始日期不能晚于结束日期');
+    }
+
+    const daysDiff = Math.ceil((end.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff > 30) {
+      throw new Error('日期范围不能超过30天');
+    }
+
+    while (current <= end) {
+      dates.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dates;
+  }
+
+  /**
+   * 将新的源结果格式转换为旧的格式（向后兼容）
+   */
+  private convertSourceResultsToLegacyFormat(sourceResults: Record<string, any>): Record<string, number> {
+    const legacyResults: Record<string, number> = {};
+    for (const [source, result] of Object.entries(sourceResults)) {
+      legacyResults[source] = (result as any).savedNews || 0;
+    }
+    return legacyResults;
   }
 
   /**
@@ -233,6 +351,107 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
       return status;
     } catch (error) {
       this.businessLogger.serviceError('获取工作流状态失败', error, { workflowId });
+      throw error;
+    }
+  }
+
+  /**
+   * 获取日期范围爬取进度 (新增)
+   */
+  async getRangeCrawlProgress(mainWorkflowId: string): Promise<{
+    mainWorkflowId: string;
+    totalDays: number;
+    completedDays: number;
+    runningDays: number;
+    failedDays: number;
+    overallProgress: number;
+    dailyStatus: Array<{
+      date: string;
+      workflowId: string;
+      status: string;
+      startTime?: Date;
+      endTime?: Date;
+    }>;
+    summary: string;
+  }> {
+    try {
+      this.businessLogger.serviceInfo('获取日期范围爬取进度', { mainWorkflowId });
+
+      // 从 mainWorkflowId 中解析日期范围
+      const workflowIdPattern = /range-news-crawling-(\d{4}-\d{2}-\d{2})-to-(\d{4}-\d{2}-\d{2})-\d+/;
+      const match = mainWorkflowId.match(workflowIdPattern);
+      
+      if (!match) {
+        throw new Error('无效的主工作流ID格式');
+      }
+
+      const [, startDate, endDate] = match;
+      const dates = this.generateDateRange(startDate, endDate);
+
+      // 获取每个日期的工作流状态
+      const dailyStatusPromises = dates.map(async (date) => {
+        const dateWorkflowId = `${mainWorkflowId}-${date}`;
+        try {
+          const status = await this.newsTemporalClient.getWorkflowStatus(dateWorkflowId);
+          return {
+            date,
+            workflowId: dateWorkflowId,
+            status: status.status,
+            startTime: status.startTime,
+            endTime: status.endTime,
+          };
+        } catch (error) {
+          // 如果某个工作流状态获取失败，标记为未知状态
+          this.businessLogger.serviceError('获取单日工作流状态失败', error, { dateWorkflowId });
+          return {
+            date,
+            workflowId: dateWorkflowId,
+            status: 'UNKNOWN',
+            startTime: undefined,
+            endTime: undefined,
+          };
+        }
+      });
+
+      const dailyStatus = await Promise.all(dailyStatusPromises);
+
+      // 统计各状态数量
+      const completedDays = dailyStatus.filter(s => s.status === 'COMPLETED').length;
+      const runningDays = dailyStatus.filter(s => ['RUNNING', 'WORKFLOW_TASK_SCHEDULED'].includes(s.status)).length;
+      const failedDays = dailyStatus.filter(s => ['FAILED', 'TERMINATED', 'CANCELED', 'TIMED_OUT'].includes(s.status)).length;
+      const totalDays = dates.length;
+      const overallProgress = totalDays > 0 ? Math.round((completedDays / totalDays) * 100) : 0;
+
+      // 生成摘要信息
+      const summary = [
+        `总计 ${totalDays} 天`,
+        `已完成 ${completedDays} 天`,
+        `运行中 ${runningDays} 天`,
+        `失败 ${failedDays} 天`,
+        `进度 ${overallProgress}%`
+      ].join(', ');
+
+      this.businessLogger.serviceInfo('日期范围爬取进度获取成功', {
+        mainWorkflowId,
+        totalDays,
+        completedDays,
+        runningDays,
+        failedDays,
+        overallProgress
+      });
+
+      return {
+        mainWorkflowId,
+        totalDays,
+        completedDays,
+        runningDays,
+        failedDays,
+        overallProgress,
+        dailyStatus,
+        summary
+      };
+    } catch (error) {
+      this.businessLogger.serviceError('获取日期范围爬取进度失败', error, { mainWorkflowId });
       throw error;
     }
   }

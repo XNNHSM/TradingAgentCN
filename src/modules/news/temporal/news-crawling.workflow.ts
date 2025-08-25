@@ -1,10 +1,24 @@
 /**
  * 新闻爬取 Temporal 工作流
- * 负责协调新闻数据的定时爬取任务
+ * 负责协调新闻数据的定时爬取任务，使用子工作流模式进行数据源隔离
  */
 
-import { proxyActivities, defineSignal, setHandler, condition, workflowInfo } from '@temporalio/workflow';
+import { 
+  proxyActivities, 
+  defineSignal, 
+  setHandler, 
+  workflowInfo,
+  startChild,
+  ChildWorkflowHandle
+} from '@temporalio/workflow';
 import type { NewsActivities } from './news.activities';
+import type { 
+  SingleSourceCrawlingInput,
+  SingleSourceCrawlingResult
+} from './single-source-crawling.workflow';
+// 导入子工作流以确保它被包含
+export { singleSourceCrawlingWorkflow } from './single-source-crawling.workflow';
+export { newsContentProcessingWorkflow } from './news-content-processing.workflow';
 
 // 工作流输入参数
 export interface NewsCrawlingWorkflowInput {
@@ -12,45 +26,50 @@ export interface NewsCrawlingWorkflowInput {
   sources?: string[]; // 可选的数据源列表，为空则爬取所有支持的源
 }
 
-// 工作流输出结果
+// 工作流输出结果（增强版，包含更详细的子工作流信息）
 export interface NewsCrawlingWorkflowResult {
   success: boolean;
   date: string;
-  totalCrawled: number;
-  successSources: number;
+  totalSources: number;
+  successfulSources: number;
   failedSources: number;
-  results: Record<string, number>;
+  totalLinks: number;               // 所有数据源找到的总链接数
+  totalCrawledNews: number;         // 成功爬取的总新闻数
+  totalSavedNews: number;          // 成功保存的总新闻数
+  totalGeneratedSummaries: number; // 成功生成的总摘要数
+  totalSavedSummaries: number;     // 成功保存的总摘要数
+  sourceResults: Record<string, SingleSourceCrawlingResult>; // 每个数据源的详细结果
   duration: string;
   message: string;
+  errors: string[];                // 收集所有子工作流的错误
 }
 
 // 工作流控制信号
 export const cancelCrawlingSignal = defineSignal<[]>('cancelCrawling');
 
-// 创建活动代理
+// 创建活动代理（仅保留必要的活动）
 const {
   getSupportedSources,
   validateDate,
-  crawlNewsFromSource,
-  getWorkflowSummary,
 } = proxyActivities<NewsActivities>({
-  startToCloseTimeout: '10m', // 每个活动最多10分钟超时
+  startToCloseTimeout: '3m',    // 简化活动，缩短超时时间
   retry: {
-    initialInterval: '10s',
-    maximumInterval: '1m',
+    initialInterval: '5s',
+    maximumInterval: '30s',
     backoffCoefficient: 2,
-    maximumAttempts: 3,
+    maximumAttempts: 2,
   },
 });
 
 /**
- * 新闻爬取工作流主函数
+ * 新闻爬取工作流主函数（重构版本，使用子工作流模式）
  */
 export async function newsCrawlingWorkflow(
   input: NewsCrawlingWorkflowInput
 ): Promise<NewsCrawlingWorkflowResult> {
   const { date, sources } = input;
   const startTime = Date.now();
+  const allErrors: string[] = [];
   
   // 设置取消信号处理
   let cancelled = false;
@@ -66,74 +85,148 @@ export async function newsCrawlingWorkflow(
     const supportedSources = await getSupportedSources();
     const targetSources = sources && sources.length > 0 ? sources : supportedSources;
 
-    // 初始化统计信息
-    let totalCrawled = 0;
-    let successCount = 0;
-    let failedCount = 0;
-    const results: Record<string, number> = {};
-
-    // 3. 依次爬取每个数据源的新闻
-    for (const source of targetSources) {
-      // 检查是否被取消
-      if (cancelled) {
-        break;
-      }
-
-      try {
-        // 爬取单个数据源的新闻
-        const crawlResult = await crawlNewsFromSource(source, date);
-        
-        if (crawlResult.success) {
-          results[source] = crawlResult.count;
-          totalCrawled += crawlResult.count;
-          successCount++;
-        } else {
-          results[source] = 0;
-          failedCount++;
-        }
-      } catch (error) {
-        results[source] = 0;
-        failedCount++;
-      }
-
-      // 在不同数据源之间添加延迟，避免过于频繁的请求
-      await condition(() => false, '2s');
+    if (targetSources.length === 0) {
+      throw new Error('没有可用的新闻数据源');
     }
 
-    // 4. 生成工作流摘要
+    // 3. 为每个数据源启动子工作流（并行执行）
+    const childWorkflowHandles: ChildWorkflowHandle<any>[] = [];
+    const sourceResults: Record<string, SingleSourceCrawlingResult> = {};
+
+    // 启动所有子工作流
+    for (const source of targetSources) {
+      if (cancelled) break;
+
+      try {
+        const childInput: SingleSourceCrawlingInput = {
+          source,
+          date,
+          maxRetries: 3,
+        };
+
+        const childHandle = await startChild('singleSourceCrawlingWorkflow', {
+          workflowId: `single-source-${source}-${date}-${Date.now()}`,
+          args: [childInput],
+          // 子工作流超时时间：30分钟（给足够时间处理大量新闻）
+          workflowExecutionTimeout: '30m',
+          // 子工作流会继承父工作流的taskQueue，不需要显式指定
+        });
+
+        childWorkflowHandles.push(childHandle);
+      } catch (error) {
+        allErrors.push(`启动 ${source} 子工作流失败: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    // 4. 等待所有子工作流完成
+    const childResults = await Promise.allSettled(
+      childWorkflowHandles.map(handle => handle.result())
+    );
+
+    // 5. 收集和统计结果
+    let successfulSources = 0;
+    let failedSources = 0;
+    let totalLinks = 0;
+    let totalCrawledNews = 0;
+    let totalSavedNews = 0;
+    let totalGeneratedSummaries = 0;
+    let totalSavedSummaries = 0;
+
+    for (let i = 0; i < childResults.length; i++) {
+      const result = childResults[i];
+      const source = targetSources[i];
+
+      if (result.status === 'fulfilled') {
+        const sourceResult = result.value as SingleSourceCrawlingResult;
+        sourceResults[source] = sourceResult;
+
+        // 统计数据
+        if (sourceResult.success) {
+          successfulSources++;
+        } else {
+          failedSources++;
+        }
+
+        totalLinks += sourceResult.totalLinks;
+        totalCrawledNews += sourceResult.successfulNews;
+        totalSavedNews += sourceResult.savedNews;
+        totalGeneratedSummaries += sourceResult.generatedSummaries;
+        totalSavedSummaries += sourceResult.savedSummaries;
+
+        // 收集错误信息
+        allErrors.push(...sourceResult.errors);
+      } else {
+        failedSources++;
+        allErrors.push(`${source} 子工作流执行失败: ${result.reason}`);
+        
+        // 创建失败的源结果
+        sourceResults[source] = {
+          success: false,
+          source,
+          date,
+          totalLinks: 0,
+          successfulNews: 0,
+          failedNews: 0,
+          savedNews: 0,
+          generatedSummaries: 0,
+          savedSummaries: 0,
+          message: `子工作流执行失败: ${result.reason}`,
+          errors: [`子工作流执行失败: ${result.reason}`],
+        };
+      }
+    }
+
+    // 6. 构建最终结果
     const duration = `${Math.round((Date.now() - startTime) / 1000)}s`;
-    const summary = await getWorkflowSummary({
-      date,
-      totalCrawled,
-      successSources: successCount,
-      failedSources: failedCount,
-      results,
-      duration,
-    });
+    const totalSources = targetSources.length;
+    const overallSuccess = !cancelled && successfulSources > 0 && totalSavedNews > 0;
+
+    let message: string;
+    if (cancelled) {
+      message = '工作流被取消';
+    } else if (overallSuccess) {
+      message = `新闻爬取完成: ${successfulSources}/${totalSources} 数据源成功, 保存 ${totalSavedNews} 条新闻, ${totalSavedSummaries} 条摘要`;
+    } else {
+      message = `新闻爬取失败: ${failedSources}/${totalSources} 数据源失败`;
+    }
 
     return {
-      success: !cancelled && failedCount < targetSources.length, // 只要不是全部失败就算成功
+      success: overallSuccess,
       date,
-      totalCrawled,
-      successSources: successCount,
-      failedSources: failedCount,
-      results,
+      totalSources,
+      successfulSources,
+      failedSources,
+      totalLinks,
+      totalCrawledNews,
+      totalSavedNews,
+      totalGeneratedSummaries,
+      totalSavedSummaries,
+      sourceResults,
       duration,
-      message: cancelled ? '工作流被取消' : summary,
+      message,
+      errors: allErrors,
     };
 
   } catch (error) {
     const duration = `${Math.round((Date.now() - startTime) / 1000)}s`;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    allErrors.push(`工作流执行异常: ${errorMessage}`);
     
     return {
       success: false,
       date,
-      totalCrawled: 0,
-      successSources: 0,
+      totalSources: 0,
+      successfulSources: 0,
       failedSources: 0,
-      results: {},
+      totalLinks: 0,
+      totalCrawledNews: 0,
+      totalSavedNews: 0,
+      totalGeneratedSummaries: 0,
+      totalSavedSummaries: 0,
+      sourceResults: {},
       duration,
-      message: `工作流执行失败: ${error instanceof Error ? error.message : String(error)}`,
+      message: `工作流执行失败: ${errorMessage}`,
+      errors: allErrors,
     };
   }
 }

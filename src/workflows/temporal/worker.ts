@@ -34,9 +34,8 @@ export async function createTemporalWorker(
   // 创建MCP活动实现
   const activities = createActivities(configService);
 
-  // 根据新规范使用动态 taskQueue: agents-analysis-{environment}
-  const environment = configService.get('NODE_ENV', 'dev');
-  const taskQueue = `agents-analysis-${environment}`;
+  // 使用简化的业务功能名称 taskQueue
+  const taskQueue = 'stock-analysis';
   
   // 创建Worker
   const worker = await Worker.create({

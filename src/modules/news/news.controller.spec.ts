@@ -20,6 +20,8 @@ describe('NewsController', () => {
     getScheduleStatus: jest.fn(),
     getWorkflowResult: jest.fn(),
     getWorkflowStatus: jest.fn(),
+    startNewsRangeCrawlWorkflow: jest.fn(), // 新增
+    getRangeCrawlProgress: jest.fn(), // 新增
   };
 
   beforeEach(async () => {
@@ -47,18 +49,30 @@ describe('NewsController', () => {
   });
 
   describe('crawlNews', () => {
-    it('should start crawling task and return success message', async () => {
+    it('should start crawling task using Temporal workflow and return success result', async () => {
       const crawlDto: CrawlNewsDto = {
         startDate: '2025-08-21',
         endDate: '2025-08-21',
         sources: [NewsSource.XWLB],
       };
 
+      const expectedTemporalResult = {
+        success: true,
+        workflowId: 'range-news-crawling-2025-08-21-to-2025-08-21-12345',
+        message: '成功启动 1 个日期的新闻爬取工作流 (2025-08-21 至 2025-08-21)',
+      };
+
+      mockTemporalScheduler.startNewsRangeCrawlWorkflow.mockResolvedValue(expectedTemporalResult);
+
       const result = await controller.crawlNews(crawlDto);
 
       expect(result.code).toBe(0);
-      expect(result.data.message).toBe('新闻爬取任务已启动，正在后台执行');
-      expect(mockNewsService.startCrawlingTask).toHaveBeenCalledWith(crawlDto);
+      expect(result.data).toEqual(expectedTemporalResult);
+      expect(mockTemporalScheduler.startNewsRangeCrawlWorkflow).toHaveBeenCalledWith(
+        crawlDto.startDate,
+        crawlDto.endDate,
+        crawlDto.sources
+      );
     });
 
     it('should start crawling task for all sources when sources not specified', async () => {
@@ -67,11 +81,23 @@ describe('NewsController', () => {
         endDate: '2025-08-21',
       };
 
+      const expectedTemporalResult = {
+        success: true,
+        workflowId: 'range-news-crawling-2025-08-21-to-2025-08-21-67890',
+        message: '成功启动 1 个日期的新闻爬取工作流 (2025-08-21 至 2025-08-21)',
+      };
+
+      mockTemporalScheduler.startNewsRangeCrawlWorkflow.mockResolvedValue(expectedTemporalResult);
+
       const result = await controller.crawlNews(crawlDto);
 
       expect(result.code).toBe(0);
-      expect(result.data.message).toBe('新闻爬取任务已启动，正在后台执行');
-      expect(mockNewsService.startCrawlingTask).toHaveBeenCalledWith(crawlDto);
+      expect(result.data).toEqual(expectedTemporalResult);
+      expect(mockTemporalScheduler.startNewsRangeCrawlWorkflow).toHaveBeenCalledWith(
+        crawlDto.startDate,
+        crawlDto.endDate,
+        undefined // sources not specified
+      );
     });
   });
 
@@ -176,6 +202,45 @@ describe('NewsController', () => {
         expect(result.code).toBe(0);
         expect(result.data).toEqual(expectedStatus);
         expect(temporalScheduler.getWorkflowStatus).toHaveBeenCalledWith(workflowId);
+      });
+    });
+
+    describe('getRangeCrawlProgress', () => {
+      it('should return range crawl progress', async () => {
+        const mainWorkflowId = 'range-news-crawling-2025-08-20-to-2025-08-21-12345';
+        const expectedProgress = {
+          mainWorkflowId,
+          totalDays: 2,
+          completedDays: 1,
+          runningDays: 1,
+          failedDays: 0,
+          overallProgress: 50,
+          dailyStatus: [
+            {
+              date: '2025-08-20',
+              workflowId: `${mainWorkflowId}-2025-08-20`,
+              status: 'COMPLETED',
+              startTime: new Date('2025-08-21T01:00:00.000Z'),
+              endTime: new Date('2025-08-21T01:05:00.000Z'),
+            },
+            {
+              date: '2025-08-21',
+              workflowId: `${mainWorkflowId}-2025-08-21`,
+              status: 'RUNNING',
+              startTime: new Date('2025-08-21T01:00:00.000Z'),
+              endTime: undefined,
+            },
+          ],
+          summary: '总计 2 天, 已完成 1 天, 运行中 1 天, 失败 0 天, 进度 50%',
+        };
+
+        mockTemporalScheduler.getRangeCrawlProgress.mockResolvedValue(expectedProgress);
+
+        const result = await controller.getRangeCrawlProgress({ mainWorkflowId });
+
+        expect(result.code).toBe(0);
+        expect(result.data).toEqual(expectedProgress);
+        expect(temporalScheduler.getRangeCrawlProgress).toHaveBeenCalledWith(mainWorkflowId);
       });
     });
   });

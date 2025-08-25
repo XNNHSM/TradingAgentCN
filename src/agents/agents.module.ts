@@ -11,11 +11,15 @@ import { DashScopeAdapter } from './services/llm-adapters/dashscope-adapter';
 import { AgentsTemporalClientService } from './temporal/agents-temporal-client.service';
 import { AgentsWorkerService } from './temporal/agents-worker.service';
 
-// 新的统一智能体架构
-import { DataCollectorAgent } from './unified/data-collector.agent';
-import { ComprehensiveAnalystAgent } from './unified/comprehensive-analyst.agent';
-import { TradingStrategistAgent } from './unified/trading-strategist.agent';
-import { UnifiedOrchestratorService } from './unified/unified-orchestrator.service';
+// 新的按需调用智能体架构
+import { BasicDataAgent } from './unified/basic-data.agent';
+import { TechnicalAnalystAgent } from './unified/technical-analyst.agent';
+import { FundamentalAnalystAgent } from './unified/fundamental-analyst.agent';
+import { NewsAnalystAgent } from './unified/news-analyst.agent';
+import { SocialMediaAnalystAgent } from './unified/social-media-analyst.agent';
+import { QuantitativeTraderAgent } from './unified/quantitative-trader.agent';
+import { MacroEconomistAgent } from './unified/macro-economist.agent';
+import { UnifiedOrchestratorAgent } from './unified/unified-orchestrator.agent';
 
 // 执行记录相关（保持兼容）
 import { AgentExecutionRecord } from './entities/agent-execution-record.entity';
@@ -27,7 +31,8 @@ import { ExecutionRecordsController } from './execution-records/execution-record
 
 /**
  * 智能体模块
- * 基于阿里云百炼MCP协议的新一代智能体架构
+ * 基于阿里云百炼MCP协议的按需调用智能体架构
+ * 每个智能体专注于特定的MCP服务调用，避免重复调用
  */
 @Module({
   imports: [
@@ -46,11 +51,15 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     AgentsTemporalClientService,
     AgentsWorkerService,
 
-    // 统一智能体架构
-    DataCollectorAgent,
-    ComprehensiveAnalystAgent,
-    TradingStrategistAgent,
-    UnifiedOrchestratorService,
+    // 按需调用智能体架构
+    BasicDataAgent,
+    TechnicalAnalystAgent,
+    FundamentalAnalystAgent,
+    NewsAnalystAgent,
+    SocialMediaAnalystAgent,
+    QuantitativeTraderAgent,
+    MacroEconomistAgent,
+    UnifiedOrchestratorAgent,
 
     // 执行记录服务
     AgentExecutionRecordService,
@@ -62,10 +71,16 @@ import { ExecutionRecordsController } from './execution-records/execution-record
   exports: [
     // 对外提供的主要服务
     MCPClientService,
-    DataCollectorAgent,
-    ComprehensiveAnalystAgent,
-    TradingStrategistAgent,
-    UnifiedOrchestratorService,
+    
+    // 按需调用智能体架构
+    BasicDataAgent,
+    TechnicalAnalystAgent,
+    FundamentalAnalystAgent,
+    NewsAnalystAgent,
+    SocialMediaAnalystAgent,
+    QuantitativeTraderAgent,
+    MacroEconomistAgent,
+    UnifiedOrchestratorAgent,
     
     // Temporal服务导出
     AgentsTemporalClientService,

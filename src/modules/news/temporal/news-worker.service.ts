@@ -68,17 +68,25 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
         connection: this.connection,
         namespace: this.namespace,
         taskQueue: this.taskQueue,
+        // 主工作流文件路径
         workflowsPath: require.resolve('./news-crawling.workflow'),
         activities: {
-          // 将活动实例的方法绑定到正确的上下文
+          // 原有活动（向后兼容）
           getSupportedSources: newsActivities.getSupportedSources.bind(newsActivities),
           validateDate: newsActivities.validateDate.bind(newsActivities),
           crawlNewsFromSource: newsActivities.crawlNewsFromSource.bind(newsActivities),
           getWorkflowSummary: newsActivities.getWorkflowSummary.bind(newsActivities),
+          
+          // 新的粒度化活动
+          getNewsLinks: newsActivities.getNewsLinks.bind(newsActivities),
+          crawlSingleNews: newsActivities.crawlSingleNews.bind(newsActivities),
+          persistNewsData: newsActivities.persistNewsData.bind(newsActivities),
+          generateNewsSummary: newsActivities.generateNewsSummary.bind(newsActivities),
+          persistSummaryData: newsActivities.persistSummaryData.bind(newsActivities),
         },
-        // Worker 配置
-        maxConcurrentActivityTaskExecutions: 5, // 最多同时执行5个活动
-        maxConcurrentWorkflowTaskExecutions: 2, // 最多同时执行2个工作流
+        // Worker 配置（提高并发能力以支持子工作流）
+        maxConcurrentActivityTaskExecutions: 10, // 增加活动并发数以支持粒度化活动
+        maxConcurrentWorkflowTaskExecutions: 5,  // 增加工作流并发数以支持子工作流
       });
 
       // 启动 Worker
@@ -125,13 +133,33 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
     taskQueue: string;
     maxConcurrentActivities: number;
     maxConcurrentWorkflows: number;
+    supportedWorkflows: string[];
+    supportedActivities: string[];
   } {
     return {
       isRunning: !!this.worker,
       namespace: this.namespace,
       taskQueue: this.taskQueue,
-      maxConcurrentActivities: 5,
-      maxConcurrentWorkflows: 2,
+      maxConcurrentActivities: 10,
+      maxConcurrentWorkflows: 5,
+      supportedWorkflows: [
+        'newsCrawlingWorkflow',
+        'singleSourceCrawlingWorkflow',
+        'newsContentProcessingWorkflow',
+      ],
+      supportedActivities: [
+        // 原有活动
+        'getSupportedSources',
+        'validateDate', 
+        'crawlNewsFromSource',
+        'getWorkflowSummary',
+        // 新的粒度化活动
+        'getNewsLinks',
+        'crawlSingleNews',
+        'persistNewsData',
+        'generateNewsSummary',
+        'persistSummaryData',
+      ],
     };
   }
 

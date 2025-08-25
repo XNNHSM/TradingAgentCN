@@ -27,12 +27,52 @@ export interface WorkflowSummaryInput {
   duration: string;
 }
 
-// 新闻活动接口定义
+// 新闻链接信息
+export interface NewsLink {
+  url: string;
+  title?: string;
+  publishTime?: string;
+  id?: string;
+}
+
+// 单个新闻内容
+export interface NewsContent {
+  title: string;
+  content: string;
+  url: string;
+  publishTime?: string;
+  source: string;
+}
+
+// 新闻摘要生成结果
+export interface NewsSummaryResult {
+  newsId: number;
+  title: string;
+  summary: string;
+  newsDate: string;
+}
+
+// 数据持久化结果
+export interface PersistenceResult {
+  success: boolean;
+  count: number;
+  message?: string;
+}
+
+// 新闻活动接口定义（扩展后的粒度化活动）
 export interface NewsActivities {
+  // 原有活动（兼容性保留）
   getSupportedSources(): Promise<string[]>;
   validateDate(date: string): Promise<void>;
   crawlNewsFromSource(source: string, date: string): Promise<SourceCrawlResult>;
   getWorkflowSummary(input: WorkflowSummaryInput): Promise<string>;
+  
+  // 新的粒度化活动
+  getNewsLinks(source: string, date: string): Promise<NewsLink[]>;
+  crawlSingleNews(newsLink: NewsLink, source: string): Promise<NewsContent>;
+  persistNewsData(newsContent: NewsContent[]): Promise<PersistenceResult>;
+  generateNewsSummary(newsContent: NewsContent): Promise<NewsSummaryResult>;
+  persistSummaryData(summaries: NewsSummaryResult[]): Promise<PersistenceResult>;
 }
 
 /**
@@ -198,6 +238,221 @@ export class NewsActivitiesImpl implements NewsActivities {
     } catch (error) {
       this.businessLogger.serviceError('生成工作流摘要失败', error);
       return `摘要生成失败: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  // ============================================================================
+  // 新的粒度化活动实现
+  // ============================================================================
+
+  /**
+   * 获取指定数据源和日期的新闻链接列表
+   */
+  async getNewsLinks(source: string, date: string): Promise<NewsLink[]> {
+    try {
+      this.businessLogger.serviceInfo(`获取 ${source} 的新闻链接列表`, { source, date });
+      
+      // 调用新闻服务获取链接列表
+      const result = await this.newsService.getNewsLinks(source as NewsSource, date);
+      
+      if (result.code === 0) {
+        const links = result.data as NewsLink[];
+        this.businessLogger.serviceInfo(
+          `${source} 链接获取成功: 找到 ${links.length} 个新闻链接`,
+          { source, date, count: links.length }
+        );
+        return links;
+      } else {
+        this.businessLogger.serviceError(
+          `${source} 链接获取失败: ${result.message}`,
+          new Error(result.message),
+          { source, date }
+        );
+        return [];
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        `${source} 链接获取异常`,
+        error,
+        { source, date }
+      );
+      return [];
+    }
+  }
+
+  /**
+   * 爬取单个新闻的详细内容
+   */
+  async crawlSingleNews(newsLink: NewsLink, source: string): Promise<NewsContent> {
+    try {
+      this.businessLogger.serviceInfo(
+        `爬取单个新闻: ${newsLink.title || newsLink.url}`,
+        { source, url: newsLink.url }
+      );
+      
+      // 调用新闻服务爬取单个新闻
+      const result = await this.newsService.crawlSingleNewsContent(newsLink, source as NewsSource);
+      
+      if (result.code === 0) {
+        const content = result.data as NewsContent;
+        this.businessLogger.serviceInfo(
+          `单个新闻爬取成功: ${content.title}`,
+          { source, url: newsLink.url, titleLength: content.title.length, contentLength: content.content.length }
+        );
+        return content;
+      } else {
+        this.businessLogger.serviceError(
+          `单个新闻爬取失败: ${result.message}`,
+          new Error(result.message),
+          { source, url: newsLink.url }
+        );
+        throw new Error(`爬取新闻失败: ${result.message}`);
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        `单个新闻爬取异常: ${newsLink.url}`,
+        error,
+        { source, url: newsLink.url }
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 将新闻内容批量保存到数据库
+   */
+  async persistNewsData(newsContent: NewsContent[]): Promise<PersistenceResult> {
+    try {
+      this.businessLogger.serviceInfo(
+        `批量保存新闻数据: ${newsContent.length} 条`,
+        { count: newsContent.length }
+      );
+      
+      // 调用新闻服务批量保存
+      const result = await this.newsService.batchSaveNewsContent(newsContent);
+      
+      if (result.code === 0) {
+        const savedCount = result.data as number;
+        this.businessLogger.serviceInfo(
+          `新闻数据保存成功: ${savedCount} 条`,
+          { requestedCount: newsContent.length, savedCount }
+        );
+        return {
+          success: true,
+          count: savedCount,
+          message: `成功保存 ${savedCount} 条新闻`,
+        };
+      } else {
+        this.businessLogger.serviceError(
+          `新闻数据保存失败: ${result.message}`,
+          new Error(result.message),
+          { count: newsContent.length }
+        );
+        return {
+          success: false,
+          count: 0,
+          message: result.message,
+        };
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        '新闻数据保存异常',
+        error,
+        { count: newsContent.length }
+      );
+      return {
+        success: false,
+        count: 0,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * 使用LLM为单个新闻生成摘要
+   */
+  async generateNewsSummary(newsContent: NewsContent): Promise<NewsSummaryResult> {
+    try {
+      this.businessLogger.serviceInfo(
+        `生成新闻摘要: ${newsContent.title}`,
+        { source: newsContent.source, url: newsContent.url }
+      );
+      
+      // 调用新闻服务生成摘要
+      const result = await this.newsService.generateNewsContentSummary(newsContent);
+      
+      if (result.code === 0) {
+        const summary = result.data as NewsSummaryResult;
+        this.businessLogger.serviceInfo(
+          `新闻摘要生成成功: ${summary.title}`,
+          { newsId: summary.newsId, summaryLength: summary.summary.length }
+        );
+        return summary;
+      } else {
+        this.businessLogger.serviceError(
+          `新闻摘要生成失败: ${result.message}`,
+          new Error(result.message),
+          { title: newsContent.title, url: newsContent.url }
+        );
+        throw new Error(`摘要生成失败: ${result.message}`);
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        `新闻摘要生成异常: ${newsContent.title}`,
+        error,
+        { source: newsContent.source, url: newsContent.url }
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 将新闻摘要批量保存到数据库
+   */
+  async persistSummaryData(summaries: NewsSummaryResult[]): Promise<PersistenceResult> {
+    try {
+      this.businessLogger.serviceInfo(
+        `批量保存新闻摘要: ${summaries.length} 条`,
+        { count: summaries.length }
+      );
+      
+      // 调用新闻服务批量保存摘要
+      const result = await this.newsService.batchSaveNewsSummaries(summaries);
+      
+      if (result.code === 0) {
+        const savedCount = result.data as number;
+        this.businessLogger.serviceInfo(
+          `新闻摘要保存成功: ${savedCount} 条`,
+          { requestedCount: summaries.length, savedCount }
+        );
+        return {
+          success: true,
+          count: savedCount,
+          message: `成功保存 ${savedCount} 条摘要`,
+        };
+      } else {
+        this.businessLogger.serviceError(
+          `新闻摘要保存失败: ${result.message}`,
+          new Error(result.message),
+          { count: summaries.length }
+        );
+        return {
+          success: false,
+          count: 0,
+          message: result.message,
+        };
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        '新闻摘要保存异常',
+        error,
+        { count: summaries.length }
+      );
+      return {
+        success: false,
+        count: 0,
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 }

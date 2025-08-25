@@ -172,17 +172,17 @@ export class NewsTemporalClientService implements OnModuleDestroy {
    * 创建定时调度
    */
   async createDailyNewsSchedule(config?: Partial<NewsScheduleConfig>): Promise<ScheduleHandle> {
-    try {
-      const client = await this.getClient();
-      
-      const scheduleConfig: NewsScheduleConfig = {
-        scheduleId: `daily-news-crawling-${this.configService.get('NODE_ENV', 'dev')}`,
-        cronExpression: '0 1 * * *', // 每天凌晨1点
-        timeZone: 'Asia/Shanghai',
-        memo: '每日新闻爬取定时任务',
-        ...config,
-      };
+    const client = await this.getClient();
+    
+    const scheduleConfig: NewsScheduleConfig = {
+      scheduleId: `daily-news-crawling-${this.configService.get('NODE_ENV', 'dev')}`,
+      cronExpression: '0 1 * * *', // 每天凌晨1点
+      timeZone: 'Asia/Shanghai',
+      memo: '每日新闻爬取定时任务',
+      ...config,
+    };
 
+    try {
       this.businessLogger.serviceInfo('创建新闻定时调度', scheduleConfig);
 
       // 获取昨天的日期作为默认爬取日期
@@ -218,6 +218,20 @@ export class NewsTemporalClientService implements OnModuleDestroy {
 
       return handle;
     } catch (error) {
+      // 检查是否为调度已存在的错误
+      if (error instanceof Error && (
+        error.message.includes('already exists') || 
+        error.message.includes('Schedule already exists and is running')
+      )) {
+        this.businessLogger.serviceInfo('新闻定时调度已存在，获取现有调度句柄', {
+          scheduleId: scheduleConfig.scheduleId,
+          errorMessage: error.message
+        });
+        
+        // 返回现有调度的句柄
+        return client.schedule.getHandle(scheduleConfig.scheduleId);
+      }
+      
       this.businessLogger.serviceError('创建新闻定时调度失败', error);
       throw error;
     }

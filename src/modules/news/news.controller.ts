@@ -16,14 +16,22 @@ export class NewsController {
 
   @Post('crawl')
   @ApiOperation({ 
-    summary: '爬取新闻数据', 
-    description: '根据指定的日期范围和数据源爬取新闻。数据源可选，不传则爬取所有支持的数据源。爬取任务将异步执行。' 
+    summary: '爬取新闻数据 (使用 Temporal 工作流)', 
+    description: '根据指定的日期范围和数据源爬取新闻。数据源可选，不传则爬取所有支持的数据源。任务通过 Temporal 工作流异步执行，支持容错和监控。' 
   })
-  @ApiResponse({ status: 200, description: '爬取任务启动成功' })
-  async crawlNews(@Body() crawlDto: CrawlNewsDto): Promise<Result<{ message: string }>> {
-    // 异步启动爬取任务，不等待结果
-    this.newsService.startCrawlingTask(crawlDto);
-    return Result.success({ message: '新闻爬取任务已启动，正在后台执行' });
+  @ApiResponse({ status: 200, description: 'Temporal 工作流启动成功' })
+  async crawlNews(@Body() crawlDto: CrawlNewsDto): Promise<Result<{
+    success: boolean;
+    workflowId: string;
+    message: string;
+  }>> {
+    // 使用 Temporal 工作流启动爬取任务
+    const result = await this.newsTemporalScheduler.startNewsRangeCrawlWorkflow(
+      crawlDto.startDate,
+      crawlDto.endDate,
+      crawlDto.sources
+    );
+    return Result.success(result);
   }
 
   @Post('supported-sources')
@@ -101,5 +109,31 @@ export class NewsController {
   }>> {
     const status = await this.newsTemporalScheduler.getWorkflowStatus(body.workflowId);
     return Result.success(status);
+  }
+
+  @Post('temporal/range-crawl-progress')
+  @ApiOperation({ 
+    summary: '获取日期范围爬取进度', 
+    description: '查看日期范围爬取工作流的整体进度和各日期的详细状态' 
+  })
+  @ApiResponse({ status: 200, description: '获取进度成功' })
+  async getRangeCrawlProgress(@Body() body: { mainWorkflowId: string }): Promise<Result<{
+    mainWorkflowId: string;
+    totalDays: number;
+    completedDays: number;
+    runningDays: number;
+    failedDays: number;
+    overallProgress: number;
+    dailyStatus: Array<{
+      date: string;
+      workflowId: string;
+      status: string;
+      startTime?: Date;
+      endTime?: Date;
+    }>;
+    summary: string;
+  }>> {
+    const progress = await this.newsTemporalScheduler.getRangeCrawlProgress(body.mainWorkflowId);
+    return Result.success(progress);
   }
 }

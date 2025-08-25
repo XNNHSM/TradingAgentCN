@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NewsService } from './news.service';
 import { RawNews, NewsRegion } from './entities/raw-news.entity';
+import { NewsSummary } from './entities/news-summary.entity';
 import { NewsCrawlerFactory } from './factories/news-crawler.factory';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
 
@@ -29,6 +30,10 @@ describe('NewsService', () => {
         {
           provide: getRepositoryToken(RawNews),
           useValue: mockRepository,
+        },
+        {
+          provide: getRepositoryToken(NewsSummary),
+          useValue: mockRepository, // 重用同样的mock repository
         },
         {
           provide: NewsCrawlerFactory,

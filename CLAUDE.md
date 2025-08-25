@@ -359,59 +359,48 @@ const client = new Client({
 - 📊 **监控集中**: Web UI 界面统一查看所有工作流状态
 
 #### 2. TaskQueue 命名规范 ⭐
-**命名规则**: `{模块名}-{业务域}-{环境}`
+**命名规则**: `{业务功能名称}`
 
-**核心作用**: 由于统一使用 `default` namespace，TaskQueue 承担了环境和模块隔离的重要职责
-
-**规范说明**:
-- 🚫 **不使用全局配置**: 移除 `TEMPORAL_TASK_QUEUE` 环境变量
-- ✅ **模块自定义**: 每个业务模块自行定义 taskQueue 名称
-- ✅ **业务隔离**: 不同业务使用不同的 taskQueue
-- ✅ **环境隔离**: 通过 taskQueue 名称区分不同环境
-- 🎯 **主要隔离机制**: 在统一 namespace 下通过 taskQueue 实现完整隔离
+**设计原则**: 
+- 🎯 **简化命名**: 直接使用业务功能名称，不添加模块前缀或环境后缀
+- ✅ **业务导向**: TaskQueue名称直接反映具体的业务功能
+- 🚫 **环境无关**: 不在TaskQueue名称中区分环境，通过namespace或其他机制隔离
+- ⚡ **便于维护**: 简洁的命名方式，减少配置复杂度
 
 **TaskQueue 命名示例**:
 ```bash
-# 新闻模块
-news-crawling-dev       # 新闻爬取任务队列(开发环境)
-news-processing-dev     # 新闻处理任务队列(开发环境)
-news-crawling-prd       # 新闻爬取任务队列(生产环境)
-
-# 智能体模块
-agents-analysis-dev     # 股票分析任务队列(开发环境)
-agents-batch-dev        # 批量分析任务队列(开发环境)
-agents-analysis-prd     # 股票分析任务队列(生产环境)
-
-# 自选股模块
-watchlist-monitoring-dev    # 自选股监控任务队列(开发环境)
-watchlist-alerts-dev        # 自选股提醒任务队列(开发环境)
-
-# 分析模块
-analysis-reports-dev    # 分析报告任务队列(开发环境)
-analysis-alerts-dev     # 分析提醒任务队列(开发环境)
+# 核心业务功能
+stock-analysis         # 股票分析任务队列
+news-crawling         # 新闻爬取任务队列
+news-processing       # 新闻处理任务队列
+portfolio-monitoring  # 投资组合监控任务队列
+daily-report          # 日报生成任务队列
+risk-assessment       # 风险评估任务队列
+market-data-sync      # 市场数据同步任务队列
+notification-dispatch # 通知分发任务队列
 ```
 
 **TaskQueue 使用示例**:
 ```typescript
-// 统一使用 default namespace，通过 taskQueue 隔离
+// 统一使用 default namespace，通过简洁的 taskQueue 名称
 const client = new Client({
   connection,
   namespace: 'default', // 统一 namespace
 });
 
-// 在工作流启动时指定 taskQueue 实现隔离
+// 在工作流启动时使用简洁的 taskQueue 名称
 const handle = await client.workflow.start(stockAnalysisWorkflow, {
-  taskQueue: `agents-analysis-${NODE_ENV}`,  // agents-analysis-dev
+  taskQueue: 'stock-analysis',  // 直接使用业务功能名称
   workflowId: `stock-analysis-${stockCode}-${Date.now()}`,
   args: [{ stockCode, metadata }],
 });
 
-// Worker 监听特定的 taskQueue 实现模块和环境隔离
+// Worker 监听特定的业务功能 taskQueue
 const worker = await Worker.create({
   connection, // 连接到 default namespace
   workflowsPath: require.resolve('./workflows'),
   activities,
-  taskQueue: `news-crawling-${NODE_ENV}`,   // news-crawling-dev
+  taskQueue: 'news-crawling',   // 直接使用业务功能名称
 });
 ```
 
@@ -426,20 +415,20 @@ const worker = await Worker.create({
 ```typescript
 // 高并发队列配置
 const highThroughputWorker = await Worker.create({
-  taskQueue: 'agents-batch-prd',
+  taskQueue: 'stock-analysis',
   maxConcurrentActivityTaskExecutions: 20,
   maxConcurrentWorkflowTaskExecutions: 10,
 });
 
 // CPU密集型队列配置  
 const computeIntensiveWorker = await Worker.create({
-  taskQueue: 'analysis-compute-prd',
+  taskQueue: 'risk-assessment',
   maxConcurrentActivityTaskExecutions: 4,  // 限制并发
 });
 
 // IO密集型队列配置
 const ioIntensiveWorker = await Worker.create({
-  taskQueue: 'news-crawling-prd', 
+  taskQueue: 'news-crawling', 
   maxConcurrentActivityTaskExecutions: 50, // 高并发
 });
 ```
@@ -760,76 +749,102 @@ const mockApiCall = jest.fn().mockResolvedValue(testData);
 
 ### 🚨 MCP 服务调用原则 (重要)
 
-**核心原则**: 避免不同智能体重复调用同一个 MCP 服务，以控制成本和提高效率
+**核心原则**: 智能体按需调用 MCP 服务，避免职责重叠导致的重复调用
 
-#### **成本控制策略**:
-- 🚫 **禁止重复调用**: 不同智能体不应该调用相同的 MCP 服务获取相同数据
-- ✅ **数据共享机制**: 创建专门的数据获取智能体，其他智能体调用该智能体获取分析结果
-- 💰 **成本考量**: MCP 服务将来可能收费，必须严格控制调用次数
-- 🔄 **流程优化**: 避免在分析流程中出现重复的数据获取和分析步骤
+#### **按需调用策略**:
+- ✅ **按需调用**: 每个智能体根据自身职责按需调用相应的 MCP 服务
+- 🚫 **避免重复**: 不同智能体不应该调用同一个 MCP 服务（说明职责重叠）
+- 🎯 **职责清晰**: 如果出现重复调用，需要重新设计智能体职责分工
+- 💰 **成本控制**: MCP 服务将来可能收费，通过合理设计避免浪费
 
-#### **实现策略**:
+#### **智能体职责分工**:
 ```
-数据获取智能体 (DataCollectorAgent)
-├── 负责所有 MCP 服务调用
-├── 缓存和整理股票基础数据
-└── 提供标准化数据接口给其他智能体
+基础数据智能体 (BasicDataAgent)
+├── 专门负责: get_stock_basic_info, get_stock_realtime_data
+├── 职责: 提供股票基本信息和实时数据
+└── 其他智能体: 不再调用这些 MCP 服务
 
-分析智能体层
-├── 综合分析师 → 调用数据获取智能体
-├── 交易策略师 → 调用数据获取智能体 + 分析师结果
-└── 避免直接调用 MCP 服务
+技术分析智能体 (TechnicalAnalystAgent)  
+├── 专门负责: get_stock_historical_data, get_stock_technical_indicators
+├── 职责: 技术面分析和指标计算
+└── 其他智能体: 不再调用这些 MCP 服务
+
+基本面分析智能体 (FundamentalAnalystAgent)
+├── 专门负责: get_stock_financial_data
+├── 职责: 财务数据分析和估值
+└── 其他智能体: 不再调用这些 MCP 服务
+
+新闻分析智能体 (NewsAnalystAgent)
+├── 专门负责: get_stock_news
+├── 职责: 新闻情绪分析和市场情绪判断
+└── 其他智能体: 不再调用这些 MCP 服务
 ```
 
-### 新一代智能体架构 (优化后)
+### 新一代智能体架构 (按需调用模式)
 ```
 MCP智能体系统/
-├── 数据获取智能体 (DataCollectorAgent) 🆕
-│   ├── 股票基本信息获取 (get_stock_basic_info)
-│   ├── 实时行情数据获取 (get_stock_realtime_data)
-│   ├── 历史价格数据获取 (get_stock_historical_data)
-│   ├── 技术指标计算 (get_stock_technical_indicators)
-│   ├── 财务数据获取 (get_stock_financial_data)
-│   └── 新闻数据获取 (get_stock_news)
-├── 综合分析师 (ComprehensiveAnalystAgent)
-│   ├── 技术分析 → 调用数据获取智能体
-│   ├── 基本面分析 → 调用数据获取智能体
-│   └── 新闻情绪分析 → 调用数据获取智能体
-├── 交易策略师 (TradingStrategistAgent)
-│   ├── 多空观点对比 → 基于分析师结果
-│   ├── 交易决策制定 → 基于分析师结果 + 数据智能体
-│   └── 风险管控方案 → 基于分析师结果
-└── 统一协调服务 (UnifiedOrchestratorService)
-    ├── 智能体协调 (数据获取 → 综合分析 → 交易策略)
-    ├── 数据缓存管理 (避免重复调用)
-    └── 最终决策生成 (权重: 综合分析70% + 交易策略30%)
+├── 基础数据智能体 (BasicDataAgent) 🆕
+│   ├── MCP调用: get_stock_basic_info, get_stock_realtime_data
+│   └── 输出: 股票基本信息和实时行情数据
+├── 技术分析智能体 (TechnicalAnalystAgent) 🆕
+│   ├── MCP调用: get_stock_historical_data, get_stock_technical_indicators
+│   └── 输出: 技术面分析结果和交易信号
+├── 基本面分析智能体 (FundamentalAnalystAgent) 🆕
+│   ├── MCP调用: get_stock_financial_data
+│   └── 输出: 财务分析和估值结果
+├── 新闻分析智能体 (NewsAnalystAgent) 🆕
+│   ├── MCP调用: get_stock_news
+│   └── 输出: 新闻情绪分析和市场情绪
+├── 社交媒体分析师 (SocialMediaAnalystAgent) 
+│   ├── MCP调用: 无 (基于其他智能体结果)
+│   └── 输出: 社交媒体情绪分析
+├── 量化交易员 (QuantitativeTraderAgent)
+│   ├── MCP调用: 无 (基于其他智能体结果)
+│   └── 输出: 量化模型评分和交易信号
+├── 宏观经济分析师 (MacroEconomistAgent)
+│   ├── MCP调用: 无 (基于新闻和宏观数据)
+│   └── 输出: 宏观环境分析和政策影响
+└── 统一协调器 (UnifiedOrchestratorAgent)
+    ├── MCP调用: 无 (整合所有智能体结果)
+    └── 输出: 最终投资决策和执行策略
 ```
 
-### MCP决策工作流 (优化后)
+### MCP决策工作流 (按需调用模式)
 
 #### 自动流程(定时任务)
 1. 每天早上9点启动定时任务
 2. 检查是否为交易日，非交易日结束流程
 3. 获取已添加的自选股列表
-4. **🆕 数据获取智能体**: 一次性通过MCP协议获取所有必要数据
-   - 股票基本信息、实时行情、历史数据
-   - 技术指标计算、财务数据、相关新闻
-5. **综合分析师**: 基于数据智能体结果进行全面分析
-6. **交易策略师**: 基于分析师结果制定交易方案
-7. **统一协调服务**: 整合所有结果生成最终买卖建议
+4. **并行执行专业化智能体**:
+   - **基础数据智能体**: 获取基本信息和实时数据 (MCP调用)
+   - **技术分析智能体**: 获取历史数据并进行技术分析 (MCP调用)
+   - **基本面分析智能体**: 获取财务数据并进行估值分析 (MCP调用)
+   - **新闻分析智能体**: 获取相关新闻并进行情绪分析 (MCP调用)
+5. **高级分析智能体**: 基于前面结果进行深度分析
+   - **社交媒体分析师**: 基于新闻和技术分析结果
+   - **量化交易员**: 基于所有基础分析结果
+   - **宏观经济分析师**: 基于新闻和基础数据结果
+6. **统一协调器**: 整合所有智能体结果生成最终决策
 
 #### 手动分析流程
 1. 接收HTTP请求，用户输入股票代码
 2. 验证股票代码格式和有效性
-3. **🆕 数据获取智能体**: 一次性获取股票相关所有数据 (避免重复调用)
-4. **分析阶段**: 综合分析师 → 交易策略师 (基于共享数据)
-5. 返回统一的投资建议和风险评估
+3. **第一层: 数据获取和基础分析** (并行执行)
+   - 基础数据智能体 → MCP调用基本信息
+   - 技术分析智能体 → MCP调用历史数据
+   - 基本面分析智能体 → MCP调用财务数据
+   - 新闻分析智能体 → MCP调用新闻数据
+4. **第二层: 高级分析** (基于第一层结果)
+   - 社交媒体、量化、宏观分析师执行
+5. **第三层: 决策协调**
+   - 统一协调器整合所有结果
+6. 返回统一的投资建议和风险评估
 
 #### **🎯 核心优化点**:
-- ✅ **单次数据获取**: 每个股票只调用一次MCP服务
-- ✅ **数据共享**: 所有智能体共享同一份数据
-- ✅ **成本控制**: 大幅减少MCP服务调用次数
-- ✅ **效率提升**: 避免重复的网络请求和数据解析
+- ✅ **职责清晰**: 每个智能体专注自己的领域和MCP服务
+- ✅ **按需调用**: 避免不必要的数据获取
+- ✅ **并行执行**: 第一层智能体可以并行执行，提高效率
+- ✅ **可维护性**: 新增MCP服务或智能体不影响现有架构
 
 ## 🌐 数据源
 

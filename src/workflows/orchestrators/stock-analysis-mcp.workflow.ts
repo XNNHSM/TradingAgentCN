@@ -272,7 +272,7 @@ async function executeComprehensiveAnalysis(
   
   const result: AnalysisResult = {
     agentName: '综合分析师',
-    agentType: 'COMPREHENSIVE_ANALYST',
+    agentType: 'TECHNICAL_ANALYST_NEW',
     analysis,
     score,
     recommendation: score >= 80 ? 'BUY' : score >= 60 ? 'HOLD' : 'SELL',
@@ -341,7 +341,7 @@ async function executeTradingStrategy(
   
   const result: AnalysisResult = {
     agentName: '交易策略师',
-    agentType: 'TRADING_STRATEGIST',
+    agentType: 'UNIFIED_ORCHESTRATOR',
     analysis,
     score,
     recommendation: score >= 75 ? 'BUY' : score >= 55 ? 'HOLD' : 'SELL',
@@ -445,7 +445,7 @@ ${risks.map((risk, index) => `${index + 1}. ${risk}`).join('\n')}
   
   const result: AnalysisResult = {
     agentName: 'MCP智能投顾系统',
-    agentType: 'COMPREHENSIVE_ANALYST',
+    agentType: 'TECHNICAL_ANALYST_NEW',
     analysis,
     score: finalScore,
     recommendation: finalRecommendation.toLowerCase(),

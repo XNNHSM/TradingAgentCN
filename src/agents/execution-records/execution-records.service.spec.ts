@@ -51,7 +51,7 @@ describe('AgentExecutionRecordService', () => {
     it('应该成功创建一条执行记录', async () => {
       const testDto = {
         sessionId: 'test-session-123',
-        agentType: AgentType.MARKET_ANALYST,
+        agentType: AgentType.BASIC_DATA_AGENT,
         agentName: '市场分析师',
         agentRole: '专业的股票市场分析专家',
         stockCode: '000001',
@@ -75,7 +75,7 @@ describe('AgentExecutionRecordService', () => {
         },
         result: {
           agentName: '市场分析师',
-          agentType: AgentType.MARKET_ANALYST,
+          agentType: AgentType.BASIC_DATA_AGENT,
           analysis: '平安银行具有良好的投资价值，建议买入',
           score: 85,
           recommendation: TradingRecommendation.BUY,
@@ -104,7 +104,7 @@ describe('AgentExecutionRecordService', () => {
     it('应该正确处理错误执行记录', async () => {
       const errorDto = {
         sessionId: 'test-session-error',
-        agentType: AgentType.FUNDAMENTAL_ANALYST,
+        agentType: AgentType.FUNDAMENTAL_ANALYST_NEW,
         agentName: '基本面分析师',
         agentRole: '专业的基本面分析专家',
         stockCode: '000002',
@@ -122,7 +122,7 @@ describe('AgentExecutionRecordService', () => {
         },
         result: {
           agentName: '基本面分析师', 
-          agentType: AgentType.FUNDAMENTAL_ANALYST,
+          agentType: AgentType.FUNDAMENTAL_ANALYST_NEW,
           analysis: '分析过程中发生错误',
           timestamp: new Date(),
         },

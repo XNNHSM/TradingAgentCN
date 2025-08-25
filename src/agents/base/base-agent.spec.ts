@@ -35,7 +35,7 @@ class TestAgent extends BaseAgent {
   ) {
     super(
       "测试智能体",
-      AgentType.MARKET_ANALYST,
+      AgentType.BASIC_DATA_AGENT,
       "用于单元测试的智能体",
       llmService,
       dataToolkit,
@@ -156,7 +156,7 @@ describe("BaseAgent - 真实LLM测试", () => {
   it("should be defined", () => {
     expect(agent).toBeDefined();
     expect(agent.name).toBe("测试智能体");
-    expect(agent.type).toBe(AgentType.MARKET_ANALYST);
+    expect(agent.type).toBe(AgentType.BASIC_DATA_AGENT);
     expect(agent.role).toBe("用于单元测试的智能体");
   });
 
@@ -207,7 +207,7 @@ describe("BaseAgent - 真实LLM测试", () => {
         });
 
         expect(result.agentName).toBe("测试智能体");
-        expect(result.agentType).toBe(AgentType.MARKET_ANALYST);
+        expect(result.agentType).toBe(AgentType.BASIC_DATA_AGENT);
         expect(result.analysis).toBeTruthy();
         expect(result.analysis.length).toBeGreaterThan(10);
         expect(result.timestamp).toBeDefined();
@@ -238,7 +238,7 @@ describe("BaseAgent - 真实LLM测试", () => {
       const result = await testAgent.analyze(testContext);
 
       expect(result.agentName).toBe("测试智能体");
-      expect(result.agentType).toBe(AgentType.MARKET_ANALYST);
+      expect(result.agentType).toBe(AgentType.BASIC_DATA_AGENT);
       expect(result.analysis).toContain("技术分析结果");
       expect(result.score).toBe(75);
       expect(result.confidence).toBe(0.8);
@@ -630,7 +630,7 @@ describe("BaseAgent - 真实LLM测试", () => {
     it("应该验证有效的分析结果", () => {
       const validResult: AgentResult = {
         agentName: "测试智能体",
-        agentType: AgentType.MARKET_ANALYST,
+        agentType: AgentType.BASIC_DATA_AGENT,
         analysis:
           "这是一个详细的分析结果，包含了足够的内容来证明分析的完整性和深度。本分析涵盖了市场趋势、技术指标、基本面数据等多个维度的内容。",
         timestamp: new Date(),
@@ -642,7 +642,7 @@ describe("BaseAgent - 真实LLM测试", () => {
     it("应该拒绝空的分析结果", () => {
       const invalidResult: AgentResult = {
         agentName: "测试智能体",
-        agentType: AgentType.MARKET_ANALYST,
+        agentType: AgentType.BASIC_DATA_AGENT,
         analysis: "",
         timestamp: new Date(),
       };
@@ -653,7 +653,7 @@ describe("BaseAgent - 真实LLM测试", () => {
     it("应该拒绝过短的分析结果", () => {
       const shortResult: AgentResult = {
         agentName: "测试智能体",
-        agentType: AgentType.MARKET_ANALYST,
+        agentType: AgentType.BASIC_DATA_AGENT,
         analysis: "太短",
         timestamp: new Date(),
       };
@@ -666,7 +666,7 @@ describe("BaseAgent - 真实LLM测试", () => {
     it("应该正确格式化分析结果", () => {
       const result: AgentResult = {
         agentName: "测试智能体",
-        agentType: AgentType.MARKET_ANALYST,
+        agentType: AgentType.BASIC_DATA_AGENT,
         analysis: "详细的分析内容",
         score: 85,
         confidence: 0.8,
@@ -693,7 +693,7 @@ describe("BaseAgent - 真实LLM测试", () => {
     it("应该处理没有洞察和风险的结果", () => {
       const result: AgentResult = {
         agentName: "测试智能体",
-        agentType: AgentType.MARKET_ANALYST,
+        agentType: AgentType.BASIC_DATA_AGENT,
         analysis: "基本分析内容",
         timestamp: new Date(),
       };
