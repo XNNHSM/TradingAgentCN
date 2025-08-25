@@ -26,7 +26,7 @@ export class ComprehensiveAnalystAgent extends BaseAgent {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
         "COMPREHENSIVE_ANALYST_MODEL",
-        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+        configService.get<string>("LLM_DEFAULT_MODEL", "qwen-max"), // 综合分析师使用最强模型
       ),
       temperature: configService.get<number>(
         "COMPREHENSIVE_ANALYST_TEMPERATURE",

@@ -9,7 +9,7 @@ TradingAgentCN 是一个基于大语言模型(LLM)的智能交易决策系统，
 ### 技术栈
 - **后端框架**: NestJS + TypeScript + TypeORM
 - **数据获取协议**: 阿里云百炼MCP (Model Context Protocol)
-- **主要LLM**: 阿里云百炼(DashScope) - qwen-plus/qwen-max
+- **智能体LLM配置**: 分层模型策略 - qwen-turbo/qwen-plus/qwen-max
 - **数据库**: PostgreSQL + Redis
 - **工作流引擎**: Temporal - 分布式工作流协调和状态管理
 - **部署方案**: Docker 容器化
@@ -850,10 +850,29 @@ MCP智能体系统/
   - 股票搜索功能: search_stocks
   - 相关新闻获取: get_stock_news
 
-### LLM提供商
+### LLM智能体模型配置策略
 - **主要提供商**: 阿里云百炼(DashScope)
-  - 模型: qwen-turbo, qwen-plus, qwen-max等
-  - 中文语言优化，中国用户首选
+  - **分层配置原则**: 根据智能体职责选择合适模型
+  - **成本优化导向**: 简单任务用便宜模型，复杂分析用强模型
+
+#### 智能体模型分配
+| 智能体 | 推荐模型 | 配置变量 | 用途说明 |
+|--------|----------|----------|----------|
+| **数据获取智能体** | qwen-turbo | `DATA_COLLECTOR_MODEL` | 数据解析，成本优先 |
+| **综合分析师** | qwen-max | `COMPREHENSIVE_ANALYST_MODEL` | 复杂分析，效果优先 |
+| **交易策略师** | qwen-plus | `TRADING_STRATEGIST_MODEL` | 策略制定，性价比平衡 |
+
+#### 配置层次
+```bash
+# 全局默认模型
+LLM_DEFAULT_MODEL=qwen-plus
+
+# 智能体专用配置 (可选)
+DATA_COLLECTOR_MODEL=qwen-turbo
+COMPREHENSIVE_ANALYST_MODEL=qwen-max
+TRADING_STRATEGIST_MODEL=qwen-plus
+```
+
 - **备选方案**: OpenAI GPT、Google Gemini、Anthropic Claude
 
 ## 🔒 开发指南

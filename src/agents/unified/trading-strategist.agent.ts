@@ -26,7 +26,7 @@ export class TradingStrategistAgent extends BaseAgent {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
         "TRADING_STRATEGIST_MODEL",
-        configService.get<string>("DASHSCOPE_STANDARD_MODEL", "qwen-plus"),
+        configService.get<string>("LLM_DEFAULT_MODEL", "qwen-plus"), // 交易策略师使用平衡模型
       ),
       temperature: configService.get<number>(
         "TRADING_STRATEGIST_TEMPERATURE",

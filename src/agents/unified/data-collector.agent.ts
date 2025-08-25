@@ -4,10 +4,12 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BaseAgent } from '../base/base-agent';
 import { MCPClientService } from '../services/mcp-client.service';
 import { LLMService } from '../services/llm.service';
 import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
+import { AgentConfig } from '../interfaces/agent.interface';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { 
   StockBasicInfo, 
@@ -56,14 +58,51 @@ export class DataCollectorAgent extends BaseAgent {
     protected readonly mcpClientService: MCPClientService,
     protected readonly llmService: LLMService,
     protected readonly executionRecordService: AgentExecutionRecordService,
+    protected readonly configService: ConfigService,
   ) {
+    const config: Partial<AgentConfig> = {
+      model: configService.get<string>(
+        "DATA_COLLECTOR_MODEL",
+        configService.get<string>("LLM_DEFAULT_MODEL", "qwen-turbo"), // 数据收集器使用轻量模型
+      ),
+      temperature: configService.get<number>(
+        "DATA_COLLECTOR_TEMPERATURE",
+        configService.get<number>("LLM_DEFAULT_TEMPERATURE", 0.3), // 较低温度，更准确的解析
+      ),
+      maxTokens: configService.get<number>(
+        "DATA_COLLECTOR_MAX_TOKENS",
+        configService.get<number>("LLM_DEFAULT_MAX_TOKENS", 2000), // 较少token，主要用于数据解析
+      ),
+      timeout: configService.get<number>(
+        "DATA_COLLECTOR_TIMEOUT",
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 30), // 较短超时
+      ),
+      retryCount: configService.get<number>(
+        "DATA_COLLECTOR_RETRY_COUNT",
+        configService.get<number>("LLM_MAX_RETRIES", 2), // 较少重试次数
+      ),
+      systemPrompt: `您是一位专业的数据解析专家，负责将原始数据转换为结构化信息。
+
+🎯 **核心职责**
+1. **数据解析**: 将JSON字符串解析为结构化数据
+2. **情感分析**: 对新闻内容进行情感倾向分析
+3. **数据验证**: 确保解析后的数据完整性和准确性
+4. **格式标准化**: 输出标准格式的分析结果
+
+📊 **分析标准**
+- 情感分类: positive(利好)、negative(利空)、neutral(中性)
+- 摘要长度: 50字以内，突出关键信息
+- 输出格式: 严格按照JSON格式返回
+- 数据完整性: 确保所有必要字段都有值`,
+    };
+
     super(
       "数据获取智能体",
       "DATA_COLLECTOR" as any, // AgentType 枚举中可能还没有这个类型
       "统一管理所有MCP服务调用，提供综合股票数据",
       llmService,
       undefined, // dataToolkit
-      {}, // config
+      config,
       executionRecordService,
     );
   }
