@@ -239,6 +239,20 @@ src/
 - **工作流负责协调，活动负责执行具体业务逻辑**
 - **通过 Temporal 实现状态管理、错误重试和故障恢复**
 
+### 单体应用架构 ⭐
+**重要架构说明**: 
+- 🏗️ **单体非微服务**: 当前系统采用单体应用架构，不是微服务架构
+- 🔧 **应用即Worker**: NestJS应用本身就是Temporal的Worker，无需独立部署Worker服务
+- 🚀 **自动启动**: 应用启动时自动启动Temporal Worker，监听相应的TaskQueue
+- 📦 **统一部署**: Client和Worker在同一个应用实例中，简化部署和管理
+- 🔄 **内置协调**: 工作流调度和执行都在同一个应用进程中完成
+
+**架构优势**:
+- **简化部署**: 不需要独立的Worker服务器或容器
+- **降低复杂度**: 避免微服务间的网络通信和服务发现
+- **便于调试**: 所有组件在同一进程，方便调试和监控
+- **资源高效**: 减少跨服务调用，提高性能
+
 ### 工作流组织架构
 ```
 workflows/                    # Temporal 工作流定义
@@ -584,6 +598,224 @@ const result = await handle.result();
 ├─ 监控能力有限         ├─ 丰富的监控界面
 └─ 扩展性差             └─ 水平扩展能力
 ```
+
+## 🔧 Temporal 统一封装架构
+
+### 问题分析与解决方案
+
+#### 常见问题
+- **Worker启动失败**: 工作流正常启动但没有Worker轮询TaskQueue
+- **连接不稳定**: Temporal服务连接中断时缺乏自动重连机制
+- **操作分散**: startWorkflow、startSubWorkflow、Activities等操作分散在多个文件
+- **错误处理不统一**: 缺乏统一的错误处理和重试策略
+- **监控缺失**: 缺乏统一的性能监控和健康检查机制
+
+#### 解决方案: Temporal统一封装层
+
+### Temporal Manager 架构设计
+
+```
+📦 Temporal统一封装层 (TemporalManager)
+├── 🔌 连接管理 (ConnectionManager)
+│   ├── 创建连接 (createConnection)
+│   ├── 连接健康检查 (checkConnection) 
+│   ├── 自动重连逻辑 (reconnect)
+│   └── 连接池管理 (poolManagement)
+├── 🎯 工作流管理 (WorkflowManager)
+│   ├── 启动工作流 (startWorkflow)
+│   ├── 启动子工作流 (startChildWorkflow)
+│   ├── 查询工作流状态 (getWorkflowStatus)
+│   ├── 取消工作流 (cancelWorkflow)
+│   ├── 等待工作流结果 (waitForResult)
+│   └── 工作流信号处理 (handleSignals)
+├── ⚙️ Worker管理 (WorkerManager)
+│   ├── 创建Worker (createWorker)
+│   ├── 注册Activities (registerActivities)
+│   ├── Worker健康检查 (checkWorkerHealth)
+│   ├── 批量Worker管理 (batchWorkerManagement)
+│   └── 优雅关闭Worker (gracefulShutdown)
+├── 🎬 Activities管理 (ActivitiesManager)
+│   ├── 执行Activity (executeActivity)
+│   ├── 重试策略配置 (configureRetry)
+│   ├── 超时配置 (setTimeout)
+│   ├── 并发控制 (concurrencyControl)
+│   └── 活动依赖管理 (dependencyManagement)
+└── 📊 监控与日志 (MonitoringManager)
+    ├── 性能指标收集 (collectMetrics)
+    ├── 错误追踪与报警 (trackErrors)
+    ├── 日志统一格式化 (formatLogs)
+    ├── 健康状态检查 (healthCheck)
+    └── 仪表板数据导出 (exportDashboard)
+```
+
+### 核心特性与优势
+
+#### 🚀 统一配置管理
+- **环境变量驱动**: 所有Temporal配置通过环境变量统一管理
+- **类型安全配置**: 完整的TypeScript配置接口定义
+- **多环境支持**: dev/test/staging/production环境无缝切换
+- **热更新配置**: 支持运行时配置更新，无需重启服务
+
+#### 🔄 自动重连机制
+- **智能重连**: 连接断开时指数退避算法自动重连
+- **连接池管理**: 多连接负载均衡，提高并发处理能力
+- **故障转移**: 主连接失败时自动切换到备用连接
+- **连接预热**: 应用启动时预创建连接池，减少冷启动时间
+
+#### 🔍 全面健康检查
+- **实时监控**: 定期检查Worker和连接状态，及时发现问题
+- **预警机制**: 异常指标达到阈值时主动告警
+- **自愈能力**: 检测到问题时自动执行修复流程
+- **性能基线**: 建立性能基线，监控性能衰退
+
+#### 🛡️ 统一错误处理
+- **分类错误处理**: 针对不同错误类型制定专门处理策略
+- **智能重试**: 根据错误类型和历史成功率动态调整重试策略
+- **熔断保护**: 防止级联失败，保护系统整体稳定性
+- **错误上报**: 自动收集错误信息并上报到监控系统
+
+#### 📈 深度监控集成
+- **业务指标**: 工作流执行时间、成功率、吞吐量等业务指标
+- **系统指标**: CPU、内存、网络等系统资源使用情况
+- **自定义指标**: 支持业务自定义监控指标和告警规则
+- **链路追踪**: 完整的分布式链路追踪，快速定位问题根因
+
+### 实现架构规范
+
+#### 1. 目录结构
+```
+src/common/temporal/
+├── managers/                    # 管理器实现
+│   ├── connection.manager.ts    # 连接管理器
+│   ├── workflow.manager.ts      # 工作流管理器  
+│   ├── worker.manager.ts        # Worker管理器
+│   ├── activities.manager.ts    # Activities管理器
+│   └── monitoring.manager.ts    # 监控管理器
+├── interfaces/                  # 接口定义
+│   ├── temporal-config.interface.ts
+│   ├── workflow-options.interface.ts
+│   ├── worker-options.interface.ts
+│   └── monitoring-metrics.interface.ts
+├── decorators/                  # 装饰器
+│   ├── temporal-workflow.decorator.ts
+│   ├── temporal-activity.decorator.ts
+│   └── temporal-retry.decorator.ts
+├── utils/                       # 工具类
+│   ├── temporal-logger.util.ts
+│   ├── error-handler.util.ts
+│   └── metrics-collector.util.ts
+└── temporal.manager.ts          # 统一入口类
+```
+
+#### 2. 核心接口设计
+```typescript
+// Temporal统一管理器接口
+export interface ITemporalManager {
+  // 连接管理
+  createConnection(config?: TemporalConfig): Promise<Connection>;
+  checkConnection(): Promise<boolean>;
+  reconnect(): Promise<void>;
+  
+  // 工作流管理
+  startWorkflow<T>(options: WorkflowStartOptions<T>): Promise<WorkflowHandle>;
+  startChildWorkflow<T>(options: ChildWorkflowOptions<T>): Promise<T>;
+  getWorkflowStatus(workflowId: string): Promise<WorkflowStatus>;
+  cancelWorkflow(workflowId: string): Promise<void>;
+  
+  // Worker管理
+  createWorker(options: WorkerCreateOptions): Promise<Worker>;
+  registerActivities(activities: Record<string, Function>): void;
+  checkWorkerHealth(): Promise<WorkerHealthStatus>;
+  shutdownWorkers(): Promise<void>;
+  
+  // 监控管理
+  collectMetrics(): Promise<TemporalMetrics>;
+  exportHealthStatus(): Promise<SystemHealthStatus>;
+}
+
+// 配置接口
+export interface TemporalConfig {
+  connection: {
+    address: string;
+    namespace: string;
+    tls?: TLSConfig;
+    timeout?: number;
+    retryAttempts?: number;
+  };
+  workflow: {
+    defaultTimeout?: string;
+    maxRetryAttempts?: number;
+    retryBackoff?: RetryBackoffStrategy;
+  };
+  worker: {
+    maxConcurrentActivities?: number;
+    maxConcurrentWorkflows?: number;
+    enableLogging?: boolean;
+    shutdownTimeout?: number;
+  };
+  monitoring: {
+    metricsInterval?: number;
+    healthCheckInterval?: number;
+    alertThresholds?: AlertThresholds;
+  };
+}
+```
+
+#### 3. 使用示例
+```typescript
+// 初始化Temporal管理器
+const temporalManager = new TemporalManager({
+  connection: {
+    address: 'localhost:7233',
+    namespace: 'default',
+  },
+  worker: {
+    maxConcurrentActivities: 10,
+    maxConcurrentWorkflows: 3,
+  }
+});
+
+// 启动工作流 - 简化调用
+const workflowHandle = await temporalManager.startWorkflow({
+  workflowType: stockAnalysisWorkflow,
+  taskQueue: 'stock-analysis',
+  workflowId: `analysis-${stockCode}-${Date.now()}`,
+  args: [{ stockCode, analysisType: 'full' }],
+  timeout: '30m'
+});
+
+// 创建Worker - 统一管理
+const worker = await temporalManager.createWorker({
+  taskQueue: 'stock-analysis',
+  workflowsPath: './workflows',
+  activities: stockAnalysisActivities,
+  options: {
+    maxConcurrentActivities: 10,
+    maxConcurrentWorkflows: 3,
+  }
+});
+
+// 健康检查 - 实时监控
+const health = await temporalManager.checkWorkerHealth();
+console.log(`Workers健康状态: ${health.healthy ? '正常' : '异常'}`);
+```
+
+### 迁移指南
+
+#### 阶段1: 基础封装实现
+1. 创建TemporalManager核心类
+2. 实现ConnectionManager和WorkerManager
+3. 重构现有Worker启动逻辑
+
+#### 阶段2: 高级特性集成
+1. 实现WorkflowManager和ActivitiesManager
+2. 添加监控和健康检查功能
+3. 集成错误处理和重试机制
+
+#### 阶段3: 全面优化升级
+1. 迁移所有Temporal相关代码使用新封装
+2. 添加性能监控和告警功能
+3. 完善文档和测试覆盖
 
 ## 🗄️ 数据库架构
 

@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+// Temporal统一封装模块
+import { TemporalModule } from '../common/temporal/temporal.module';
+
 // MCP相关服务
 import { MCPClientService } from './services/mcp-client.service';
 import { LLMService } from './services/llm.service';
@@ -38,6 +41,7 @@ import { ExecutionRecordsController } from './execution-records/execution-record
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature([AgentExecutionRecord]),
+    TemporalModule, // 导入Temporal统一封装模块
   ],
   providers: [
     // LLM适配器
