@@ -5,6 +5,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 // Temporal统一封装模块
 import { TemporalModule } from '../common/temporal/temporal.module';
 
+// 新闻模块（为政策分析提供数据支持）
+import { NewsModule } from '../modules/news/news.module';
+
 // MCP相关服务
 import { MCPClientService } from './services/mcp-client.service';
 import { LLMService } from './services/llm.service';
@@ -23,6 +26,7 @@ import { SocialMediaAnalystAgent } from './unified/social-media-analyst.agent';
 import { QuantitativeTraderAgent } from './unified/quantitative-trader.agent';
 import { MacroEconomistAgent } from './unified/macro-economist.agent';
 import { UnifiedOrchestratorAgent } from './unified/unified-orchestrator.agent';
+import { PolicyAnalystAgent } from './policy/policy-analyst.agent';
 
 // 执行记录相关（保持兼容）
 import { AgentExecutionRecord } from './entities/agent-execution-record.entity';
@@ -42,6 +46,7 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     ConfigModule,
     TypeOrmModule.forFeature([AgentExecutionRecord]),
     TemporalModule, // 导入Temporal统一封装模块
+    NewsModule, // 导入新闻模块，提供政策分析数据支持
   ],
   providers: [
     // LLM适配器
@@ -63,6 +68,7 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     SocialMediaAnalystAgent,
     QuantitativeTraderAgent,
     MacroEconomistAgent,
+    PolicyAnalystAgent,
     UnifiedOrchestratorAgent,
 
     // 执行记录服务
@@ -84,6 +90,7 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     SocialMediaAnalystAgent,
     QuantitativeTraderAgent,
     MacroEconomistAgent,
+    PolicyAnalystAgent,
     UnifiedOrchestratorAgent,
     
     // Temporal服务导出

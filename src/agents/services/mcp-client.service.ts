@@ -35,9 +35,18 @@ export class MCPClientService {
       
       // 验证API密钥
       const apiKey = this.configService.get<string>("DASHSCOPE_API_KEY");
-      if (!apiKey) {
-        throw new Error("DASHSCOPE_API_KEY 环境变量未设置");
+      if (!apiKey || apiKey.trim() === '') {
+        throw new Error("DASHSCOPE_API_KEY 环境变量未设置或为空");
       }
+
+      // 更新配置中的API密钥
+      this.mcpConfig.headers.Authorization = `Bearer ${apiKey}`;
+      
+      this.logger.serviceInfo("API密钥配置成功", {
+        hasApiKey: !!apiKey,
+        keyLength: apiKey.length,
+        keyPrefix: apiKey.substring(0, 10) + '...'
+      });
 
       // 测试连接
       await this.testConnection();
@@ -54,10 +63,117 @@ export class MCPClientService {
    * 测试连接
    */
   private async testConnection(): Promise<void> {
-    // 这里应该实现实际的连接测试逻辑
-    // 由于MCP协议的具体实现细节未知，这里先做简单的URL验证
-    if (!this.mcpConfig.baseUrl || !this.mcpConfig.headers.Authorization.includes("Bearer ")) {
-      throw new Error("MCP服务器配置不完整");
+    try {
+      this.logger.serviceInfo("正在测试MCP API连接...");
+      
+      // 验证基本配置
+      if (!this.mcpConfig.baseUrl || !this.mcpConfig.headers.Authorization.includes("Bearer ")) {
+        throw new Error("MCP服务器配置不完整");
+      }
+
+      // 测试实际API连接 - 使用MCP协议标准格式
+      const response = await fetch(this.mcpConfig.baseUrl, {
+        method: 'POST',
+        headers: this.mcpConfig.headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "tools/call",
+          params: {
+            name: "get_stock_basic_info",
+            arguments: { stock_code: '000001' }
+          },
+          id: Date.now()
+        })
+      });
+
+      const responseText = await response.text();
+      this.logger.serviceInfo("MCP连接测试响应", {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers.get('content-type'),
+        responseLength: responseText.length,
+        responsePreview: responseText.substring(0, 100) + (responseText.length > 100 ? '...' : '')
+      });
+
+      // 即使API返回401 Unauthorized（无效API密钥），也表示连接是成功的
+      // 只有网络错误或服务不可用才算连接失败
+      if (response.status >= 200 && response.status < 500) {
+        this.logger.serviceInfo("MCP API连接测试成功", { status: response.status });
+        return;
+      }
+
+      throw new Error(`MCP API连接失败: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      if (error.name === 'TypeError' || error.message.includes('fetch')) {
+        throw new Error(`网络连接失败: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 统一的MCP API调用方法
+   */
+  private async callMCPAPI(toolName: string, params: Record<string, any>): Promise<any> {
+    const response = await fetch(this.mcpConfig.baseUrl, {
+      method: 'POST',
+      headers: this.mcpConfig.headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: params
+        },
+        id: Date.now()
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.logger.businessError('MCP API响应错误', new Error(`${response.status} ${response.statusText}`), {
+        status: response.status,
+        statusText: response.statusText,
+        errorBody: errorText,
+        toolName,
+        params
+      });
+      throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
+    }
+
+    // 先获取原始文本，然后尝试解析JSON
+    const responseText = await response.text();
+    this.logger.serviceInfo('MCP API原始响应', { 
+      toolName,
+      responseLength: responseText.length,
+      responsePreview: responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
+    });
+
+    if (!responseText || responseText.trim().length === 0) {
+      throw new Error('MCP API返回空响应');
+    }
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+      
+      // 检查JSON-RPC 2.0响应格式
+      if (data.jsonrpc === "2.0") {
+        if (data.error) {
+          throw new Error(`MCP工具调用失败: ${data.error.message || JSON.stringify(data.error)}`);
+        }
+        return data.result;
+      }
+      
+      // 如果不是标准JSON-RPC格式，直接返回数据
+      return data;
+    } catch (parseError) {
+      this.logger.businessError('JSON解析失败', parseError, {
+        toolName,
+        responseText: responseText.substring(0, 500),
+        responseLength: responseText.length
+      });
+      throw new Error(`JSON解析失败: ${parseError.message}。响应内容: ${responseText.substring(0, 100)}`);
     }
   }
 
@@ -120,20 +236,7 @@ export class MCPClientService {
    */
   private async getStockBasicInfo(params: { stock_code: string }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_stock_basic_info',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_stock_basic_info', params);
       
       return `# ${params.stock_code} 股票基本信息
 
@@ -158,20 +261,8 @@ export class MCPClientService {
    */
   private async getStockRealtimeData(params: { stock_code: string }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_stock_realtime_data',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_stock_realtime_data', params);
+      
       const change = data.change || 0;
       const changePercent = data.change_percent || 0;
       const volume = data.volume || 0;
@@ -207,20 +298,7 @@ export class MCPClientService {
     period?: string;
   }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_stock_historical_data',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_stock_historical_data', params);
       const dataCount = data.data?.length || 0;
       
       return `# ${params.stock_code} 历史数据
@@ -260,20 +338,7 @@ export class MCPClientService {
     period?: number;
   }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_stock_technical_indicators',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_stock_technical_indicators', params);
       const indicators = data.indicators || {};
       
       return `# ${params.stock_code} 技术指标分析
@@ -322,20 +387,7 @@ export class MCPClientService {
     period?: string;
   }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_stock_financial_data',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_stock_financial_data', params);
       const financial = data.financial_data || {};
       
       return `# ${params.stock_code} 财务数据
@@ -374,20 +426,7 @@ export class MCPClientService {
    */
   private async getMarketOverview(_params: any): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_market_overview',
-          parameters: _params || {},
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_market_overview', _params || {});
       const market = data.market_summary || {};
       const stats = data.market_stats || {};
       
@@ -423,20 +462,7 @@ export class MCPClientService {
    */
   private async searchStocks(params: { keyword: string }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'search_stocks',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('search_stocks', params);
       const results = data.results || [];
       const total = data.total || 0;
       
@@ -467,20 +493,7 @@ export class MCPClientService {
     days?: number;
   }): Promise<string> {
     try {
-      const response = await fetch(this.mcpConfig.baseUrl, {
-        method: 'POST',
-        headers: this.mcpConfig.headers,
-        body: JSON.stringify({
-          tool: 'get_stock_news',
-          parameters: params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await this.callMCPAPI('get_stock_news', params);
       const news = data.news || [];
       const total = data.total || 0;
       

@@ -7,6 +7,7 @@ import { RawNews } from './entities/raw-news.entity';
 import { NewsSummary } from './entities/news-summary.entity';
 import { NewsCrawlerFactory } from './factories/news-crawler.factory';
 import { XWLBCrawlerService } from './crawlers/xwlb-crawler.service';
+import { NewsSummaryService } from './services/news-summary.service';
 // Temporal 相关服务
 import { NewsTemporalClientService } from './temporal/news-temporal-client.service';
 import { NewsWorkerService } from './temporal/news-worker.service';
@@ -20,6 +21,7 @@ import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler
   controllers: [NewsController],
   providers: [
     NewsService,
+    NewsSummaryService,
     NewsCrawlerFactory,
     XWLBCrawlerService,
     // Temporal 服务
@@ -28,7 +30,8 @@ import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler
     NewsTemporalSchedulerService,
   ],
   exports: [
-    NewsService, 
+    NewsService,
+    NewsSummaryService,
     NewsCrawlerFactory, 
     NewsTemporalClientService,
     NewsTemporalSchedulerService,

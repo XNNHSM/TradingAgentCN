@@ -5,6 +5,7 @@
 
 import * as workflow from '@temporalio/workflow';
 import type { MCPActivities } from '../activities/mcp.activities';
+import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from '../activities/policy-analysis.activities';
 
 // 直接定义分析结果类型，不依赖外部Activities
 export interface AnalysisResult {
@@ -38,6 +39,20 @@ const {
     maximumAttempts: 3,
     initialInterval: '1s',
     maximumInterval: '30s',
+  },
+});
+
+// 配置政策分析Activities  
+const {
+  getPolicyRelevantNews,
+  performPolicyAnalysis,
+} = workflow.proxyActivities<PolicyAnalysisActivities>({
+  startToCloseTimeout: '5m',
+  scheduleToCloseTimeout: '8m',
+  retry: {
+    maximumAttempts: 2,
+    initialInterval: '2s',
+    maximumInterval: '10s',
   },
 });
 
@@ -76,6 +91,18 @@ export interface StockAnalysisWorkflowResult {
     technicalIndicators: any;
     financialData: any;
     news: any;
+  };
+  policyAnalysis?: {
+    overallSentiment: string;
+    policySupport: number;
+    policyRisk: number;
+    favorableSectors: any[];
+    unfavorableSectors: any[];
+    hotConcepts: any[];
+    policyRecommendation: string;
+    keyRisks: string[];
+    keyOpportunities: string[];
+    newsCount: number;
   };
 }
 
@@ -152,6 +179,33 @@ export async function stockAnalysisMCPWorkflow(
       limit: 10,
     });
 
+    // 第七步：执行政策分析 (分析近15天内的新闻摘要)
+    workflow.log.info('步骤7: 执行政策分析');
+    let policyAnalysis = null;
+    try {
+      const policyAnalysisInput: PolicyAnalysisActivitiesInput = {
+        stockCode: input.stockCode,
+        stockName: input.stockName || basicInfo.stock_name,
+        stockIndustry: basicInfo.industry || undefined,
+        analysisDate: endDate,
+        sessionId: input.sessionId,
+        lookbackDays: 15, // 分析近15天的政策相关新闻
+      };
+
+      policyAnalysis = await performPolicyAnalysis(policyAnalysisInput);
+      workflow.log.info('政策分析完成', {
+        stockCode: input.stockCode,
+        newsCount: policyAnalysis.newsCount,
+        overallSentiment: policyAnalysis.overallSentiment,
+        policySupport: policyAnalysis.policySupport,
+      });
+    } catch (error) {
+      workflow.log.warn('政策分析失败，继续执行后续流程', {
+        stockCode: input.stockCode,
+        error: error.message,
+      });
+    }
+
     // 汇总MCP数据
     const mcpDataSummary = {
       basicInfo,
@@ -166,32 +220,35 @@ export async function stockAnalysisMCPWorkflow(
       dataPoints: Object.keys(mcpDataSummary).length,
     });
 
-    // 第七步：执行综合分析 (直接在workflow中实现)
-    workflow.log.info('步骤7: 执行综合分析');
+    // 第八步：执行综合分析 (直接在workflow中实现)
+    workflow.log.info('步骤8: 执行综合分析');
     const comprehensiveResult = await executeComprehensiveAnalysis(
       input.stockCode,
       input.stockName || basicInfo.stock_name,
       mcpDataSummary,
-      input.sessionId
+      input.sessionId,
+      policyAnalysis // 传入政策分析结果
     );
 
-    // 第八步：执行交易策略分析
-    workflow.log.info('步骤8: 执行交易策略分析');
+    // 第九步：执行交易策略分析
+    workflow.log.info('步骤9: 执行交易策略分析');
     const strategyResult = await executeTradingStrategy(
       input.stockCode,
       input.stockName || basicInfo.stock_name,
       mcpDataSummary,
       comprehensiveResult,
-      input.sessionId
+      input.sessionId,
+      policyAnalysis // 传入政策分析结果
     );
 
-    // 第九步：生成最终建议
-    workflow.log.info('步骤9: 生成最终建议');
+    // 第十步：生成最终建议
+    workflow.log.info('步骤10: 生成最终建议');
     const finalRecommendation = await generateFinalRecommendation(
       input.stockCode,
       input.sessionId,
       comprehensiveResult,
-      strategyResult
+      strategyResult,
+      policyAnalysis // 传入政策分析结果
     );
 
     const processingTime = Date.now() - startTime;
@@ -204,6 +261,20 @@ export async function stockAnalysisMCPWorkflow(
       recommendation: finalRecommendation.recommendation,
     });
 
+    // 构造政策分析摘要数据
+    const policyAnalysisSummary = policyAnalysis ? {
+      overallSentiment: policyAnalysis.overallSentiment,
+      policySupport: policyAnalysis.policySupport,
+      policyRisk: policyAnalysis.policyRisk,
+      favorableSectors: policyAnalysis.favorableSectors,
+      unfavorableSectors: policyAnalysis.unfavorableSectors,
+      hotConcepts: policyAnalysis.hotConcepts,
+      policyRecommendation: policyAnalysis.policyRecommendation,
+      keyRisks: policyAnalysis.keyRisks,
+      keyOpportunities: policyAnalysis.keyOpportunities,
+      newsCount: policyAnalysis.newsCount,
+    } : undefined;
+
     return {
       sessionId: input.sessionId,
       stockCode: input.stockCode,
@@ -212,6 +283,7 @@ export async function stockAnalysisMCPWorkflow(
       finalRecommendation,
       processingTime,
       mcpDataSummary,
+      policyAnalysis: policyAnalysisSummary,
     };
 
   } catch (error) {
@@ -236,13 +308,26 @@ async function executeComprehensiveAnalysis(
   stockCode: string,
   stockName: string,
   mcpData: any,
-  sessionId: string
+  sessionId: string,
+  policyAnalysis?: any
 ): Promise<AnalysisResult> {
   const startTime = Date.now();
   
   workflow.log.info('开始综合分析', { stockCode, stockName });
   
   // 模拟综合分析逻辑
+  const policySection = policyAnalysis ? `
+
+【政策面分析】
+基于近15天政策相关新闻分析：
+- 政策环境：${policyAnalysis.overallSentiment === 'positive' ? '利好' : policyAnalysis.overallSentiment === 'negative' ? '利空' : '中性'}
+- 政策支持度：${policyAnalysis.policySupport}/100
+- 政策风险度：${policyAnalysis.policyRisk}/100
+- 利好板块：${policyAnalysis.favorableSectors?.slice(0, 3).map(s => s.sectorName || s.sector).join('、') || '暂无'}
+- 热点概念：${policyAnalysis.hotConcepts?.slice(0, 3).map(c => c.conceptName || c.concept).join('、') || '暂无'}
+- 政策建议：${policyAnalysis.policyRecommendation || '密切关注政策动向'}
+  ` : '';
+
   const analysis = `
 【股票代码】${stockCode}
 【股票名称】${stockName}
@@ -264,10 +349,19 @@ async function executeComprehensiveAnalysis(
 基于近期新闻和市场情绪：
 - 市场关注度较高
 - 机构资金流入明显
-- 行业前景向好
+- 行业前景向好${policySection}
   `.trim();
 
-  const score = Math.floor(Math.random() * 20) + 70; // 70-89分
+  // 基础评分
+  let baseScore = Math.floor(Math.random() * 20) + 70; // 70-89分
+  
+  // 政策面调整评分
+  if (policyAnalysis) {
+    const policyImpact = (policyAnalysis.policySupport - policyAnalysis.policyRisk) / 10;
+    baseScore = Math.max(30, Math.min(95, baseScore + policyImpact));
+  }
+  
+  const score = Math.round(baseScore);
   const confidence = Math.random() * 0.2 + 0.7; // 0.7-0.9
   
   const result: AnalysisResult = {
@@ -310,13 +404,22 @@ async function executeTradingStrategy(
   stockName: string,
   mcpData: any,
   comprehensiveResult: AnalysisResult,
-  sessionId: string
+  sessionId: string,
+  policyAnalysis?: any
 ): Promise<AnalysisResult> {
   const startTime = Date.now();
   
   workflow.log.info('开始交易策略分析', { stockCode, stockName });
   
   // 基于综合分析结果制定交易策略
+  const policyStrategySection = policyAnalysis ? `
+
+【政策策略考虑】
+- 政策环境：${policyAnalysis.overallSentiment === 'positive' ? '政策利好，可适当加仓' : policyAnalysis.overallSentiment === 'negative' ? '政策利空，建议谨慎' : '政策中性，正常配置'}
+- 板块轮动：关注${policyAnalysis.favorableSectors?.slice(0, 2).map(s => s.sectorName || s.sector).join('、') || '相关'}板块机会
+- 风险提示：${policyAnalysis.keyRisks?.slice(0, 2).join('；') || '密切关注政策变化'}
+  ` : '';
+
   const analysis = `
 【交易策略分析】
 基于综合分析师的评分${comprehensiveResult.score}分，制定以下交易策略：
@@ -333,7 +436,7 @@ async function executeTradingStrategy(
 【风险控制】
 - 单日最大亏损：不超过总仓位的5%
 - 持仓周期：中长期持有，关注基本面变化
-- 市场环境：密切关注市场整体走势
+- 市场环境：密切关注市场整体走势${policyStrategySection}
   `.trim();
 
   const score = Math.max(40, comprehensiveResult.score + Math.floor(Math.random() * 21) - 10); // 基于综合分析调整
@@ -378,7 +481,8 @@ async function generateFinalRecommendation(
   stockCode: string,
   sessionId: string,
   comprehensiveResult: AnalysisResult,
-  strategyResult: AnalysisResult
+  strategyResult: AnalysisResult,
+  policyAnalysis?: any
 ): Promise<AnalysisResult> {
   const startTime = Date.now();
   
@@ -406,6 +510,18 @@ async function generateFinalRecommendation(
     finalRecommendation = 'STRONG_SELL';
   }
   
+  // 政策分析摘要
+  const policySection = policyAnalysis ? `
+
+📰 **政策分析摘要**
+- 分析新闻：${policyAnalysis.newsCount}条（近15天）
+- 政策环境：${policyAnalysis.overallSentiment === 'positive' ? '利好 📈' : policyAnalysis.overallSentiment === 'negative' ? '利空 📉' : '中性 ⚖️'}
+- 支持度评分：${policyAnalysis.policySupport}/100
+- 风险度评分：${policyAnalysis.policyRisk}/100
+- 利好板块：${policyAnalysis.favorableSectors?.slice(0, 3).map(s => s.sectorName || s.sector).join('、') || '暂无'}
+- 热点概念：${policyAnalysis.hotConcepts?.slice(0, 3).map(c => c.conceptName || c.concept).join('、') || '暂无'}
+` : '';
+
   // 生成最终分析报告
   const analysis = `
 【MCP智能投顾综合报告】
@@ -425,7 +541,7 @@ async function generateFinalRecommendation(
 
 2. **交易策略师评分：${strategyResult.score}/100**
    - 推荐：${strategyResult.recommendation}
-   - 置信度：${(strategyResult.confidence * 100).toFixed(1)}%
+   - 置信度：${(strategyResult.confidence * 100).toFixed(1)}%${policySection}
 
 🎯 **关键洞察**
 ${keyInsights.map((insight, index) => `${index + 1}. ${insight}`).join('\n')}

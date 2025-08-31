@@ -10,6 +10,7 @@ import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { TemporalManager } from '../../common/temporal/temporal.manager';
 import { WorkerCreateOptions } from '../../common/temporal/interfaces/temporal-config.interface';
 import { createActivities } from '../../workflows/temporal/worker';
+import { NewsSummaryService } from '../../modules/news/services/news-summary.service';
 
 @Injectable()
 export class AgentsWorkerService implements OnModuleDestroy {
@@ -20,6 +21,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly temporalManager: TemporalManager,
+    private readonly newsSummaryService: NewsSummaryService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
   }
@@ -30,8 +32,8 @@ export class AgentsWorkerService implements OnModuleDestroy {
    */
   async startWorkers(): Promise<void> {
     try {
-      // 创建MCP活动实现
-      const activities = createActivities(this.configService);
+      // 创建所有活动实现（包括MCP和政策分析活动）
+      const activities = createActivities(this.configService, this.newsSummaryService);
 
       // 定义Worker配置
       const workerOptions: WorkerCreateOptions = {
