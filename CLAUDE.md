@@ -253,6 +253,17 @@ src/
 - **便于调试**: 所有组件在同一进程，方便调试和监控
 - **资源高效**: 减少跨服务调用，提高性能
 
+**Worker启动流程**:
+```
+NestJS应用启动 → AgentsModule初始化 → AgentsWorkerService.startWorkers() 
+→ TemporalManager.createWorker() → worker.run() → 开始轮询TaskQueue
+```
+
+**重要提醒**: 
+- ⚠️ **Worker必须调用run()**: 创建Worker后必须调用 `worker.run()` 才能开始轮询TaskQueue
+- 🔍 **调试Worker状态**: 可通过Temporal Web UI (http://localhost:8088) 查看Worker状态
+- 📊 **单一应用进程**: 所有Worker、Client、业务逻辑都运行在同一个Node.js进程中
+
 ### 工作流组织架构
 ```
 workflows/                    # Temporal 工作流定义
