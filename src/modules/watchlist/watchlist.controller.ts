@@ -95,19 +95,4 @@ export class WatchlistController {
     }
   }
 
-  @Post("holdings")
-  @ApiOperation({ summary: "获取持仓的自选股" })
-  @ApiResponse({
-    status: 200,
-    description: "持仓自选股获取成功",
-    type: Result<Watchlist[]>,
-  })
-  async getHoldings(): Promise<Result<Watchlist[]>> {
-    try {
-      const result = await this.watchlistService.getHoldings();
-      return Result.success(result, "持仓自选股获取成功");
-    } catch (error) {
-      return Result.error(error.message);
-    }
-  }
 }

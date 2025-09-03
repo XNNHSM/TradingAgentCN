@@ -1,11 +1,32 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { BusinessLogger } from "../../common/utils/business-logger.util";
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { BusinessLogger } from '../../common/utils/business-logger.util';
 
 /**
- * MCP客户端服务
- * 连接到阿里云百炼股票数据MCP服务器
+ * MCP配置接口
  */
+export interface MCPConfig {
+  name: string;
+  type: "sse" | "stdio" | "websocket";
+  baseUrl: string;
+  headers: Record<string, string>;
+  description: string;
+  isActive: boolean;
+}
+
+/**
+ * MCP工具接口
+ */
+export interface MCPTool {
+  name: string;
+  description: string;
+  parameters: {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+}
+
 @Injectable()
 export class MCPClientService {
   private readonly logger = new BusinessLogger(MCPClientService.name);
@@ -79,8 +100,8 @@ export class MCPClientService {
           jsonrpc: "2.0",
           method: "tools/call",
           params: {
-            name: "get_stock_basic_info",
-            arguments: { stock_code: '000001' }
+            name: "brief",
+            arguments: { symbol: 'SH000001' }
           },
           id: Date.now()
         })
@@ -115,18 +136,38 @@ export class MCPClientService {
    * 统一的MCP API调用方法
    */
   private async callMCPAPI(toolName: string, params: Record<string, any>): Promise<any> {
+    const requestPayload = {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: toolName,
+        arguments: params
+      },
+      id: Date.now()
+    };
+
+    this.logger.serviceInfo('发送MCP API请求', {
+      url: this.mcpConfig.baseUrl,
+      toolName,
+      params,
+      headers: {
+        ...this.mcpConfig.headers,
+        Authorization: this.mcpConfig.headers.Authorization ? `Bearer ***${this.mcpConfig.headers.Authorization.slice(-8)}` : 'Missing'
+      },
+      requestPayload
+    });
+
+    // SSE端点需要特殊处理
+    const sseHeaders = {
+      ...this.mcpConfig.headers,
+      'Accept': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    };
+
     const response = await fetch(this.mcpConfig.baseUrl, {
       method: 'POST',
-      headers: this.mcpConfig.headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: params
-        },
-        id: Date.now()
-      }),
+      headers: sseHeaders,
+      body: JSON.stringify(requestPayload),
     });
 
     if (!response.ok) {
@@ -141,27 +182,126 @@ export class MCPClientService {
       throw new Error(`MCP API调用失败: ${response.status} ${response.statusText}`);
     }
 
-    // 先获取原始文本，然后尝试解析JSON
-    const responseText = await response.text();
-    this.logger.serviceInfo('MCP API原始响应', { 
-      toolName,
-      responseLength: responseText.length,
-      responsePreview: responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
+    // 处理SSE响应流
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = '';
+    let lastJsonResponse = '';
+
+    this.logger.serviceInfo('开始处理MCP响应', {
+      hasReader: !!reader,
+      contentType: response.headers.get('content-type'),
+      isStream: response.body instanceof ReadableStream,
+      toolName
     });
 
-    if (!responseText || responseText.trim().length === 0) {
+    if (reader) {
+      try {
+        let chunkCount = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          chunkCount++;
+          
+          this.logger.serviceInfo(`读取数据块 ${chunkCount}`, {
+            done,
+            hasValue: !!value,
+            valueLength: value?.length || 0,
+            toolName
+          });
+          
+          if (done) {
+            this.logger.serviceInfo(`SSE流读取完成，总共 ${chunkCount} 个数据块`, { toolName });
+            break;
+          }
+          
+          const chunk = decoder.decode(value, { stream: true });
+          fullResponse += chunk;
+          
+          this.logger.serviceInfo(`解码数据块内容`, {
+            chunkLength: chunk.length,
+            chunkPreview: chunk.substring(0, 200),
+            toolName
+          });
+          
+          // SSE数据格式：data: {...}\n\n
+          const lines = chunk.split('\n');
+          this.logger.serviceInfo(`分割出 ${lines.length} 行数据`, { 
+            lines: lines.map(line => ({ 
+              length: line.length, 
+              startsWithData: line.startsWith('data: '),
+              preview: line.substring(0, 50)
+            })),
+            toolName
+          });
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.substring(6).trim();
+              this.logger.serviceInfo(`找到data行`, {
+                jsonStrLength: jsonStr.length,
+                jsonStr: jsonStr,
+                isDone: jsonStr === '[DONE]',
+                toolName
+              });
+              
+              if (jsonStr && jsonStr !== '[DONE]') {
+                lastJsonResponse = jsonStr;
+                this.logger.serviceInfo(`更新lastJsonResponse`, {
+                  length: jsonStr.length,
+                  preview: jsonStr.substring(0, 100),
+                  toolName
+                });
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } else {
+      this.logger.serviceInfo('使用常规文本处理（非流模式）', { toolName });
+      // 如果不是流响应，使用常规文本处理
+      const responseText = await response.text();
+      fullResponse = responseText;
+      lastJsonResponse = responseText;
+      
+      this.logger.serviceInfo('常规响应文本', {
+        responseLength: responseText.length,
+        responsePreview: responseText.substring(0, 200),
+        toolName
+      });
+    }
+
+    this.logger.serviceInfo('MCP API SSE响应', { 
+      toolName,
+      fullResponseLength: fullResponse.length,
+      lastJsonResponse: lastJsonResponse.substring(0, 200) + (lastJsonResponse.length > 200 ? '...' : ''),
+      responsePreview: fullResponse.substring(0, 200) + (fullResponse.length > 200 ? '...' : '')
+    });
+
+    if (!lastJsonResponse || lastJsonResponse.trim().length === 0) {
       throw new Error('MCP API返回空响应');
     }
 
     let data;
     try {
-      data = JSON.parse(responseText);
+      data = JSON.parse(lastJsonResponse);
       
       // 检查JSON-RPC 2.0响应格式
       if (data.jsonrpc === "2.0") {
         if (data.error) {
           throw new Error(`MCP工具调用失败: ${data.error.message || JSON.stringify(data.error)}`);
         }
+        
+        // 检查result字段是否存在且有效
+        if (data.result === undefined || data.result === null) {
+          this.logger.businessError('MCP API返回的result字段为空', new Error('result字段为空'), {
+            toolName,
+            fullResponse: data
+          });
+          throw new Error('MCP API返回的result字段为空');
+        }
+        
         return data.result;
       }
       
@@ -170,10 +310,11 @@ export class MCPClientService {
     } catch (parseError) {
       this.logger.businessError('JSON解析失败', parseError, {
         toolName,
-        responseText: responseText.substring(0, 500),
-        responseLength: responseText.length
+        responseText: lastJsonResponse.substring(0, 500),
+        fullResponse: fullResponse.substring(0, 500),
+        responseLength: lastJsonResponse.length
       });
-      throw new Error(`JSON解析失败: ${parseError.message}。响应内容: ${responseText.substring(0, 100)}`);
+      throw new Error(`JSON解析失败: ${parseError.message}`);
     }
   }
 
@@ -191,37 +332,22 @@ export class MCPClientService {
       // 根据工具名称路由到对应的MCP API
       switch (toolName) {
         case "get_stock_basic_info":
-          return await this.getStockBasicInfo(parameters as { stock_code: string });
+          return await this.getStockBrief(parameters as { stock_code: string });
         case "get_stock_realtime_data":
-          return await this.getStockRealtimeData(parameters as { stock_code: string });
+          return await this.getStockBrief(parameters as { stock_code: string });
         case "get_stock_historical_data":
-          return await this.getStockHistoricalData(parameters as { 
-            stock_code: string; 
-            start_date: string; 
-            end_date: string; 
-            period?: string; 
-          });
+          return await this.getStockMedium(parameters as { stock_code: string });
         case "get_stock_technical_indicators":
-          return await this.getStockTechnicalIndicators(parameters as { 
-            stock_code: string; 
-            period?: number; 
-          });
+          return await this.getStockFull(parameters as { stock_code: string });
         case "get_stock_financial_data":
-          return await this.getStockFinancialData(parameters as { 
-            stock_code: string; 
-            report_type?: string; 
-            period?: string; 
-          });
+          return await this.getStockMedium(parameters as { stock_code: string });
         case "get_market_overview":
-          return await this.getMarketOverview(parameters);
+          // getMarketOverview不需要股票代码，使用默认参数
+          return await this.getStockBrief({ stock_code: "SH000001" });
         case "search_stocks":
-          return await this.searchStocks(parameters as { keyword: string });
+          return await this.getStockBrief(parameters as { stock_code: string });
         case "get_stock_news":
-          return await this.getStockNews(parameters as { 
-            stock_code?: string; 
-            keyword: string; 
-            days?: number; 
-          });
+          return await this.getStockFull(parameters as { stock_code: string });
         default:
           throw new Error(`不支持的MCP工具: ${toolName}`);
       }
@@ -232,495 +358,167 @@ export class MCPClientService {
   }
 
   /**
-   * 获取股票基本信息
+   * 转换股票代码格式 (601633 -> SH601633)
    */
-  private async getStockBasicInfo(params: { stock_code: string }): Promise<string> {
+  private convertStockCode(stockCode: string): string {
+    // 参数验证
+    if (!stockCode || typeof stockCode !== 'string') {
+      this.logger.businessError('股票代码转换失败', new Error('无效的股票代码参数'), { stockCode });
+      return 'SH000001'; // 返回默认股票代码
+    }
+    
+    // 如果已经是正确格式，直接返回
+    if (stockCode.startsWith('SH') || stockCode.startsWith('SZ')) {
+      return stockCode;
+    }
+    
+    // 根据股票代码判断交易所
+    if (stockCode.startsWith('6') || stockCode.startsWith('9')) {
+      return `SH${stockCode}`;
+    } else if (stockCode.startsWith('0') || stockCode.startsWith('3')) {
+      return `SZ${stockCode}`;
+    }
+    
+    return stockCode;
+  }
+
+  /**
+   * 获取股票简要信息 (brief)
+   */
+  private async getStockBrief(params: { stock_code: string }): Promise<string> {
     try {
-      const data = await this.callMCPAPI('get_stock_basic_info', params);
-      
-      return `# ${params.stock_code} 股票基本信息
-
-## 基本信息
-- 股票代码: ${data.stock_code || params.stock_code}
-- 股票名称: ${data.stock_name || '未知'}
-- 交易所: ${data.market || '未知'}
-- 所属行业: ${data.industry || '未知'}
-- 市值: ${data.market_cap || '未知'}
-- 市盈率: ${data.pe_ratio || '未知'}
-- 市净率: ${data.pb_ratio || '未知'}
-
-数据来源: 阿里云百炼MCP股票数据服务`;
+      const symbol = this.convertStockCode(params.stock_code);
+      this.logger.debug(`获取股票简要信息: ${params.stock_code} -> ${symbol}`);
+      const data = await this.callMCPAPI('brief', { symbol });
+      return data || `获取 ${params.stock_code} 的简要信息`;
     } catch (error) {
-      this.logger.businessError('获取股票基本信息失败', error, { stock_code: params.stock_code });
-      throw new Error(`获取股票基本信息失败: ${error.message}`);
+      this.logger.businessError('获取股票简要信息失败', error, { stock_code: params.stock_code });
+      throw new Error(`获取股票简要信息失败: ${error.message}`);
     }
   }
 
   /**
-   * 获取股票实时数据
+   * 获取股票中等详细信息 (medium)
    */
-  private async getStockRealtimeData(params: { stock_code: string }): Promise<string> {
+  private async getStockMedium(params: { stock_code: string }): Promise<string> {
     try {
-      const data = await this.callMCPAPI('get_stock_realtime_data', params);
-      
-      const change = data.change || 0;
-      const changePercent = data.change_percent || 0;
-      const volume = data.volume || 0;
-      const turnover = data.turnover || 0;
-
-      return `# ${params.stock_code} 实时行情
-
-## 实时数据
-- 当前价格: ¥${data.current_price || '未知'}
-- 涨跌额: ¥${change > 0 ? '+' : ''}${change}
-- 涨跌幅: ${changePercent > 0 ? '+' : ''}${changePercent}%
-- 成交量: ${(volume / 10000).toFixed(2)}万手
-- 成交额: ¥${(turnover / 100000000).toFixed(2)}亿
-- 最高价: ¥${data.high || '未知'}
-- 最低价: ¥${data.low || '未知'}
-- 开盘价: ¥${data.open || '未知'}
-- 昨收价: ¥${data.prev_close || '未知'}
-
-数据来源: 阿里云百炼MCP股票数据服务`;
+      const symbol = this.convertStockCode(params.stock_code);
+      this.logger.debug(`获取股票中等信息: ${params.stock_code} -> ${symbol}`);
+      const data = await this.callMCPAPI('medium', { symbol });
+      return data || `获取 ${params.stock_code} 的中等详细信息`;
     } catch (error) {
-      this.logger.businessError('获取股票实时数据失败', error, { stock_code: params.stock_code });
-      throw new Error(`获取股票实时数据失败: ${error.message}`);
+      this.logger.businessError('获取股票中等信息失败', error, { stock_code: params.stock_code });
+      throw new Error(`获取股票中等信息失败: ${error.message}`);
     }
   }
 
   /**
-   * 获取股票历史数据
+   * 获取股票完整信息 (full)
    */
-  private async getStockHistoricalData(params: {
-    stock_code: string;
-    start_date: string;
-    end_date: string;
-    period?: string;
-  }): Promise<string> {
+  private async getStockFull(params: { stock_code: string }): Promise<string> {
     try {
-      const data = await this.callMCPAPI('get_stock_historical_data', params);
-      const dataCount = data.data?.length || 0;
-      
-      return `# ${params.stock_code} 历史数据
-
-## 数据概览
-- 查询期间: ${params.start_date} 至 ${params.end_date}
-- 数据周期: ${params.period || '日线'}
-- 数据条数: ${dataCount}条
-
-## 价格概览
-- 期间最高: ¥${data.period_high || '未知'}
-- 期间最低: ¥${data.period_low || '未知'}
-- 期间涨幅: ${data.period_return || '未知'}
-- 平均成交量: ${data.avg_volume || '未知'}
-- 平均换手率: ${data.avg_turnover_rate || '未知'}
-
-## 趋势分析
-- 短期趋势(5日): ${data.trend_short || '未知'}
-- 中期趋势(20日): ${data.trend_medium || '未知'}
-- 长期趋势(60日): ${data.trend_long || '未知'}
-
-数据来源: 阿里云百炼MCP股票数据服务`;
+      const symbol = this.convertStockCode(params.stock_code);
+      this.logger.debug(`获取股票完整信息: ${params.stock_code} -> ${symbol}`);
+      const data = await this.callMCPAPI('full', { symbol });
+      return data || `获取 ${params.stock_code} 的完整信息`;
     } catch (error) {
-      this.logger.businessError('获取历史数据失败', error, { 
-        stock_code: params.stock_code,
-        date_range: `${params.start_date} - ${params.end_date}`
-      });
-      throw new Error(`获取历史数据失败: ${error.message}`);
+      this.logger.businessError('获取股票完整信息失败', error, { stock_code: params.stock_code });
+      throw new Error(`获取股票完整信息失败: ${error.message}`);
     }
   }
 
   /**
-   * 获取股票技术指标
+   * 获取连接状态
    */
-  private async getStockTechnicalIndicators(params: {
-    stock_code: string;
-    period?: number;
-  }): Promise<string> {
-    try {
-      const data = await this.callMCPAPI('get_stock_technical_indicators', params);
-      const indicators = data.indicators || {};
-      
-      return `# ${params.stock_code} 技术指标分析
-
-## 移动平均线
-- MA5: ¥${indicators.MA5 || '未知'}
-- MA10: ¥${indicators.MA10 || '未知'}
-- MA20: ¥${indicators.MA20 || '未知'}
-- MA60: ¥${indicators.MA60 || '未知'}
-
-## MACD指标
-- MACD: ${indicators.MACD || '未知'}
-- 信号线: ${indicators.MACD_SIGNAL || '未知'}
-- 柱状图: ${indicators.MACD_HISTOGRAM || '未知'}
-
-## RSI指标
-- RSI(14): ${indicators.RSI || '未知'}
-- 状态: ${indicators.RSI_STATUS || '未知'}
-
-## 布林带
-- 上轨: ¥${indicators.BOLL_UPPER || '未知'}
-- 中轨: ¥${indicators.BOLL_MIDDLE || '未知'}
-- 下轨: ¥${indicators.BOLL_LOWER || '未知'}
-- 当前位置: ${indicators.BOLL_POSITION || '未知'}
-
-## KDJ指标
-- K值: ${indicators.KDJ_K || '未知'}
-- D值: ${indicators.KDJ_D || '未知'}
-- J值: ${indicators.KDJ_J || '未知'}
-
-数据来源: 阿里云百炼MCP股票数据服务`;
-    } catch (error) {
-      this.logger.businessError('获取技术指标失败', error, { 
-        stock_code: params.stock_code
-      });
-      throw new Error(`获取技术指标失败: ${error.message}`);
-    }
+  getConnectionStatus(): boolean {
+    return this.isConnected;
   }
 
   /**
-   * 获取股票财务数据
-   */
-  private async getStockFinancialData(params: {
-    stock_code: string;
-    report_type?: string;
-    period?: string;
-  }): Promise<string> {
-    try {
-      const data = await this.callMCPAPI('get_stock_financial_data', params);
-      const financial = data.financial_data || {};
-      
-      return `# ${params.stock_code} 财务数据
-
-## 财务概览
-- 总资产: ${financial.total_assets || '未知'}
-- 净资产: ${financial.shareholders_equity || '未知'}
-- 营业收入: ${financial.revenue || '未知'}
-- 净利润: ${financial.net_income || '未知'}
-- 每股收益: ${financial.eps || '未知'}
-
-## 财务比率
-- ROE: ${financial.roe || '未知'}
-- ROA: ${financial.roa || '未知'}
-- 毛利率: ${financial.gross_margin || '未知'}
-- 净利率: ${financial.net_margin || '未知'}
-- 资产负债率: ${financial.debt_ratio || '未知'}
-
-## 成长性指标
-- 营收增长率: ${financial.revenue_growth || '未知'}
-- 净利润增长率: ${financial.profit_growth || '未知'}
-- 每股收益增长率: ${financial.eps_growth || '未知'}
-
-数据来源: 阿里云百炼MCP股票数据服务`;
-    } catch (error) {
-      this.logger.businessError('获取财务数据失败', error, { 
-        stock_code: params.stock_code,
-        report_type: params.report_type 
-      });
-      throw new Error(`获取财务数据失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 获取市场概览
-   */
-  private async getMarketOverview(_params: any): Promise<string> {
-    try {
-      const data = await this.callMCPAPI('get_market_overview', _params || {});
-      const market = data.market_summary || {};
-      const stats = data.market_stats || {};
-      
-      return `# A股市场概览
-
-## 主要指数
-- 上证指数: ${market.shanghai_index?.value || '未知'} (${market.shanghai_index?.change_percent || '未知'})
-- 深证成指: ${market.shenzhen_index?.value || '未知'} (${market.shenzhen_index?.change_percent || '未知'})
-- 创业板指: ${market.gem_index?.value || '未知'} (${market.gem_index?.change_percent || '未知'})
-- 科创50: ${market.star_index?.value || '未知'} (${market.star_index?.change_percent || '未知'})
-
-## 市场统计
-- 上涨股票: ${stats.rising_stocks || '未知'}只
-- 下跌股票: ${stats.falling_stocks || '未知'}只
-- 平盘股票: ${stats.flat_stocks || '未知'}只
-- 涨停股票: ${stats.limit_up_stocks || '未知'}只
-- 跌停股票: ${stats.limit_down_stocks || '未知'}只
-
-## 成交情况
-- 沪市成交额: ${stats.sh_turnover || '未知'}
-- 深市成交额: ${stats.sz_turnover || '未知'}
-- 总成交额: ${data.trading_volume || '未知'}
-
-数据来源: 阿里云百炼MCP股票数据服务`;
-    } catch (error) {
-      this.logger.businessError('获取市场概览失败', error);
-      throw new Error(`获取市场概览失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 搜索股票
-   */
-  private async searchStocks(params: { keyword: string }): Promise<string> {
-    try {
-      const data = await this.callMCPAPI('search_stocks', params);
-      const results = data.results || [];
-      const total = data.total || 0;
-      
-      let resultText = `# 股票搜索结果 - "${params.keyword}"\n\n## 搜索到 ${total} 只相关股票\n\n`;
-      
-      results.forEach((stock: any, index: number) => {
-        resultText += `### ${index + 1}. ${stock.stock_name || '未知'} (${stock.stock_code || '未知'})\n`;
-        resultText += `- 股票名称: ${stock.stock_name || '未知'}\n`;
-        resultText += `- 所属行业: ${stock.industry || '未知'}\n`;
-        resultText += `- 当前价格: ¥${stock.current_price || '未知'}\n\n`;
-      });
-      
-      resultText += `数据来源: 阿里云百炼MCP股票数据服务`;
-      
-      return resultText;
-    } catch (error) {
-      this.logger.businessError('股票搜索失败', error, { keyword: params.keyword });
-      throw new Error(`股票搜索失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 获取股票新闻
-   */
-  private async getStockNews(params: {
-    stock_code?: string;
-    keyword: string;
-    days?: number;
-  }): Promise<string> {
-    try {
-      const data = await this.callMCPAPI('get_stock_news', params);
-      const news = data.news || [];
-      const total = data.total || 0;
-      
-      let newsText = `# 股票新闻 - "${params.keyword}"\n\n## 相关新闻 (最近${params.days || 7}天)\n\n`;
-      
-      news.forEach((article: any, index: number) => {
-        newsText += `### ${index + 1}. ${article.title || '未知标题'}\n`;
-        newsText += `- 发布时间: ${article.publish_time || '未知时间'}\n`;
-        newsText += `- 来源: ${article.source || '未知来源'}\n`;
-        newsText += `- 内容摘要: ${article.summary || '无摘要'}\n\n`;
-      });
-      
-      newsText += `数据来源: 阿里云百炼MCP股票数据服务`;
-      
-      return newsText;
-    } catch (error) {
-      this.logger.businessError('获取股票新闻失败', error, { 
-        stock_code: params.stock_code,
-        keyword: params.keyword 
-      });
-      throw new Error(`获取股票新闻失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 获取可用工具列表
-   */
-  getAvailableTools(): MCPTool[] {
-    return [
-      {
-        name: "get_stock_basic_info",
-        description: "获取股票基本信息",
-        parameters: {
-          type: "object",
-          properties: {
-            stock_code: {
-              type: "string",
-              description: "股票代码（如 000001, 600519）"
-            }
-          },
-          required: ["stock_code"]
-        }
-      },
-      {
-        name: "get_stock_realtime_data",
-        description: "获取股票实时行情数据",
-        parameters: {
-          type: "object",
-          properties: {
-            stock_code: {
-              type: "string",
-              description: "股票代码（如 000001, 600519）"
-            }
-          },
-          required: ["stock_code"]
-        }
-      },
-      {
-        name: "get_stock_historical_data",
-        description: "获取股票历史数据",
-        parameters: {
-          type: "object",
-          properties: {
-            stock_code: {
-              type: "string",
-              description: "股票代码"
-            },
-            start_date: {
-              type: "string",
-              description: "开始日期 YYYY-MM-dd"
-            },
-            end_date: {
-              type: "string",
-              description: "结束日期 YYYY-MM-dd"
-            },
-            period: {
-              type: "string",
-              description: "数据周期 (daily/weekly/monthly)",
-              default: "daily"
-            }
-          },
-          required: ["stock_code", "start_date", "end_date"]
-        }
-      },
-      {
-        name: "get_stock_technical_indicators",
-        description: "获取股票技术指标",
-        parameters: {
-          type: "object",
-          properties: {
-            stock_code: {
-              type: "string",
-              description: "股票代码"
-            },
-            period: {
-              type: "number",
-              description: "计算周期天数",
-              default: 20
-            }
-          },
-          required: ["stock_code"]
-        }
-      },
-      {
-        name: "get_stock_financial_data",
-        description: "获取股票财务数据",
-        parameters: {
-          type: "object",
-          properties: {
-            stock_code: {
-              type: "string",
-              description: "股票代码"
-            },
-            report_type: {
-              type: "string",
-              description: "报表类型 (income/balance/cashflow)",
-              default: "income"
-            },
-            period: {
-              type: "string",
-              description: "报告期间 (annual/quarterly)",
-              default: "annual"
-            }
-          },
-          required: ["stock_code"]
-        }
-      },
-      {
-        name: "get_market_overview",
-        description: "获取市场概览数据",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      },
-      {
-        name: "search_stocks",
-        description: "搜索股票",
-        parameters: {
-          type: "object",
-          properties: {
-            keyword: {
-              type: "string",
-              description: "搜索关键词"
-            }
-          },
-          required: ["keyword"]
-        }
-      },
-      {
-        name: "get_stock_news",
-        description: "获取股票相关新闻",
-        parameters: {
-          type: "object",
-          properties: {
-            stock_code: {
-              type: "string",
-              description: "股票代码（可选）"
-            },
-            keyword: {
-              type: "string",
-              description: "新闻关键词"
-            },
-            days: {
-              type: "number",
-              description: "查询天数",
-              default: 7
-            }
-          },
-          required: ["keyword"]
-        }
-      }
-    ];
-  }
-
-  /**
-   * 获取工具定义（用于LLM function calling）
-   */
-  getToolDefinitions(): any[] {
-    return this.getAvailableTools().map(tool => ({
-      type: "function",
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters
-      }
-    }));
-  }
-
-  /**
-   * 检查连接状态
+   * 获取连接状态（向后兼容）
    */
   isConnectedToMCP(): boolean {
     return this.isConnected;
   }
 
   /**
-   * 断开连接
+   * 断开连接（向后兼容）
    */
   async disconnect(): Promise<void> {
     this.isConnected = false;
-    this.logger.serviceInfo("MCP客户端连接已断开");
+    this.logger.serviceInfo("MCP连接已断开");
   }
-}
 
-/**
- * MCP配置接口
- */
-export interface MCPConfig {
-  name: string;
-  type: "sse" | "stdio" | "websocket";
-  baseUrl: string;
-  headers: Record<string, string>;
-  description: string;
-  isActive: boolean;
-}
+  /**
+   * 获取可用工具列表
+   */
+  getAvailableTools(): MCPTool[] {
+    return this.getToolDefinitions().tools;
+  }
 
-/**
- * MCP工具接口
- */
-export interface MCPTool {
-  name: string;
-  description: string;
-  parameters: {
-    type: string;
-    properties: Record<string, any>;
-    required: string[];
-  };
+  /**
+   * 获取工具定义信息（用于LLM）
+   */
+  getToolDefinitions(): { tools: MCPTool[] } {
+    return {
+      tools: [
+        {
+          name: 'get_stock_basic_info',
+          description: '获取股票的基本信息',
+          parameters: {
+            type: 'object',
+            properties: {
+              stock_code: {
+                type: 'string',
+                description: '股票代码，如 "600519"'
+              }
+            },
+            required: ['stock_code']
+          }
+        },
+        {
+          name: 'get_stock_realtime_data',
+          description: '获取股票的实时行情数据',
+          parameters: {
+            type: 'object',
+            properties: {
+              stock_code: {
+                type: 'string',
+                description: '股票代码，如 "600519"'
+              }
+            },
+            required: ['stock_code']
+          }
+        },
+        {
+          name: 'get_stock_financial_data',
+          description: '获取股票的财务数据',
+          parameters: {
+            type: 'object',
+            properties: {
+              stock_code: {
+                type: 'string',
+                description: '股票代码，如 "600519"'
+              }
+            },
+            required: ['stock_code']
+          }
+        },
+        {
+          name: 'get_stock_technical_indicators',
+          description: '获取股票的技术指标数据',
+          parameters: {
+            type: 'object',
+            properties: {
+              stock_code: {
+                type: 'string',
+                description: '股票代码，如 "600519"'
+              }
+            },
+            required: ['stock_code']
+          }
+        }
+      ]
+    };
+  }
 }

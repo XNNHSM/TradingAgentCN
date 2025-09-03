@@ -1,12 +1,9 @@
 import { ApiProperty } from "@nestjs/swagger";
 import {
   IsString,
-  IsBoolean,
-  IsNumber,
   IsOptional,
   Matches,
   Length,
-  Min,
 } from "class-validator";
 
 export class CreateWatchlistDto {
@@ -27,37 +24,6 @@ export class CreateWatchlistDto {
   @Length(1, 50, { message: "股票名称长度必须在1-50字符之间" })
   stockName: string;
 
-  @ApiProperty({
-    description: "是否持仓",
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean({ message: "是否持仓必须是布尔值" })
-  isHolding?: boolean = false;
-
-  @ApiProperty({
-    description: "持仓数量",
-    example: 0,
-    required: false,
-    default: 0,
-  })
-  @IsOptional()
-  @IsNumber({}, { message: "持仓数量必须是数字" })
-  @Min(0, { message: "持仓数量不能为负数" })
-  holdingQuantity?: number = 0;
-
-  @ApiProperty({
-    description: "持仓价格",
-    example: 0,
-    required: false,
-    default: 0,
-  })
-  @IsOptional()
-  @IsNumber({}, { message: "持仓价格必须是数字" })
-  @Min(0, { message: "持仓价格不能为负数" })
-  holdingPrice?: number = 0;
 
   @ApiProperty({
     description: "交易所代码",

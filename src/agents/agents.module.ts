@@ -10,6 +10,7 @@ import { NewsModule } from '../modules/news/news.module';
 
 // MCP相关服务
 import { MCPClientService } from './services/mcp-client.service';
+import { MCPClientSDKService } from './services/mcp-client-sdk.service';
 import { LLMService } from './services/llm.service';
 import { DashScopeAdapter } from './services/llm-adapters/dashscope-adapter';
 
@@ -54,6 +55,7 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     
     // 核心服务
     MCPClientService,
+    MCPClientSDKService,
     LLMService,
     
     // 智能体模块专属Temporal服务

@@ -18,30 +18,6 @@ export class Watchlist extends BaseEntity {
   })
   stockName: string;
 
-  @Column({
-    type: "boolean",
-    default: false,
-    comment: "是否持仓",
-  })
-  isHolding: boolean;
-
-  @Column({
-    type: "decimal",
-    precision: 15,
-    scale: 2,
-    default: 0,
-    comment: "持仓数量",
-  })
-  holdingQuantity: number;
-
-  @Column({
-    type: "decimal",
-    precision: 10,
-    scale: 4,
-    default: 0,
-    comment: "持仓价格",
-  })
-  holdingPrice: number;
 
   @Column({
     type: "varchar",

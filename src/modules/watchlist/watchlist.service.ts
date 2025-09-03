@@ -105,10 +105,6 @@ export class WatchlistService {
       dto.exchange = this.getExchangeByStockCode(dto.stockCode);
     }
 
-    // 验证持仓信息的一致性
-    if (dto.isHolding && (dto.holdingQuantity <= 0 || dto.holdingPrice <= 0)) {
-      throw new BadRequestException("持仓状态下，持仓数量和价格必须大于0");
-    }
 
     // 创建新记录
     const watchlist = this.watchlistRepository.create(dto);
@@ -129,19 +125,6 @@ export class WatchlistService {
       throw new NotFoundException(`股票代码 ${dto.stockCode} 不存在于自选股中`);
     }
 
-    // 验证持仓信息的一致性
-    const isHolding =
-      dto.isHolding !== undefined ? dto.isHolding : existing.isHolding;
-    const holdingQuantity =
-      dto.holdingQuantity !== undefined
-        ? dto.holdingQuantity
-        : existing.holdingQuantity;
-    const holdingPrice =
-      dto.holdingPrice !== undefined ? dto.holdingPrice : existing.holdingPrice;
-
-    if (isHolding && (holdingQuantity <= 0 || holdingPrice <= 0)) {
-      throw new BadRequestException("持仓状态下，持仓数量和价格必须大于0");
-    }
 
     // 更新记录
     const updateData = { ...dto };
@@ -180,29 +163,6 @@ export class WatchlistService {
     return result.affected > 0;
   }
 
-  /**
-   * 获取持仓的自选股
-   */
-  async getHoldings(): Promise<Watchlist[]> {
-    const cacheKey = `${this.CACHE_PREFIX}holdings`;
-
-    // 尝试从缓存获取
-    const cached = await this.cacheManager.get<Watchlist[]>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    // 从数据库查询
-    const holdings = await this.watchlistRepository.find({
-      where: { isHolding: true },
-      order: { createdAt: "DESC" },
-    });
-
-    // 缓存结果
-    await this.cacheManager.set(cacheKey, holdings, this.CACHE_TTL);
-
-    return holdings;
-  }
 
   /**
    * 验证股票代码是否符合A股规范
@@ -233,7 +193,7 @@ export class WatchlistService {
    * 清除相关缓存
    */
   private async clearCache(stockCode?: string): Promise<void> {
-    const keys = [`${this.CACHE_PREFIX}holdings`];
+    const keys = [];
 
     if (stockCode) {
       keys.push(`${this.CACHE_PREFIX}${stockCode}`);

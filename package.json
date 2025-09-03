@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@langchain/community": "^0.0.20",
+    "@modelcontextprotocol/sdk": "^1.17.5",
     "@nestjs-modules/ioredis": "^2.0.2",
     "@nestjs/cache-manager": "^2.0.0",
     "@nestjs/common": "^10.0.0",

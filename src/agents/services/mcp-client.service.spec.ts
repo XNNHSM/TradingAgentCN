@@ -183,14 +183,12 @@ describe('MCPClientService', () => {
 
     it('应该返回LLM可用的工具定义', () => {
       const toolDefs = service.getToolDefinitions();
-      expect(toolDefs).toHaveLength(8);
+      expect(toolDefs.tools).toHaveLength(4);
       
-      toolDefs.forEach(tool => {
-        expect(tool).toHaveProperty('type', 'function');
-        expect(tool).toHaveProperty('function');
-        expect(tool.function).toHaveProperty('name');
-        expect(tool.function).toHaveProperty('description');
-        expect(tool.function).toHaveProperty('parameters');
+      toolDefs.tools.forEach(tool => {
+        expect(tool).toHaveProperty('name');
+        expect(tool).toHaveProperty('description');
+        expect(tool).toHaveProperty('parameters');
       });
     });
   });

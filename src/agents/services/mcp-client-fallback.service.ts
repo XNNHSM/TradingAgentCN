@@ -7,13 +7,16 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { MCPClientService, MCPConfig, MCPTool } from './mcp-client.service';
+import { MCPClientSDKService } from './mcp-client-sdk.service';
 
 @Injectable()
 export class MCPClientFallbackService extends MCPClientService {
   private readonly fallbackLogger = new BusinessLogger('MCPClientFallbackService');
+  private readonly sdkService: MCPClientSDKService;
 
   constructor(configService: ConfigService) {
     super(configService);
+    this.sdkService = new MCPClientSDKService(configService);
   }
 
   /**
@@ -21,22 +24,37 @@ export class MCPClientFallbackService extends MCPClientService {
    */
   async callTool(toolName: string, parameters: Record<string, any>): Promise<any> {
     try {
-      // 首先尝试调用父类方法
-      return await super.callTool(toolName, parameters);
-    } catch (error) {
-      // 如果是401错误（API密钥问题），使用模拟数据
-      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-        this.fallbackLogger.serviceInfo(`API密钥无效，使用模拟数据: ${toolName}`, {
-          toolName,
-          parameters,
-          reason: 'API认证失败，使用回退机制'
-        });
-        
-        return this.generateFallbackResponse(toolName, parameters);
-      }
+      // 首先尝试使用新的SDK服务
+      this.fallbackLogger.serviceInfo(`尝试使用MCP SDK服务: ${toolName}`, { toolName, parameters });
+      return await this.sdkService.callTool(toolName, parameters);
+    } catch (sdkError) {
+      this.fallbackLogger.serviceInfo(`SDK服务失败，尝试原始实现: ${toolName}`, { 
+        error: sdkError.message,
+        toolName,
+        parameters 
+      });
       
-      // 其他错误直接抛出
-      throw error;
+      try {
+        // 如果SDK失败，尝试原始实现
+        return await super.callTool(toolName, parameters);
+      } catch (originalError) {
+        // 如果都失败，且是401错误（API密钥问题），使用模拟数据
+        if (originalError.message.includes('401') || originalError.message.includes('Unauthorized') || 
+            sdkError.message.includes('401') || sdkError.message.includes('Unauthorized')) {
+          this.fallbackLogger.serviceInfo(`API密钥无效，使用模拟数据: ${toolName}`, {
+            toolName,
+            parameters,
+            sdkError: sdkError.message,
+            originalError: originalError.message,
+            reason: 'API认证失败，使用回退机制'
+          });
+        
+          return this.generateFallbackResponse(toolName, parameters);
+        }
+        
+        // 其他错误直接抛出原始错误
+        throw originalError;
+      }
     }
   }
 
