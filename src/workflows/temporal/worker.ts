@@ -26,19 +26,37 @@ export function createActivities(
   const mcpActivities = createMCPActivities(configService);
   
   // 创建政策分析Activities
-  let policyActivities = {};
+  let policyActivities: PolicyAnalysisActivities;
   if (newsSummaryService) {
     policyActivities = createPolicyAnalysisActivities(configService, newsSummaryService);
   } else {
-    // 如果没有传入newsSummaryService，创建一个临时实例
-    // 这在单独的worker进程中很有用
-    try {
-      // 在单独worker进程中，我们需要手动创建NewsSummaryService
-      // 但这需要数据库连接，在实际部署时可能需要不同的处理方式
-      console.warn('NewsSummaryService未提供，政策分析活动将不可用');
-    } catch (error) {
-      console.warn('无法创建政策分析活动:', error.message);
-    }
+    // 如果没有传入newsSummaryService，创建默认的空实现
+    console.warn('NewsSummaryService未提供，政策分析活动将使用默认实现');
+    policyActivities = {
+      getPolicyRelevantNews: async () => [],
+      performPolicyAnalysis: async (input) => ({
+        sessionId: input.sessionId,
+        analysisDate: input.analysisDate,
+        stockCode: input.stockCode,
+        stockName: input.stockName,
+        positiveImpacts: [],
+        negativeImpacts: [],
+        neutralImpacts: [],
+        overallSentiment: 'neutral',
+        policyRisk: 50,
+        policySupport: 50,
+        favorableSectors: [],
+        unfavorableSectors: [],
+        hotConcepts: [],
+        policyRecommendation: 'NewsSummaryService未配置，无法进行政策分析',
+        keyRisks: ['服务未配置'],
+        keyOpportunities: [],
+        analysisSource: '默认实现',
+        newsCount: 0,
+        confidenceLevel: 0.1,
+        processingTime: 0
+      })
+    };
   }
 
   // 合并所有活动

@@ -8,6 +8,7 @@ import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { NewsSummaryService, PolicyRelevantNews } from '../../modules/news/services/news-summary.service';
 import { PolicyAnalystAgent, PolicyAnalysisInput, PolicyAnalysisResult } from '../../agents/policy/policy-analyst.agent';
 import { LLMService } from '../../agents/services/llm.service';
+import { DashScopeAdapter } from '../../agents/services/llm-adapters/dashscope-adapter';
 
 export interface PolicyAnalysisActivitiesInput {
   stockCode: string;
@@ -136,7 +137,9 @@ export function createPolicyAnalysisActivities(
         logger.serviceInfo('获取到政策新闻数量', { count: policyNews.length });
 
         // 2. 创建政策分析智能体
-        const llmService = new LLMService(configService);
+        const dashScopeAdapter = new DashScopeAdapter(configService);
+        await dashScopeAdapter.initialize();
+        const llmService = new LLMService(configService, dashScopeAdapter);
         const policyAnalyst = new PolicyAnalystAgent(llmService);
 
         // 3. 构建分析输入
@@ -150,7 +153,7 @@ export function createPolicyAnalysisActivities(
         };
 
         // 4. 执行政策分析
-        const analysisResult = await policyAnalyst.analyze(analysisInput);
+        const analysisResult = await policyAnalyst.analyzePolicy(analysisInput);
         
         logger.serviceInfo('政策分析完成', {
           stockCode,

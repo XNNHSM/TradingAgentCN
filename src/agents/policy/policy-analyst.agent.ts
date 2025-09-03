@@ -3,6 +3,7 @@ import { BaseAgent } from '../base/base-agent';
 import { LLMService } from '../services/llm.service';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { PolicyRelevantNews } from '../../modules/news/services/news-summary.service';
+import { AgentType, AgentContext } from '../interfaces/agent.interface';
 
 export interface PolicyAnalysisInput {
   stockCode: string;
@@ -75,27 +76,37 @@ export interface PolicyAnalysisResult {
  * 专门分析新闻摘要中的政策信息，识别利好和利空的板块和概念
  */
 @Injectable()
-export class PolicyAnalystAgent extends BaseAgent<PolicyAnalysisInput, PolicyAnalysisResult> {
+export class PolicyAnalystAgent extends BaseAgent {
   protected readonly businessLogger = new BusinessLogger(PolicyAnalystAgent.name);
 
   constructor(
     protected readonly llmService: LLMService,
   ) {
-    super(llmService);
-  }
-
-  protected getAgentName(): string {
-    return '政策分析师';
-  }
-
-  protected getAgentDescription(): string {
-    return '专业的政策分析师，擅长解读政策新闻，分析对不同行业和概念的影响，识别投资机会和风险';
+    super(
+      '政策分析师',
+      AgentType.POLICY_ANALYST,
+      '专业的政策分析师，擅长解读政策新闻，分析对不同行业和概念的影响，识别投资机会和风险',
+      llmService
+    );
   }
 
   /**
-   * 执行政策分析
+   * 实现BaseAgent的抽象方法：构建提示词
    */
-  async analyze(input: PolicyAnalysisInput): Promise<PolicyAnalysisResult> {
+  protected async buildPrompt(context: AgentContext): Promise<string> {
+    // 从context中提取PolicyAnalysisInput
+    const input = context.metadata?.policyAnalysisInput as PolicyAnalysisInput;
+    if (!input) {
+      throw new Error('PolicyAnalysisInput not found in context metadata');
+    }
+    
+    return this.buildAnalysisPrompt(input);
+  }
+
+  /**
+   * 执行政策分析的公共接口
+   */
+  async analyzePolicy(input: PolicyAnalysisInput): Promise<PolicyAnalysisResult> {
     const startTime = Date.now();
     
     this.businessLogger.serviceInfo('开始政策分析', {
@@ -110,13 +121,11 @@ export class PolicyAnalystAgent extends BaseAgent<PolicyAnalysisInput, PolicyAna
       const prompt = this.buildAnalysisPrompt(input);
       
       // 调用LLM进行分析
-      const llmResponse = await this.llmService.generateResponse({
-        prompt,
-        systemPrompt: this.getSystemPrompt(),
-        model: 'qwen-max', // 使用最强模型进行政策分析
-        temperature: 0.3, // 较低温度保证分析的客观性
+      const llmResponse = await this.llmService.generate(prompt, {
+        model: 'qwen-max',
+        temperature: 0.3,
         maxTokens: 4000,
-        timeout: 120000 // 2分钟超时
+        timeout: 120000
       });
 
       // 解析LLM响应
@@ -260,16 +269,13 @@ ${newsText}
       const neutralImpacts = this.extractPolicyImpacts(llmResponse, 'neutral');
       
       // 构建行业分析
-      const favorableSectors = this.extractSectors(llmResponse, 'favorable');
-      const unfavorableSectors = this.extractSectors(llmResponse, 'unfavorable');
+      const favorableSectors = this.extractFavorableSectors(llmResponse);
+      const unfavorableSectors = this.extractUnfavorableSectors(llmResponse);
       
       // 构建概念分析
       const hotConcepts = this.extractConcepts(llmResponse);
       
-      // 提取投资建议
-      const recommendation = this.extractRecommendation(llmResponse);
-      const keyRisks = this.extractRisks(llmResponse);
-      const keyOpportunities = this.extractOpportunities(llmResponse);
+      // 提取投资建议在result结构中直接使用
 
       const result: PolicyAnalysisResult = {
         sessionId: input.sessionId,
@@ -289,9 +295,9 @@ ${newsText}
         unfavorableSectors,
         hotConcepts,
         
-        policyRecommendation: recommendation,
-        keyRisks,
-        keyOpportunities,
+        policyRecommendation: this.extractPolicyRecommendation(llmResponse),
+        keyRisks: this.extractPolicyRisks(llmResponse),
+        keyOpportunities: this.extractPolicyOpportunities(llmResponse),
         
         analysisSource: llmResponse,
         newsCount: input.newsSummaries.length,
@@ -341,10 +347,17 @@ ${newsText}
    * 提取政策评分
    */
   private extractPolicyScore(response: string, category: string, ...keywords: string[]): number {
-    // 寻找评分相关内容
-    const scoreRegex = /(\d{1,3})[分%]/g;
+    // 先尝试直接提取数字评分
+    const directScoreRegex = new RegExp(`${category}[：:]\\s*(\\d{1,3})[%分]`, 'i');
+    const directMatch = response.match(directScoreRegex);
+    if (directMatch) {
+      return parseInt(directMatch[1]);
+    }
+    
+    // 寻找一般评分相关内容
+    const scoreRegex = /(\d{1,3})[%分]/g;
     const scores: number[] = [];
-    let match;
+    let match: RegExpExecArray | null;
     
     while ((match = scoreRegex.exec(response)) !== null) {
       const score = parseInt(match[1]);
@@ -357,11 +370,24 @@ ${newsText}
       return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
     }
     
-    // 基于关键词估算评分
+    // 基于关键词频次和情绪估算评分
     let score = 50; // 基础分数
-    keywords.forEach(keyword => {
+    
+    // 正面关键词
+    const positiveWords = ['利好', '支持', '促进', '推进', '鼓励', '优惠', '提升'];
+    // 负面关键词
+    const negativeWords = ['限制', '禁止', '收紧', '减少', '规范', '打击'];
+    
+    // 计算正面影响
+    positiveWords.concat(keywords).forEach(keyword => {
       const matches = (response.toLowerCase().match(new RegExp(keyword, 'g')) || []).length;
-      score += matches * 5;
+      score += matches * 8; // 增加权重
+    });
+    
+    // 计算负面影响
+    negativeWords.forEach(keyword => {
+      const matches = (response.toLowerCase().match(new RegExp(keyword, 'g')) || []).length;
+      score -= matches * 6;
     });
     
     return Math.min(100, Math.max(0, score));
@@ -371,60 +397,222 @@ ${newsText}
    * 提取政策影响
    */
   private extractPolicyImpacts(response: string, type: 'positive' | 'negative' | 'neutral'): PolicyImpact[] {
-    // 简化实现，返回基于类型的示例影响
     const impacts: PolicyImpact[] = [];
+    const lines = response.split('\n').filter(line => line.trim());
     
-    if (type === 'positive') {
-      impacts.push({
-        type: 'positive',
-        category: 'monetary',
-        description: '央行降准释放流动性，利好金融股',
-        severity: 7,
-        sectors: ['银行', '保险', '证券'],
-        concepts: ['金融改革', '流动性宽松'],
-        timeframe: 'short_term'
-      });
-    } else if (type === 'negative') {
-      impacts.push({
-        type: 'negative', 
-        category: 'regulatory',
-        description: '监管政策收紧，增加合规成本',
-        severity: 5,
-        sectors: ['互联网', '教育'],
-        concepts: ['合规风险'],
-        timeframe: 'medium_term'
-      });
+    // 定义政策关键词映射
+    const policyKeywords = {
+      positive: ['利好', '支持', '促进', '推进', '加强', '提升', '鼓励', '优惠', '激励', '补贴'],
+      negative: ['限制', '禁止', '取消', '收紧', '管制', '减少', '压缩', '防范', '整治', '规范'],
+      neutral: ['调整', '优化', '完善', '改革', '改进', '推动', '建立', '统一', '协调']
+    };
+    
+    const categoryMap = {
+      '货币': 'monetary' as const,
+      '财政': 'fiscal' as const,
+      '监管': 'regulatory' as const,
+      '产业': 'industrial' as const,
+      '贸易': 'trade' as const,
+      '环保': 'environmental' as const
+    };
+    
+    // 阐值记录政策关键句
+    const policyStatements = [];
+    
+    for (const line of lines) {
+      const lowerLine = line.toLowerCase();
+      let isRelevant = false;
+      let category: PolicyImpact['category'] = 'other';
+      let severity = 5;
+      
+      // 检查是否包含目标类型的关键词
+      for (const keyword of policyKeywords[type]) {
+        if (line.includes(keyword)) {
+          isRelevant = true;
+          break;
+        }
+      }
+      
+      if (!isRelevant) continue;
+      
+      // 确定政策类别
+      for (const [key, cat] of Object.entries(categoryMap)) {
+        if (line.includes(key)) {
+          category = cat;
+          break;
+        }
+      }
+      
+      // 计算影响严重程度
+      const intensityKeywords = ['大力', '全面', '重点', '突出', '加快', '加大'];
+      for (const keyword of intensityKeywords) {
+        if (line.includes(keyword)) {
+          severity = Math.min(10, severity + 2);
+        }
+      }
+      
+      // 提取受影响的行业和概念
+      const sectors = this.extractSectorsFromText(line);
+      const concepts = this.extractConceptsFromText(line);
+      
+      // 决定时间框架
+      let timeframe: PolicyImpact['timeframe'] = 'medium_term';
+      if (line.includes('立即') || line.includes('马上') || line.includes('快速')) {
+        timeframe = 'immediate';
+      } else if (line.includes('短期') || line.includes('近期')) {
+        timeframe = 'short_term';
+      } else if (line.includes('长期') || line.includes('未来')) {
+        timeframe = 'long_term';
+      }
+      
+      if (sectors.length > 0 || concepts.length > 0) {
+        impacts.push({
+          type,
+          category,
+          description: line.trim(),
+          severity,
+          sectors,
+          concepts,
+          timeframe
+        });
+      }
     }
     
-    return impacts;
+    return impacts.slice(0, 5); // 限制数量避免太多
   }
 
   /**
-   * 提取行业板块信息
+   * 提取有利行业板块信息
    */
-  private extractSectors(response: string, type: 'favorable' | 'unfavorable'): Array<{
+  private extractFavorableSectors(response: string): Array<{
     sector: string;
-    supportLevel?: number;
-    riskLevel?: number;
+    supportLevel: number;
     reasons: string[];
   }> {
-    const sectors = [];
+    const sectors = new Map<string, { supportLevel: number; reasons: Set<string> }>();
     
-    if (type === 'favorable') {
-      sectors.push({
-        sector: '新能源',
-        supportLevel: 8,
-        reasons: ['政策大力支持清洁能源发展', '碳中和目标推动行业发展']
-      });
-    } else {
-      sectors.push({
-        sector: '传统能源',
-        riskLevel: 6,
-        reasons: ['环保政策限制', '转型压力加大']
-      });
+    // 定义行业板块关键词
+    const sectorKeywords = {
+      '新能源': ['太阳能', '风能', '水能', '清洁能源', '可再生能源', '新能源汽车'],
+      '金融': ['银行', '保险', '证券', '基金', '信托', '金融服务'],
+      '科技': ['人工智能', '大数据', '云计算', '半导体', '光伏', '芯片'],
+      '医药': ['生物医药', '中医药', '医疗器械', '医疗服务'],
+      '基建': ['交通基建', '水利工程', '新基建', '城市建设'],
+      '消费': ['零售', '教育', '旅游', '文化娱乐', '体育'],
+      '制造业': ['高端制造', '智能制造', '制造业升级'],
+      '农业': ['现代农业', '智慧农业', '乡村振兴']
+    };
+    
+    // 利好关键词
+    const positiveKeywords = ['支持', '鼓励', '促进', '推进', '加强', '优惠', '补贴', '利好'];
+    
+    const lines = response.split('\n');
+    
+    for (const line of lines) {
+      // 检查是否包含利好关键词
+      const hasPositive = positiveKeywords.some(keyword => line.includes(keyword));
+      if (!hasPositive) continue;
+      
+      // 对每个行业进行检查
+      for (const [sector, keywords] of Object.entries(sectorKeywords)) {
+        const matchedKeywords = keywords.filter(keyword => line.includes(keyword));
+        
+        if (matchedKeywords.length > 0) {
+          if (!sectors.has(sector)) {
+            sectors.set(sector, { supportLevel: 5, reasons: new Set() });
+          }
+          
+          const sectorData = sectors.get(sector)!;
+          
+          // 根据关键词数量和强度计算支持级别
+          sectorData.supportLevel = Math.min(10, sectorData.supportLevel + matchedKeywords.length);
+          
+          // 根据强度关键词调整支持级别
+          if (line.includes('大力') || line.includes('全面') || line.includes('重点')) {
+            sectorData.supportLevel = Math.min(10, sectorData.supportLevel + 2);
+          }
+          
+          // 添加原因
+          sectorData.reasons.add(line.trim());
+        }
+      }
     }
     
-    return sectors;
+    // 转换为返回格式
+    return Array.from(sectors.entries())
+      .map(([sector, data]) => ({
+        sector,
+        supportLevel: data.supportLevel,
+        reasons: Array.from(data.reasons).slice(0, 3) // 限制原因数量
+      }))
+      .sort((a, b) => b.supportLevel - a.supportLevel)
+      .slice(0, 8); // 返回最多8个行业
+  }
+
+  /**
+   * 提取不利行业板块信息
+   */
+  private extractUnfavorableSectors(response: string): Array<{
+    sector: string;
+    riskLevel: number;
+    reasons: string[];
+  }> {
+    const sectors = new Map<string, { riskLevel: number; reasons: Set<string> }>();
+    
+    // 定义行业板块关键词
+    const sectorKeywords = {
+      '传统能源': ['煤炭', '石油', '天然气', '传统能源'],
+      '高耗能行业': ['钢铁', '有色金属', '化工', '建材'],
+      '教育培训': ['在线教育', 'K12教育', '学科培训'],
+      '房地产': ['房地产开发', '物业管理'],
+      '互联网平台': ['平台经济', '网络游戏', '社交平台'],
+      '金融风险': ['小贷公司', 'P2P', '理财产品']
+    };
+    
+    // 风险关键词
+    const riskKeywords = ['限制', '禁止', '取消', '收紧', '管制', '减少', '规范', '整治', '打击'];
+    
+    const lines = response.split('\n');
+    
+    for (const line of lines) {
+      // 检查是否包含风险关键词
+      const hasRisk = riskKeywords.some(keyword => line.includes(keyword));
+      if (!hasRisk) continue;
+      
+      // 对每个行业进行检查
+      for (const [sector, keywords] of Object.entries(sectorKeywords)) {
+        const matchedKeywords = keywords.filter(keyword => line.includes(keyword));
+        
+        if (matchedKeywords.length > 0) {
+          if (!sectors.has(sector)) {
+            sectors.set(sector, { riskLevel: 5, reasons: new Set() });
+          }
+          
+          const sectorData = sectors.get(sector)!;
+          
+          // 根据关键词数量和强度计算风险级别
+          sectorData.riskLevel = Math.min(10, sectorData.riskLevel + matchedKeywords.length);
+          
+          // 根据强度关键词调整风险级别
+          if (line.includes('严厉') || line.includes('全面') || line.includes('重点')) {
+            sectorData.riskLevel = Math.min(10, sectorData.riskLevel + 2);
+          }
+          
+          // 添加原因
+          sectorData.reasons.add(line.trim());
+        }
+      }
+    }
+    
+    // 转换为返回格式
+    return Array.from(sectors.entries())
+      .map(([sector, data]) => ({
+        sector,
+        riskLevel: data.riskLevel,
+        reasons: Array.from(data.reasons).slice(0, 3)
+      }))
+      .sort((a, b) => b.riskLevel - a.riskLevel)
+      .slice(0, 6); // 返回最多6个行业
   }
 
   /**
@@ -435,32 +623,81 @@ ${newsText}
     heatLevel: number;
     policyDrivers: string[];
   }> {
-    return [
-      {
-        concept: '人工智能',
-        heatLevel: 9,
-        policyDrivers: ['AI发展政策支持', '数字经济规划推进']
-      },
-      {
-        concept: '新能源汽车',
-        heatLevel: 8,
-        policyDrivers: ['购置补贴延续', '充电基础设施建设']
+    const concepts = new Map<string, { heatLevel: number; policyDrivers: Set<string> }>();
+    
+    // 定义热点概念关键词
+    const conceptKeywords = {
+      '人工智能': ['AI', '人工智能', '机器学习', '深度学习', '智能算法'],
+      '新能源汽车': ['电动汽车', '新能源车', '智能汽车', '新能源汽车'],
+      '碳中和': ['碳中和', '碳达峰', '减排', '碳交易'],
+      '数字经济': ['数字化', '数字经济', '数字转型', '智数服务'],
+      '半导体': ['芯片', '半导体', '集成电路', '芯片设计'],
+      '生物医药': ['生物医药', '基因治疗', '细胞治疗', '创新药'],
+      '新基建': ['新基建', '5G', '数据中心', '人工智能基础设施'],
+      '乡村振兴': ['乡村振兴', '农业现代化', '农村改革'],
+      '养老产业': ['养老', '人口老龄化', '养老服务'],
+      '军工': ['军工', '国防科技', '军民融合'],
+      '共同富裕': ['共同富裕', '收入分配', '社会保障']
+    };
+    
+    // 政策驱动关键词
+    const policyDriverKeywords = ['规划', '方案', '政策', '措施', '通知', '指导意见', '实施细则'];
+    
+    const lines = response.split('\n');
+    
+    for (const line of lines) {
+      // 检查是否包含政策驱动关键词
+      const hasPolicyDriver = policyDriverKeywords.some(keyword => line.includes(keyword));
+      if (!hasPolicyDriver) continue;
+      
+      // 对每个概念进行检查
+      for (const [concept, keywords] of Object.entries(conceptKeywords)) {
+        const matchedKeywords = keywords.filter(keyword => line.includes(keyword));
+        
+        if (matchedKeywords.length > 0) {
+          if (!concepts.has(concept)) {
+            concepts.set(concept, { heatLevel: 5, policyDrivers: new Set() });
+          }
+          
+          const conceptData = concepts.get(concept)!;
+          
+          // 根据关键词数量计算热度
+          conceptData.heatLevel = Math.min(10, conceptData.heatLevel + matchedKeywords.length);
+          
+          // 根据政策强度调整热度
+          if (line.includes('重点') || line.includes('关键') || line.includes('核心')) {
+            conceptData.heatLevel = Math.min(10, conceptData.heatLevel + 2);
+          }
+          
+          // 添加政策驱动因素
+          conceptData.policyDrivers.add(line.trim());
+        }
       }
-    ];
+    }
+    
+    // 转换为返回格式
+    return Array.from(concepts.entries())
+      .map(([concept, data]) => ({
+        concept,
+        heatLevel: data.heatLevel,
+        policyDrivers: Array.from(data.policyDrivers).slice(0, 3)
+      }))
+      .sort((a, b) => b.heatLevel - a.heatLevel)
+      .slice(0, 10); // 返回最多10个概念
   }
 
   /**
-   * 提取投资建议
+   * 提取政策投资建议
    */
-  private extractRecommendation(response: string): string {
+  private extractPolicyRecommendation(_response: string): string {
     // 简化实现，基于响应内容生成建议
     return '基于当前政策环境，建议关注政策支持的新兴产业，同时注意监管风险。采用均衡配置策略，控制仓位风险。';
   }
 
   /**
-   * 提取关键风险
+   * 提取政策关键风险
    */
-  private extractRisks(response: string): string[] {
+  private extractPolicyRisks(_response: string): string[] {
     return [
       '政策变化不确定性',
       '监管收紧风险',
@@ -469,9 +706,9 @@ ${newsText}
   }
 
   /**
-   * 提取关键机会
+   * 提取政策关键机会
    */
-  private extractOpportunities(response: string): string[] {
+  private extractPolicyOpportunities(_response: string): string[] {
     return [
       '政策支持的新兴产业',
       '基建投资拉动相关板块',
@@ -502,6 +739,58 @@ ${newsText}
     }
     
     return Math.min(1.0, confidence);
+  }
+
+  /**
+   * 从文本中提取行业信息
+   */
+  private extractSectorsFromText(text: string): string[] {
+    const sectorKeywords = {
+      '银行': ['银行', '商业银行', '城商行', '农商行'],
+      '保险': ['保险', '人寿保险', '财产保险'],
+      '证券': ['证券', '券商', '投资银行'],
+      '新能源': ['太阳能', '风能', '新能源', '清洁能源'],
+      '医药': ['医药', '制药', '生物医药', '中医药'],
+      '科技': ['科技', '人工智能', '大数据', '云计算'],
+      '制造': ['制造', '制造业', '工业', '机械'],
+      '消费': ['消费', '零售', '商贸'],
+      '地产': ['房地产', '地产', '建筑'],
+      '农业': ['农业', '农产品', '种植业']
+    };
+    
+    const foundSectors = [];
+    for (const [sector, keywords] of Object.entries(sectorKeywords)) {
+      if (keywords.some(keyword => text.includes(keyword))) {
+        foundSectors.push(sector);
+      }
+    }
+    
+    return foundSectors;
+  }
+
+  /**
+   * 从文本中提取概念信息
+   */
+  private extractConceptsFromText(text: string): string[] {
+    const conceptKeywords = {
+      '人工智能': ['AI', '人工智能', '机器学习'],
+      '新能源汽车': ['电动汽车', '新能源车', '新能源汽车'],
+      '碳中和': ['碳中和', '碳达峰', '减排'],
+      '数字经济': ['数字化', '数字经济', '数字转型'],
+      '半导体': ['芯片', '半导体', '集成电路'],
+      '生物医药': ['生物医药', '基因治疗', '细胞治疗'],
+      '新基建': ['新基建', '5G', '数据中心'],
+      '军工': ['军工', '国防科技', '军民融合']
+    };
+    
+    const foundConcepts = [];
+    for (const [concept, keywords] of Object.entries(conceptKeywords)) {
+      if (keywords.some(keyword => text.includes(keyword))) {
+        foundConcepts.push(concept);
+      }
+    }
+    
+    return foundConcepts;
   }
 
   /**

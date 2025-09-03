@@ -34,6 +34,7 @@ export enum AgentType {
   SOCIAL_MEDIA_ANALYST = "social_media_analyst", // 社交媒体分析师（情绪分析+讨论热点）
   QUANTITATIVE_TRADER = "quantitative_trader", // 量化交易员（数据驱动+统计模型）
   MACRO_ECONOMIST = "macro_economist", // 宏观经济分析师（政策+经济环境分析）
+  POLICY_ANALYST = "policy_analyst", // 政策分析师（政策解读+影响评估）
   
   // 🆕 第三层: 决策协调智能体
   UNIFIED_ORCHESTRATOR = "unified_orchestrator", // 统一协调器（智能体协调+决策整合）
