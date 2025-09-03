@@ -117,23 +117,50 @@ NestJS启动 → AgentsModule初始化 → startWorkers() → worker.run() → �
 
 ## 🎯 MCP智能体系统
 
+### 股票分析标准流程 ⭐
+```
+1. 获取股票基础信息（公司名称、代码、所属行业/板块、上市时间、市值规模等）
+2. 收集公司基本面数据（财务报表、营收/利润趋势、毛利率、资产负债情况、现金流等）
+3. 分析行业环境（行业赛道前景、政策导向、市场规模、竞争格局、上下游产业链关系）
+4. 研究公司竞争优势（核心技术、品牌壁垒、市场份额、成本控制能力、管理层能力等）
+5. 查看市场情绪与资金动向（近期股价走势、成交量变化、机构持仓变动、股东人数趋势）
+6. 评估估值水平（计算PE、PB、PS等估值指标，对比行业均值及历史分位）
+7. 梳理风险因素（政策风险、行业周期波动、公司经营隐患、市场系统性风险等）
+8. 综合信息给出判断（判断股票投资价值、潜在空间与风险，形成初步结论）
+```
+
 ### 按需调用原则 ⚠️
 **核心原则**: 每个智能体专门负责特定的MCP服务调用，避免重复调用控制成本
 
 ### 智能体职责分工
-| 智能体 | MCP服务调用 | 职责说明 |
-|--------|-------------|----------|
-| BasicDataAgent | get_stock_basic_info, get_stock_realtime_data | 基础数据获取 |
-| TechnicalAnalystAgent | get_stock_historical_data, get_stock_technical_indicators | 技术分析 |
-| FundamentalAnalystAgent | get_stock_financial_data | 基本面分析 |
-| NewsAnalystAgent | get_stock_news | 新闻情绪分析 |
-| UnifiedOrchestratorAgent | 无MCP调用 | 整合所有结果 |
+| 智能体 | MCP服务调用 | 职责说明 | 对应分析流程 |
+|--------|-------------|----------|-------------|
+| BasicDataAgent | get_stock_basic_info, get_stock_realtime_data | 基础数据获取 | 流程1：基础信息 |
+| TechnicalAnalystAgent | get_stock_historical_data, get_stock_technical_indicators | 技术分析 | 流程5：市场情绪与资金动向 |
+| FundamentalAnalystAgent | get_stock_financial_data | 基本面分析 | 流程2：基本面数据 |
+| NewsAnalystAgent | get_stock_news | 新闻情绪分析 | 流程5：市场情绪补充 |
+| IndustryAnalystAgent | 待定 | 行业环境分析 | 流程3：行业环境 |
+| CompetitiveAnalystAgent | 待定 | 竞争优势分析 | 流程4：竞争优势 |
+| ValuationAnalystAgent | 待定 | 估值分析 | 流程6：估值水平 |
+| RiskAnalystAgent | 待定 | 风险分析 | 流程7：风险因素 |
+| UnifiedOrchestratorAgent | 无MCP调用 | 整合所有结果 | 流程8：综合判断 |
 
 ### 工作流程
 ```
-1. 并行执行专业智能体 (MCP数据获取)
-2. 基于结果的高级分析智能体
-3. 统一协调器生成最终决策
+第一阶段：数据收集（并行执行）
+├── BasicDataAgent: 基础信息 + 实时数据
+├── FundamentalAnalystAgent: 财务数据
+├── TechnicalAnalystAgent: 历史数据 + 技术指标  
+└── NewsAnalystAgent: 新闻数据
+
+第二阶段：专业分析（基于第一阶段数据）
+├── IndustryAnalystAgent: 行业环境分析
+├── CompetitiveAnalystAgent: 竞争优势分析
+├── ValuationAnalystAgent: 估值水平分析
+└── RiskAnalystAgent: 风险因素分析
+
+第三阶段：决策整合
+└── UnifiedOrchestratorAgent: 综合所有结果生成最终投资建议
 ```
 
 ## 🔧 开发规范
