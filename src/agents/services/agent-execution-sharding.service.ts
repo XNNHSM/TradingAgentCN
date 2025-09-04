@@ -291,7 +291,7 @@ export class AgentExecutionShardingService {
         stats.tables[agentType] = {
           tableName,
           recordCount: count,
-          latestExecution: latestRecord?.executionDate || null,
+          latestExecution: latestRecord?.createdAt || null,
         };
         
         stats.totalTables++;
@@ -340,13 +340,13 @@ export class AgentExecutionShardingService {
         }
         
         if (queryOptions.dateRange) {
-          queryBuilder.andWhere('record.executionDate BETWEEN :start AND :end', {
+          queryBuilder.andWhere('record.createdAt BETWEEN :start AND :end', {
             start: queryOptions.dateRange.start,
             end: queryOptions.dateRange.end,
           });
         }
         
-        queryBuilder.orderBy('record.executionDate', 'DESC');
+        queryBuilder.orderBy('record.createdAt', 'DESC');
         
         if (queryOptions.limit) {
           queryBuilder.limit(queryOptions.limit);
@@ -365,7 +365,7 @@ export class AgentExecutionShardingService {
     }
     
     // 按时间排序
-    return results.sort((a, b) => b.executionDate.getTime() - a.executionDate.getTime());
+    return results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   /**
@@ -384,7 +384,7 @@ export class AgentExecutionShardingService {
         const result = await repository
           .createQueryBuilder()
           .delete()
-          .where('executionDate < :cutoffDate', { cutoffDate })
+          .where('createdAt < :cutoffDate', { cutoffDate })
           .execute();
         
         this.logger.log(`${agentType} 表清理了 ${result.affected} 条记录`);

@@ -1,273 +1,291 @@
 import {Injectable, Logger} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
+import {Repository} from 'typeorm';
 import {AgentExecutionRecord} from '../entities/agent-execution-record.entity';
-import {AgentExecutionShardingService} from './agent-execution-sharding.service';
-import {AgentContext, AgentResult, AgentType, TradingRecommendation} from '../interfaces/agent.interface';
-import {LLMResponse} from './llm.service';
 
 /**
- * Agent执行记录创建DTO
+ * LLM调用记录创建DTO
  */
-export interface CreateAgentExecutionRecordDto {
+export interface CreateLLMExecutionRecordDto {
   sessionId: string;
-  agentType: AgentType;
+  agentType: string;
   agentName: string;
-  agentRole: string;
-  stockCode: string;
-  stockName?: string;
-  context: AgentContext;
+  executionPhase?: string;
+  llmProvider: string;
   llmModel: string;
-  inputPrompt: string;
-  llmResponse: LLMResponse;
-  result: AgentResult;
-  startTime: Date;
-  endTime: Date;
-  toolCalls?: any[];
-  toolResults?: any[];
-  analysisType?: string;
-  environment?: string;
+  promptTemplate?: string;
+  inputMessages: any;
+  outputContent?: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  executionTimeMs: number;
+  status: string;
   errorMessage?: string;
-  errorStack?: string;
+  errorCode?: string;
+  metadata?: any;
 }
 
 /**
- * Agent执行记录查询DTO
+ * LLM调用记录查询DTO
  */
-export interface QueryAgentExecutionRecordDto {
-  agentTypes?: AgentType[];
-  stockCode?: string;
-  stockName?: string;
+export interface QueryLLMExecutionRecordDto {
   sessionId?: string;
-  executionStatus?: 'success' | 'error' | 'timeout';
-  recommendation?: TradingRecommendation;
+  agentType?: string;
+  agentName?: string;
+  llmProvider?: string;
+  llmModel?: string;
+  status?: string;
   dateRange?: { start: Date; end: Date };
-  analysisType?: string;
-  minScore?: number;
-  maxScore?: number;
   limit?: number;
   offset?: number;
-  orderBy?: 'executionDate' | 'processingTimeMs' | 'score';
+  orderBy?: 'createdAt' | 'executionTimeMs' | 'totalTokens';
   orderDirection?: 'ASC' | 'DESC';
 }
 
 /**
- * 统计结果DTO
+ * LLM调用记录更新DTO
  */
-export interface AgentExecutionStatsDto {
+export interface UpdateLLMExecutionRecordDto {
+  outputContent?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  executionTimeMs?: number;
+  status?: string;
+  errorMessage?: string;
+  errorCode?: string;
+  metadata?: any;
+}
+
+/**
+ * LLM调用统计结果DTO
+ */
+export interface LLMExecutionStatsDto {
   totalExecutions: number;
   successRate: number;
-  avgProcessingTime: number;
-  avgScore: number;
-  avgCost: number;
+  avgExecutionTime: number;
   tokenUsage: {
     totalInputTokens: number;
     totalOutputTokens: number;
     totalTokens: number;
   };
-  recommendations: Record<TradingRecommendation, number>;
-  byAgentType: Record<AgentType, {
+  byAgentType: Record<string, {
     count: number;
     successRate: number;
-    avgScore: number;
-    avgProcessingTime: number;
+    avgExecutionTime: number;
+    totalTokens: number;
+  }>;
+  byLLMModel: Record<string, {
+    count: number;
+    successRate: number;
+    totalTokens: number;
   }>;
   byDate: Record<string, number>;
 }
 
 /**
- * Agent执行记录服务
+ * LLM调用执行记录服务
  */
 @Injectable()
 export class AgentExecutionRecordService {
   private readonly logger = new Logger(AgentExecutionRecordService.name);
 
   constructor(
-    private readonly shardingService: AgentExecutionShardingService,
+    @InjectRepository(AgentExecutionRecord)
+    private readonly repository: Repository<AgentExecutionRecord>,
   ) {}
 
   /**
-   * 创建执行记录
+   * 创建LLM调用记录
    */
-  async createExecutionRecord(dto: CreateAgentExecutionRecordDto): Promise<AgentExecutionRecord> {
-    if (!dto.agentType) {
-      throw new Error('AgentType是必需的字段');
-    }
-    
+  async create(dto: CreateLLMExecutionRecordDto): Promise<AgentExecutionRecord> {
     try {
-      const repository = await this.shardingService.getRepository(dto.agentType);
+      const record = this.repository.create({
+        sessionId: dto.sessionId,
+        agentType: dto.agentType,
+        agentName: dto.agentName,
+        executionPhase: dto.executionPhase,
+        llmProvider: dto.llmProvider,
+        llmModel: dto.llmModel,
+        promptTemplate: dto.promptTemplate,
+        inputMessages: dto.inputMessages,
+        outputContent: dto.outputContent,
+        inputTokens: dto.inputTokens,
+        outputTokens: dto.outputTokens,
+        totalTokens: dto.totalTokens,
+        executionTimeMs: dto.executionTimeMs,
+        status: dto.status,
+        errorMessage: dto.errorMessage,
+        errorCode: dto.errorCode,
+        metadata: dto.metadata,
+      });
       
-      const record = new AgentExecutionRecord();
+      const savedRecord = await this.repository.save(record);
       
-      // 基础信息
-      record.sessionId = dto.sessionId;
-      record.agentType = dto.agentType;
-      record.agentName = dto.agentName;
-      record.agentRole = dto.agentRole;
-      
-      // 股票信息
-      record.stockCode = dto.stockCode;
-      record.stockName = dto.stockName;
-      
-      // 执行信息
-      record.executionDate = dto.startTime;
-      record.startTime = dto.startTime;
-      record.endTime = dto.endTime;
-      record.processingTimeMs = dto.endTime && dto.startTime ? dto.endTime.getTime() - dto.startTime.getTime() : 0;
-      record.executionStatus = dto.errorMessage ? 'error' : 'success';
-      
-      // LLM调用信息
-      record.llmModel = dto.llmModel;
-      record.inputPrompt = dto.inputPrompt;
-      record.inputTokens = dto.llmResponse.usage?.inputTokens;
-      record.outputTokens = dto.llmResponse.usage?.outputTokens;
-      record.totalTokens = dto.llmResponse.usage?.totalTokens;
-      record.estimatedCost = dto.llmResponse.usage?.cost;
-      
-      // 分析结果
-      record.analysisResult = dto.result.analysis;
-      record.structuredResult = {
-        agentResult: dto.result,
-        llmResponse: {
-          content: dto.llmResponse.content,
-          finishReason: dto.llmResponse.finishReason,
-          toolCalls: dto.llmResponse.toolCalls,
-        }
-      };
-      record.score = dto.result.score;
-      record.recommendation = dto.result.recommendation;
-      record.confidence = dto.result.confidence;
-      record.keyInsights = dto.result.keyInsights;
-      record.risks = dto.result.risks;
-      record.supportingData = dto.result.supportingData;
-      
-      // 工具调用信息
-      record.toolCalls = dto.toolCalls;
-      record.toolResults = dto.toolResults;
-      
-      // 上下文信息
-      record.contextData = {
-        timeRange: dto.context.timeRange,
-        metadata: dto.context.metadata,
-      };
-      record.previousResults = dto.context.previousResults?.map(r => ({
-        agentType: r.agentType,
-        agentName: r.agentName,
-        analysis: r.analysis.substring(0, 500), // 截取前500字符
-        score: r.score,
-        recommendation: r.recommendation,
-        confidence: r.confidence,
-      }));
-      
-      // 扩展信息
-      record.analysisType = dto.analysisType;
-      record.environment = dto.environment || process.env.NODE_ENV || 'development';
-      
-      // 错误信息
-      record.errorMessage = dto.errorMessage;
-      record.errorStack = dto.errorStack;
-      
-      const savedRecord = await repository.save(record);
-      
-      this.logger.debug(`执行记录已保存: ${savedRecord.id} (${dto.agentType} - ${dto.stockCode})`);
+      this.logger.debug(`LLM调用记录已保存: ${savedRecord.id} (${dto.agentType})`);
       return savedRecord;
       
     } catch (error) {
-      this.logger.error(`保存执行记录失败: ${error.message}`, error.stack);
+      this.logger.error(`保存LLM调用记录失败: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   /**
-   * 查询执行记录
+   * 查询LLM调用记录
    */
-  async queryExecutionRecords(dto: QueryAgentExecutionRecordDto): Promise<AgentExecutionRecord[]> {
+  async query(dto: QueryLLMExecutionRecordDto): Promise<AgentExecutionRecord[]> {
     try {
-      const agentTypes = dto.agentTypes || Object.values(AgentType);
+      const queryBuilder = this.repository.createQueryBuilder('record')
+        .where('record.deletedAt IS NULL');
       
-      return await this.shardingService.queryAcrossShards(agentTypes, {
-        stockCode: dto.stockCode,
-        sessionId: dto.sessionId,
-        dateRange: dto.dateRange,
-        limit: dto.limit,
-        offset: dto.offset,
-      });
+      if (dto.sessionId) {
+        queryBuilder.andWhere('record.sessionId = :sessionId', { sessionId: dto.sessionId });
+      }
+      
+      if (dto.agentType) {
+        queryBuilder.andWhere('record.agentType = :agentType', { agentType: dto.agentType });
+      }
+      
+      if (dto.agentName) {
+        queryBuilder.andWhere('record.agentName = :agentName', { agentName: dto.agentName });
+      }
+      
+      if (dto.llmProvider) {
+        queryBuilder.andWhere('record.llmProvider = :llmProvider', { llmProvider: dto.llmProvider });
+      }
+      
+      if (dto.llmModel) {
+        queryBuilder.andWhere('record.llmModel = :llmModel', { llmModel: dto.llmModel });
+      }
+      
+      if (dto.status) {
+        queryBuilder.andWhere('record.status = :status', { status: dto.status });
+      }
+      
+      if (dto.dateRange) {
+        queryBuilder.andWhere('record.createdAt BETWEEN :start AND :end', {
+          start: dto.dateRange.start,
+          end: dto.dateRange.end,
+        });
+      }
+      
+      const orderBy = dto.orderBy || 'createdAt';
+      const orderDirection = dto.orderDirection || 'DESC';
+      queryBuilder.orderBy(`record.${orderBy}`, orderDirection);
+      
+      if (dto.limit) {
+        queryBuilder.limit(dto.limit);
+      }
+      
+      if (dto.offset) {
+        queryBuilder.offset(dto.offset);
+      }
+      
+      return await queryBuilder.getMany();
       
     } catch (error) {
-      this.logger.error(`查询执行记录失败: ${error.message}`, error.stack);
+      this.logger.error(`查询LLM调用记录失败: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   /**
-   * 根据会话ID获取所有Agent的执行记录
+   * 根据会话ID获取所有LLM调用记录
    */
   async getRecordsBySessionId(sessionId: string): Promise<AgentExecutionRecord[]> {
-    return this.queryExecutionRecords({ sessionId });
+    return this.query({ sessionId });
   }
 
   /**
-   * 获取指定股票的执行历史
+   * 获取指定智能体的调用历史
    */
-  async getStockAnalysisHistory(
-    stockCode: string,
-    agentType?: AgentType,
+  async getAgentCallHistory(
+    agentType: string,
     limit: number = 50
   ): Promise<AgentExecutionRecord[]> {
-    const agentTypes = agentType ? [agentType] : undefined;
-    
-    return this.queryExecutionRecords({
-      stockCode,
-      agentTypes,
+    return this.query({
+      agentType,
       limit,
-      orderBy: 'executionDate',
+      orderBy: 'createdAt',
       orderDirection: 'DESC',
     });
   }
 
   /**
-   * 获取执行统计
+   * 获取LLM调用统计
    */
-  async getExecutionStats(dto: QueryAgentExecutionRecordDto): Promise<AgentExecutionStatsDto> {
+  async getStats(dto: QueryLLMExecutionRecordDto): Promise<LLMExecutionStatsDto> {
     try {
-      const records = await this.queryExecutionRecords({
+      const records = await this.query({
         ...dto,
         limit: 10000, // 限制统计数据量
       });
 
       const totalExecutions = records.length;
-      const successfulExecutions = records.filter(r => r.executionStatus === 'success');
+      const successfulExecutions = records.filter(r => r.status === 'success');
       
-      const stats: AgentExecutionStatsDto = {
+      const stats: LLMExecutionStatsDto = {
         totalExecutions,
         successRate: totalExecutions > 0 ? successfulExecutions.length / totalExecutions : 0,
-        avgProcessingTime: this.calculateAverage(records, 'processingTimeMs'),
-        avgScore: this.calculateAverage(records.filter(r => r.score), 'score'),
-        avgCost: this.calculateAverage(records.filter(r => r.estimatedCost), 'estimatedCost'),
+        avgExecutionTime: this.calculateAverage(records, 'executionTimeMs'),
         tokenUsage: {
           totalInputTokens: records.reduce((sum, r) => sum + (r.inputTokens || 0), 0),
           totalOutputTokens: records.reduce((sum, r) => sum + (r.outputTokens || 0), 0),
           totalTokens: records.reduce((sum, r) => sum + (r.totalTokens || 0), 0),
         },
-        recommendations: this.groupByRecommendation(records),
         byAgentType: this.groupByAgentType(records),
+        byLLMModel: this.groupByLLMModel(records),
         byDate: this.groupByDate(records),
       };
 
       return stats;
       
     } catch (error) {
-      this.logger.error(`获取执行统计失败: ${error.message}`, error.stack);
+      this.logger.error(`获取LLM调用统计失败: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   /**
-   * 删除执行记录
+   * 更新LLM调用记录
    */
-  async deleteExecutionRecord(agentType: AgentType, recordId: number): Promise<boolean> {
+  async update(recordId: number, updateDto: UpdateLLMExecutionRecordDto): Promise<AgentExecutionRecord | null> {
     try {
-      const repository = await this.shardingService.getRepository(agentType);
+      const result = await this.repository.update(
+        { id: recordId },
+        {
+          ...updateDto,
+          updatedAt: new Date()
+        }
+      );
       
-      const result = await repository.update(
+      if (result.affected === 0) {
+        this.logger.warn(`未找到ID为 ${recordId} 的LLM调用记录`);
+        return null;
+      }
+
+      // 返回更新后的记录
+      const updatedRecord = await this.repository.findOne({
+        where: { id: recordId }
+      });
+      
+      this.logger.debug(`成功更新LLM调用记录: ${recordId}`);
+      return updatedRecord;
+      
+    } catch (error) {
+      this.logger.error(`更新LLM调用记录失败: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 软删除调用记录
+   */
+  async delete(recordId: number): Promise<boolean> {
+    try {
+      const result = await this.repository.update(
         { id: recordId },
         { deletedAt: new Date() }
       );
@@ -275,7 +293,7 @@ export class AgentExecutionRecordService {
       return result.affected > 0;
       
     } catch (error) {
-      this.logger.error(`删除执行记录失败: ${error.message}`, error.stack);
+      this.logger.error(`删除LLM调用记录失败: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -289,47 +307,75 @@ export class AgentExecutionRecordService {
     return values.length > 0 ? values.reduce((sum, val) => sum + val, 0) / values.length : 0;
   }
 
-  private groupByRecommendation(records: AgentExecutionRecord[]): Record<TradingRecommendation, number> {
-    const groups: Record<TradingRecommendation, number> = {
-      [TradingRecommendation.STRONG_BUY]: 0,
-      [TradingRecommendation.BUY]: 0,
-      [TradingRecommendation.HOLD]: 0,
-      [TradingRecommendation.SELL]: 0,
-      [TradingRecommendation.STRONG_SELL]: 0,
-    };
+  private groupByAgentType(records: AgentExecutionRecord[]): Record<string, any> {
+    const groups: Record<string, any> = {};
     
     records.forEach(record => {
-      if (record.recommendation) {
-        groups[record.recommendation]++;
+      const agentType = record.agentType;
+      if (!groups[agentType]) {
+        groups[agentType] = {
+          count: 0,
+          successCount: 0,
+          totalExecutionTime: 0,
+          totalTokens: 0,
+        };
       }
+      
+      groups[agentType].count++;
+      if (record.status === 'success') {
+        groups[agentType].successCount++;
+      }
+      groups[agentType].totalExecutionTime += record.executionTimeMs || 0;
+      groups[agentType].totalTokens += record.totalTokens || 0;
+    });
+    
+    // 计算平均值
+    Object.keys(groups).forEach(agentType => {
+      const group = groups[agentType];
+      group.successRate = group.count > 0 ? group.successCount / group.count : 0;
+      group.avgExecutionTime = group.count > 0 ? group.totalExecutionTime / group.count : 0;
+      delete group.successCount;
+      delete group.totalExecutionTime;
     });
     
     return groups;
   }
-
-  private groupByAgentType(records: AgentExecutionRecord[]): Record<AgentType, any> {
+  
+  private groupByLLMModel(records: AgentExecutionRecord[]): Record<string, any> {
     const groups: Record<string, any> = {};
     
-    for (const agentType of Object.values(AgentType)) {
-      const typeRecords = records.filter(r => r.agentType === agentType);
-      const successfulRecords = typeRecords.filter(r => r.executionStatus === 'success');
+    records.forEach(record => {
+      const model = record.llmModel;
+      if (!groups[model]) {
+        groups[model] = {
+          count: 0,
+          successCount: 0,
+          totalTokens: 0,
+        };
+      }
       
-      groups[agentType] = {
-        count: typeRecords.length,
-        successRate: typeRecords.length > 0 ? successfulRecords.length / typeRecords.length : 0,
-        avgScore: this.calculateAverage(typeRecords.filter(r => r.score), 'score'),
-        avgProcessingTime: this.calculateAverage(typeRecords, 'processingTimeMs'),
-      };
-    }
+      groups[model].count++;
+      if (record.status === 'success') {
+        groups[model].successCount++;
+      }
+      groups[model].totalTokens += record.totalTokens || 0;
+    });
     
-    return groups as Record<AgentType, any>;
+    // 计算成功率
+    Object.keys(groups).forEach(model => {
+      const group = groups[model];
+      group.successRate = group.count > 0 ? group.successCount / group.count : 0;
+      delete group.successCount;
+    });
+    
+    return groups;
   }
 
   private groupByDate(records: AgentExecutionRecord[]): Record<string, number> {
     const groups: Record<string, number> = {};
     
     records.forEach(record => {
-      const date = record.executionDate.toISOString().split('T')[0];
+      const date = record.createdAt.toISOString().split('T')[0];
       groups[date] = (groups[date] || 0) + 1;
     });
     

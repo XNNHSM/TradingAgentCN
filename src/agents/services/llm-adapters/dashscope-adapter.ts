@@ -339,8 +339,8 @@ export class DashScopeAdapter extends BaseLLMAdapter {
     const totalChars = requestBody.input.messages.reduce((sum, msg) => sum + msg.content.length, 0);
     const maxTokens = requestBody.parameters.max_tokens || 2048;
     
-    // 基础超时: 30秒
-    let timeout = 30000;
+    // 基础超时: 120秒
+    let timeout = 120000;
     
     // 根据消息数量增加超时
     timeout += messageCount * 2000; // 每条消息增加2秒
@@ -352,7 +352,7 @@ export class DashScopeAdapter extends BaseLLMAdapter {
     timeout += Math.ceil(maxTokens / 100) * 1000; // 每100个token增加1秒
     
     // 设置最小和最大超时限制
-    return Math.min(Math.max(timeout, 15000), 120000); // 15秒到2分钟之间
+    return Math.min(Math.max(timeout, 120000), 300000); // 120秒到5分钟之间
   }
 
   /**

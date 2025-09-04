@@ -9,7 +9,7 @@ import {
   TradingRecommendation,
 } from "../interfaces/agent.interface";
 import { LLMService, LLMConfig, LLMResponse } from "../services/llm.service";
-import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
+import { AgentExecutionRecordService, UpdateLLMExecutionRecordDto } from "../services/agent-execution-record.service";
 
 /**
  * 智能体基础抽象类
@@ -33,7 +33,7 @@ export abstract class BaseAgent implements IAgent {
       model: "qwen-plus",
       temperature: 0.7,
       maxTokens: 2000,
-      timeout: 90, // 增加到90秒，适应复杂分析任务
+      timeout: 120, // 增加到120秒，确保LLM调用有充足时间
       retryCount: 3,
       systemPrompt: "",
       ...config,
@@ -42,6 +42,7 @@ export abstract class BaseAgent implements IAgent {
 
   /**
    * 执行分析任务（支持 function calling）
+   * 改进的数据落盘策略：LLM调用前先创建记录，调用后更新结果
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = new Date();
@@ -60,7 +61,7 @@ export abstract class BaseAgent implements IAgent {
     let toolResults: any[] = [];
     let result: AgentResult;
     let errorMessage: string;
-    let errorStack: string;
+    let executionRecordId: number | null = null;
 
     try {
       // 预处理上下文
@@ -68,6 +69,40 @@ export abstract class BaseAgent implements IAgent {
 
       // 构建提示词
       prompt = await this.buildPrompt(processedContext);
+
+      // 在LLM调用前先创建执行记录（pending状态）
+      if (this.executionRecordService) {
+        try {
+          const initialRecord = await this.executionRecordService.create({
+            sessionId,
+            agentType: this.type,
+            agentName: this.name,
+            executionPhase: context.metadata?.executionPhase,
+            llmProvider: 'dashscope',
+            llmModel: this.config.model,
+            promptTemplate: this.config.systemPrompt,
+            inputMessages: [{ role: 'user', content: prompt }],
+            outputContent: '', // 先为空，后续更新
+            inputTokens: 0, // 先为0，后续更新
+            outputTokens: 0,
+            totalTokens: 0,
+            executionTimeMs: 0,
+            status: 'pending', // 初始状态为pending
+            metadata: {
+              stockCode: context.stockCode,
+              stockName: context.stockName,
+              analysisType: context.metadata?.analysisType || 'single',
+              environment: process.env.NODE_ENV || 'development',
+              ...context.metadata
+            }
+          });
+          executionRecordId = initialRecord.id;
+          this.logger.debug(`创建执行记录: ${executionRecordId}`);
+        } catch (recordError) {
+          this.logger.warn(`创建执行记录失败: ${recordError.message}`);
+          // 不影响主要流程的执行
+        }
+      }
 
       let analysis: string;
 
@@ -145,30 +180,30 @@ export abstract class BaseAgent implements IAgent {
       this.status = AgentStatus.COMPLETED;
       this.logger.log(`分析完成，耗时: ${result.processingTime}ms`);
 
-      // 保存执行记录
-      if (this.executionRecordService) {
+      // 更新LLM调用记录为成功状态
+      if (this.executionRecordService && executionRecordId) {
         try {
-          await this.executionRecordService.createExecutionRecord({
-            sessionId,
-            agentType: this.type,
-            agentName: this.name,
-            agentRole: this.role,
-            stockCode: context.stockCode,
-            stockName: context.stockName,
-            context: processedContext,
-            llmModel: this.config.model,
-            inputPrompt: prompt,
-            llmResponse,
-            result,
-            startTime,
-            endTime,
-            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            toolResults: toolResults.length > 0 ? toolResults : undefined,
-            analysisType: context.metadata?.analysisType || 'single',
-            environment: process.env.NODE_ENV || 'development',
+          await this.updateExecutionRecord(executionRecordId, {
+            outputContent: llmResponse.content,
+            inputTokens: llmResponse.usage?.inputTokens || 0,
+            outputTokens: llmResponse.usage?.outputTokens || 0,
+            totalTokens: llmResponse.usage?.totalTokens || 0,
+            executionTimeMs: result.processingTime,
+            status: 'success',
+            metadata: {
+              stockCode: context.stockCode,
+              stockName: context.stockName,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+              toolResults: toolResults.length > 0 ? toolResults : undefined,
+              analysisType: context.metadata?.analysisType || 'single',
+              environment: process.env.NODE_ENV || 'development',
+              analysisResult: result,
+              ...context.metadata
+            }
           });
+          this.logger.debug(`更新执行记录成功: ${executionRecordId}`);
         } catch (recordError) {
-          this.logger.warn(`保存执行记录失败: ${recordError.message}`);
+          this.logger.warn(`更新执行记录失败: ${recordError.message}`);
           // 不影响主要流程
         }
       }
@@ -178,7 +213,7 @@ export abstract class BaseAgent implements IAgent {
     } catch (error) {
       this.status = AgentStatus.ERROR;
       errorMessage = error.message;
-      errorStack = error.stack;
+      // errorStack = error.stack; // 保留在metadata中记录
       
       this.logger.error(`分析失败: ${error.message}`, error.stack);
 
@@ -194,36 +229,64 @@ export abstract class BaseAgent implements IAgent {
         score: 0,
       };
 
-      // 保存错误执行记录
-      if (this.executionRecordService) {
+      // 更新执行记录为失败状态
+      if (this.executionRecordService && executionRecordId) {
         try {
-          await this.executionRecordService.createExecutionRecord({
+          await this.updateExecutionRecord(executionRecordId, {
+            outputContent: llmResponse?.content || '',
+            inputTokens: llmResponse?.usage?.inputTokens || 0,
+            outputTokens: llmResponse?.usage?.outputTokens || 0,
+            totalTokens: llmResponse?.usage?.totalTokens || 0,
+            executionTimeMs: result.processingTime,
+            status: 'failed',
+            errorMessage,
+            errorCode: error.code || 'UNKNOWN_ERROR',
+            metadata: {
+              stockCode: context.stockCode,
+              stockName: context.stockName,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+              toolResults: toolResults.length > 0 ? toolResults : undefined,
+              analysisType: context.metadata?.analysisType || 'single',
+              environment: process.env.NODE_ENV || 'development',
+              errorDetails: error.stack,
+              ...context.metadata
+            }
+          });
+          this.logger.debug(`更新错误执行记录: ${executionRecordId}`);
+        } catch (recordError) {
+          this.logger.warn(`更新错误执行记录失败: ${recordError.message}`);
+        }
+      } else if (this.executionRecordService && !executionRecordId) {
+        // 如果初始记录创建失败，则创建一个错误记录
+        try {
+          await this.executionRecordService.create({
             sessionId,
             agentType: this.type,
             agentName: this.name,
-            agentRole: this.role,
-            stockCode: context.stockCode,
-            stockName: context.stockName,
-            context,
+            executionPhase: context.metadata?.executionPhase,
+            llmProvider: 'dashscope',
             llmModel: this.config.model,
-            inputPrompt: prompt || '构建提示词时出错',
-            llmResponse: llmResponse || {
-              content: '',
-              finishReason: 'error',
-              usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-            },
-            result,
-            startTime,
-            endTime,
-            toolCalls,
-            toolResults,
-            analysisType: context.metadata?.analysisType || 'single',
-            environment: process.env.NODE_ENV || 'development',
+            promptTemplate: this.config.systemPrompt,
+            inputMessages: prompt ? [{ role: 'user', content: prompt }] : [],
+            outputContent: '',
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            executionTimeMs: result.processingTime,
+            status: 'failed',
             errorMessage,
-            errorStack,
+            errorCode: error.code || 'UNKNOWN_ERROR',
+            metadata: {
+              stockCode: context.stockCode,
+              stockName: context.stockName,
+              analysisType: context.metadata?.analysisType || 'single',
+              environment: process.env.NODE_ENV || 'development',
+              errorDetails: error.stack,
+              ...context.metadata
+            }
           });
         } catch (recordError) {
-          this.logger.warn(`保存错误执行记录失败: ${recordError.message}`);
+          this.logger.warn(`创建错误记录失败: ${recordError.message}`);
         }
       }
 
@@ -583,5 +646,26 @@ export abstract class BaseAgent implements IAgent {
     }
 
     return sections.join("\n");
+  }
+
+  /**
+   * 更新LLM调用执行记录
+   */
+  protected async updateExecutionRecord(
+    recordId: number,
+    updateData: UpdateLLMExecutionRecordDto
+  ): Promise<void> {
+    if (!this.executionRecordService) {
+      this.logger.warn('执行记录服务不可用，跳过更新记录');
+      return;
+    }
+
+    try {
+      await this.executionRecordService.update(recordId, updateData);
+      this.logger.debug(`成功更新执行记录: ${recordId}`);
+    } catch (error) {
+      this.logger.error(`更新执行记录失败: ${error.message}`, error);
+      // 不重新抛出错误，避免影响主流程
+    }
   }
 }

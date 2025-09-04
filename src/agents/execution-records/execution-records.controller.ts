@@ -1,26 +1,23 @@
 import { Controller, Post, Body, Query, Get, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { AgentExecutionRecordService, QueryAgentExecutionRecordDto } from '../services/agent-execution-record.service';
-import { AgentExecutionShardingService } from '../services/agent-execution-sharding.service';
-import { AgentType } from '../interfaces/agent.interface';
+import { AgentExecutionRecordService, QueryLLMExecutionRecordDto } from '../services/agent-execution-record.service';
 import { Result } from '../../common/dto/result.dto';
+import { PaginatedResult } from '../../common/dto/paginated-result.dto';
 
 /**
- * 查询执行记录请求DTO
+ * 查询LLM调用记录请求DTO
  */
-export class QueryExecutionRecordsRequestDto {
-  agentTypes?: AgentType[];
-  stockCode?: string;
-  stockName?: string;
+export class QueryLLMRecordsRequestDto {
+  agentType?: string;
+  agentName?: string;
   sessionId?: string;
-  executionStatus?: 'success' | 'error' | 'timeout';
+  llmProvider?: string;
+  llmModel?: string;
+  status?: string;
   dateRange?: {
     start: string; // ISO日期字符串
     end: string;   // ISO日期字符串
   };
-  analysisType?: string;
-  minScore?: number;
-  maxScore?: number;
   limit?: number;
   offset?: number;
 }
@@ -29,211 +26,167 @@ export class QueryExecutionRecordsRequestDto {
  * 统计查询请求DTO
  */
 export class StatisticsRequestDto {
-  agentTypes?: AgentType[];
-  stockCode?: string;
+  agentType?: string;
+  llmProvider?: string;
+  llmModel?: string;
   dateRange?: {
     start: string;
     end: string;
   };
-  analysisType?: string;
 }
 
-/**
- * Agent执行记录控制器
- */
-@ApiTags('Agent执行记录')
-@Controller('agent-execution-records')
+@ApiTags('执行记录管理')
+@Controller('api/v1/execution-records')
 export class ExecutionRecordsController {
   constructor(
     private readonly executionRecordService: AgentExecutionRecordService,
-    private readonly shardingService: AgentExecutionShardingService,
   ) {}
 
-  /**
-   * 查询执行记录
-   */
   @Post('query')
-  @ApiOperation({ summary: '查询Agent执行记录' })
-  @ApiResponse({ status: 200, description: '查询成功' })
-  async queryRecords(@Body() requestDto: QueryExecutionRecordsRequestDto): Promise<Result<any>> {
+  @ApiOperation({ summary: '分页查询LLM调用记录' })
+  @ApiResponse({ 
+    status: 200, 
+    description: '查询成功',
+    type: PaginatedResult,
+  })
+  async queryExecutionRecords(
+    @Body() request: QueryLLMRecordsRequestDto
+  ): Promise<Result<PaginatedResult<any>>> {
     try {
-      // 转换日期格式
-      const queryDto: QueryAgentExecutionRecordDto = {
-        ...requestDto,
-        dateRange: requestDto.dateRange ? {
-          start: new Date(requestDto.dateRange.start),
-          end: new Date(requestDto.dateRange.end),
+      const queryDto: QueryLLMExecutionRecordDto = {
+        agentType: request.agentType,
+        agentName: request.agentName,
+        sessionId: request.sessionId,
+        llmProvider: request.llmProvider,
+        llmModel: request.llmModel,
+        status: request.status,
+        dateRange: request.dateRange ? {
+          start: new Date(request.dateRange.start),
+          end: new Date(request.dateRange.end)
         } : undefined,
+        limit: request.limit || 50,
+        offset: request.offset || 0,
+        orderBy: 'createdAt',
+        orderDirection: 'DESC',
       };
 
-      const records = await this.executionRecordService.queryExecutionRecords(queryDto);
-
-      return Result.success(records, '查询成功');
-    } catch (error) {
-      return Result.error(`查询失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 获取会话记录
-   */
-  @Get('session/:sessionId')
-  @ApiOperation({ summary: '获取指定会话的所有Agent执行记录' })
-  async getSessionRecords(@Param('sessionId') sessionId: string): Promise<Result<any>> {
-    try {
-      const records = await this.executionRecordService.getRecordsBySessionId(sessionId);
+      const records = await this.executionRecordService.query(queryDto);
       
-      return Result.success({
-        sessionId,
-        recordCount: records.length,
-        records,
-      }, '获取成功');
+      const paginatedResult: PaginatedResult<any> = {
+        items: records.map(record => ({
+          id: record.id,
+          sessionId: record.sessionId,
+          agentType: record.agentType,
+          agentName: record.agentName,
+          executionPhase: record.executionPhase,
+          llmProvider: record.llmProvider,
+          llmModel: record.llmModel,
+          status: record.status,
+          executionTimeMs: record.executionTimeMs,
+          inputTokens: record.inputTokens,
+          outputTokens: record.outputTokens,
+          totalTokens: record.totalTokens,
+          createdAt: record.createdAt,
+          errorMessage: record.errorMessage,
+        })),
+        total: records.length, // 注意：这里简化了，实际应该查询总数
+        page: Math.floor((request.offset || 0) / (request.limit || 50)) + 1,
+        limit: request.limit || 50,
+        totalPages: Math.ceil(records.length / (request.limit || 50)),
+        hasNext: records.length === (request.limit || 50),
+        hasPrev: (request.offset || 0) > 0,
+      };
+
+      return Result.success(paginatedResult, '获取执行记录成功');
     } catch (error) {
-      return Result.error(`获取会话记录失败: ${error.message}`);
+      return Result.error(`查询LLM调用记录失败: ${error.message}`);
     }
   }
 
-  /**
-   * 获取股票分析历史
-   */
-  @Get('stock/:stockCode/history')
-  @ApiOperation({ summary: '获取指定股票的分析历史' })
-  async getStockHistory(
-    @Param('stockCode') stockCode: string,
-    @Query('agentType') agentType?: AgentType,
-    @Query('limit') limit?: number,
+  @Get('agent/:agentType')
+  @ApiOperation({ summary: '获取指定智能体的调用历史' })
+  @ApiResponse({ status: 200, description: '获取成功' })
+  async getAgentHistory(
+    @Param('agentType') agentType: string,
+    @Query('limit') limit?: string
   ): Promise<Result<any>> {
     try {
-      const records = await this.executionRecordService.getStockAnalysisHistory(
-        stockCode,
+      const records = await this.executionRecordService.getAgentCallHistory(
         agentType,
-        limit ? parseInt(limit.toString()) : 50
+        limit ? parseInt(limit) : 50
       );
 
       return Result.success({
-        stockCode,
-        agentType: agentType || 'all',
-        recordCount: records.length,
-        records,
-      }, '获取成功');
+        agentType,
+        totalRecords: records.length,
+        records: records.map(record => ({
+          id: record.id,
+          sessionId: record.sessionId,
+          llmModel: record.llmModel,
+          status: record.status,
+          executionTimeMs: record.executionTimeMs,
+          totalTokens: record.totalTokens,
+          createdAt: record.createdAt,
+        })),
+      }, '获取智能体历史成功');
     } catch (error) {
-      return Result.error(`获取股票历史失败: ${error.message}`);
+      return Result.error(`获取智能体历史失败: ${error.message}`);
     }
   }
 
-  /**
-   * 获取执行统计
-   */
   @Post('statistics')
-  @ApiOperation({ summary: '获取Agent执行统计数据' })
-  async getStatistics(@Body() requestDto: StatisticsRequestDto): Promise<Result<any>> {
+  @ApiOperation({ summary: '获取执行统计信息' })
+  @ApiResponse({ status: 200, description: '统计成功' })
+  async getStatistics(@Body() request: StatisticsRequestDto): Promise<Result<any>> {
     try {
-      const queryDto: QueryAgentExecutionRecordDto = {
-        agentTypes: requestDto.agentTypes,
-        stockCode: requestDto.stockCode,
-        analysisType: requestDto.analysisType,
-        dateRange: requestDto.dateRange ? {
-          start: new Date(requestDto.dateRange.start),
-          end: new Date(requestDto.dateRange.end),
+      const queryDto: QueryLLMExecutionRecordDto = {
+        agentType: request.agentType,
+        llmProvider: request.llmProvider,
+        llmModel: request.llmModel,
+        dateRange: request.dateRange ? {
+          start: new Date(request.dateRange.start),
+          end: new Date(request.dateRange.end)
         } : undefined,
+        limit: 10000, // 统计数据限制
       };
 
-      const stats = await this.executionRecordService.getExecutionStats(queryDto);
-
-      return Result.success(stats, '统计数据获取成功');
-    } catch (error) {
-      return Result.error(`获取统计数据失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 获取分表信息
-   */
-  @Get('sharding/info')
-  @ApiOperation({ summary: '获取分表统计信息' })
-  async getShardingInfo(): Promise<Result<any>> {
-    try {
-      const [stats, sizes] = await Promise.all([
-        this.shardingService.getShardingStats(),
-        this.shardingService.getTableSizes(),
-      ]);
-
-      return Result.success({
-        shardingStats: stats,
-        tableSizes: sizes,
-      }, '分表信息获取成功');
-    } catch (error) {
-      return Result.error(`获取分表信息失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * 创建所有分表
-   */
-  @Post('sharding/create-tables')
-  @ApiOperation({ summary: '创建所有Agent类型的分表' })
-  async createShardTables(): Promise<Result<any>> {
-    try {
-      await this.shardingService.createAllShardTables();
+      const stats = await this.executionRecordService.getStats(queryDto);
       
-      return Result.success(null, '所有分表创建成功');
+      return Result.success(stats, '获取统计信息成功');
     } catch (error) {
-      return Result.error(`创建分表失败: ${error.message}`);
+      return Result.error(`获取统计信息失败: ${error.message}`);
     }
   }
 
-  /**
-   * 数据清理
-   */
-  @Post('cleanup')
-  @ApiOperation({ summary: '清理过期的执行记录' })
-  async cleanupRecords(
-    @Body('retentionDays') retentionDays: number = 90
-  ): Promise<Result<any>> {
+  @Get('dashboard/summary')
+  @ApiOperation({ summary: '获取仪表板摘要信息' })
+  @ApiResponse({ status: 200, description: '获取成功' })
+  async getDashboardSummary(): Promise<Result<any>> {
     try {
-      await this.shardingService.cleanupOldRecords(retentionDays);
-      
-      return Result.success(null, `清理${retentionDays}天前的记录成功`);
-    } catch (error) {
-      return Result.error(`数据清理失败: ${error.message}`);
-    }
-  }
-
-  /**
-   * Agent性能报告
-   */
-  @Get('performance/report')
-  @ApiOperation({ summary: '获取Agent性能报告' })
-  async getPerformanceReport(
-    @Query('days') days: number = 7
-  ): Promise<Result<any>> {
-    try {
+      // 获取最近24小时的统计
       const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
+      const startDate = new Date(endDate.getTime() - 24 * 60 * 60 * 1000);
 
-      const stats = await this.executionRecordService.getExecutionStats({
+      const stats = await this.executionRecordService.getStats({
         dateRange: { start: startDate, end: endDate },
+        limit: 5000,
       });
 
-      const report = {
-        period: `${startDate.toISOString().split('T')[0]} ~ ${endDate.toISOString().split('T')[0]}`,
-        summary: {
-          totalExecutions: stats.totalExecutions,
-          successRate: Math.round(stats.successRate * 100),
-          avgProcessingTime: Math.round(stats.avgProcessingTime),
-          avgScore: Math.round(stats.avgScore * 10) / 10,
-          estimatedCost: Math.round(stats.avgCost * 100) / 100,
-        },
+      return Result.success({
+        period: '最近24小时',
+        totalExecutions: stats.totalExecutions,
+        successRate: stats.successRate,
+        avgExecutionTime: stats.avgExecutionTime,
         tokenUsage: stats.tokenUsage,
-        agentPerformance: stats.byAgentType,
-        dailyActivity: stats.byDate,
-        recommendations: stats.recommendations,
-      };
-
-      return Result.success(report, '性能报告生成成功');
+        topAgentTypes: Object.entries(stats.byAgentType)
+          .sort(([,a], [,b]) => (b as any).count - (a as any).count)
+          .slice(0, 5),
+        topLLMModels: Object.entries(stats.byLLMModel)
+          .sort(([,a], [,b]) => (b as any).count - (a as any).count)
+          .slice(0, 5),
+      }, '获取仪表板摘要成功');
     } catch (error) {
-      return Result.error(`生成性能报告失败: ${error.message}`);
+      return Result.error(`获取仪表板摘要失败: ${error.message}`);
     }
   }
 }

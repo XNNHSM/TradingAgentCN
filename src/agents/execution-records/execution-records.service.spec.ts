@@ -1,226 +1,224 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigModule } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { ExecutionRecordsService } from './execution-records.service';
 import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
-import { AgentExecutionShardingService } from '../services/agent-execution-sharding.service';
 import { AgentExecutionRecord } from '../entities/agent-execution-record.entity';
-import { AgentType, TradingRecommendation } from '../interfaces/agent.interface';
 
-describe('AgentExecutionRecordService', () => {
-  let service: AgentExecutionRecordService;
-  let shardingService: AgentExecutionShardingService;
-  let module: TestingModule;
+describe('ExecutionRecordsService', () => {
+  let service: ExecutionRecordsService;
+  let executionRecordService: AgentExecutionRecordService;
 
-  beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          envFilePath: '.env.test',
-        }),
-        TypeOrmModule.forRoot({
-          type: 'postgres',
-          host: process.env.DB_HOST || 'localhost',
-          port: parseInt(process.env.DB_PORT || '5432'),
-          username: process.env.DB_USERNAME || 'postgres',
-          password: process.env.DB_PASSWORD || 'test_123!',
-          database: process.env.DB_DATABASE || 'trading_agent',
-          entities: [AgentExecutionRecord],
-          synchronize: true,
-          dropSchema: true, // 每次测试前清空数据库
-        }),
-        TypeOrmModule.forFeature([AgentExecutionRecord]),
-      ],
+  const mockExecutionRecordService = {
+    getRecordsBySessionId: jest.fn(),
+    getAgentCallHistory: jest.fn(),
+    getStats: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AgentExecutionShardingService,
-        AgentExecutionRecordService,
+        ExecutionRecordsService,
+        {
+          provide: AgentExecutionRecordService,
+          useValue: mockExecutionRecordService,
+        },
       ],
     }).compile();
 
-    service = module.get<AgentExecutionRecordService>(AgentExecutionRecordService);
-    shardingService = module.get<AgentExecutionShardingService>(AgentExecutionShardingService);
+    service = module.get<ExecutionRecordsService>(ExecutionRecordsService);
+    executionRecordService = module.get<AgentExecutionRecordService>(AgentExecutionRecordService);
   });
 
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('创建执行记录', () => {
-    it('应该成功创建一条执行记录', async () => {
-      const testDto = {
-        sessionId: 'test-session-123',
-        agentType: AgentType.BASIC_DATA_AGENT,
-        agentName: '市场分析师',
-        agentRole: '专业的股票市场分析专家',
-        stockCode: '000001',
-        stockName: '平安银行',
-        context: {
-          stockCode: '000001',
-          stockName: '平安银行',
-          metadata: { analysisType: 'test' }
-        },
-        llmModel: 'qwen-plus',
-        inputPrompt: '请分析平安银行的投资价值',
-        llmResponse: {
-          content: '平安银行具有良好的投资价值...',
-          finishReason: 'stop',
-          usage: {
-            inputTokens: 50,
-            outputTokens: 200,
-            totalTokens: 250,
-            cost: 0.01
-          }
-        },
-        result: {
-          agentName: '市场分析师',
-          agentType: AgentType.BASIC_DATA_AGENT,
-          analysis: '平安银行具有良好的投资价值，建议买入',
-          score: 85,
-          recommendation: TradingRecommendation.BUY,
-          confidence: 0.8,
-          keyInsights: ['估值合理', '业绩稳定'],
-          risks: ['市场波动风险'],
-          timestamp: new Date(),
-        },
-        startTime: new Date(Date.now() - 5000),
-        endTime: new Date(),
-        analysisType: 'test',
-      };
-
-      const record = await service.createExecutionRecord(testDto);
-      
-      expect(record).toBeDefined();
-      expect(record.id).toBeTruthy();
-      expect(record.sessionId).toBe(testDto.sessionId);
-      expect(record.agentType).toBe(testDto.agentType);
-      expect(record.stockCode).toBe(testDto.stockCode);
-      expect(record.executionStatus).toBe('success');
-
-      console.log('✅ 执行记录创建成功:', record.id);
-    });
-
-    it('应该正确处理错误执行记录', async () => {
-      const errorDto = {
-        sessionId: 'test-session-error',
-        agentType: AgentType.FUNDAMENTAL_ANALYST_NEW,
-        agentName: '基本面分析师',
-        agentRole: '专业的基本面分析专家',
-        stockCode: '000002',
-        stockName: '万科A',
-        context: {
-          stockCode: '000002',
-          stockName: '万科A',
-        },
-        llmModel: 'qwen-plus',
-        inputPrompt: '请分析万科A的基本面',
-        llmResponse: {
-          content: '',
-          finishReason: 'error',
-          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-        },
-        result: {
-          agentName: '基本面分析师', 
-          agentType: AgentType.FUNDAMENTAL_ANALYST_NEW,
-          analysis: '分析过程中发生错误',
-          timestamp: new Date(),
-        },
-        startTime: new Date(Date.now() - 1000),
-        endTime: new Date(),
-        errorMessage: 'API调用失败',
-        errorStack: 'Error: API调用失败\n    at ...',
-      };
-
-      const record = await service.createExecutionRecord(errorDto);
-      
-      expect(record).toBeDefined();
-      expect(record.executionStatus).toBe('error');
-      expect(record.errorMessage).toBe('API调用失败');
-
-      console.log('✅ 错误执行记录创建成功:', record.id);
-    });
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
-  describe('查询执行记录', () => {
-    it('应该能够根据会话ID查询记录', async () => {
+  describe('getRecordsBySessionId', () => {
+    it('should return records by session ID', async () => {
       const sessionId = 'test-session-123';
-      const records = await service.getRecordsBySessionId(sessionId);
-      
-      expect(records).toBeDefined();
-      expect(Array.isArray(records)).toBe(true);
-      expect(records.length).toBeGreaterThan(0);
-      
-      // 验证所有记录都属于同一个会话
-      records.forEach(record => {
-        expect(record.sessionId).toBe(sessionId);
-      });
+      const mockRecords = [
+        {
+          id: 1,
+          sessionId,
+          agentType: 'BasicDataAgent',
+          agentName: 'Basic Data Agent',
+          llmProvider: 'dashscope',
+          llmModel: 'qwen-plus',
+          inputMessages: {},
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 150,
+          executionTimeMs: 1000,
+          status: 'success',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          deletedAt: null,
+          version: 1,
+        },
+      ] as AgentExecutionRecord[];
 
-      console.log(`✅ 根据会话ID查询到 ${records.length} 条记录`);
+      mockExecutionRecordService.getRecordsBySessionId.mockResolvedValue(mockRecords);
+
+      const result = await service.getRecordsBySessionId(sessionId);
+
+      expect(executionRecordService.getRecordsBySessionId).toHaveBeenCalledWith(sessionId);
+      expect(result).toEqual(mockRecords);
     });
 
-    it('应该能够根据股票代码查询历史记录', async () => {
-      const stockCode = '000001';
-      const records = await service.getStockAnalysisHistory(stockCode);
-      
-      expect(records).toBeDefined();
-      expect(Array.isArray(records)).toBe(true);
-      
-      records.forEach(record => {
-        expect(record.stockCode).toBe(stockCode);
-      });
+    it('should handle errors', async () => {
+      const sessionId = 'test-session-123';
+      const error = new Error('Database error');
 
-      console.log(`✅ 股票 ${stockCode} 的历史记录查询成功，共 ${records.length} 条`);
-    });
-  });
+      mockExecutionRecordService.getRecordsBySessionId.mockRejectedValue(error);
 
-  describe('统计功能', () => {
-    it('应该能够生成执行统计报告', async () => {
-      const stats = await service.getExecutionStats({
-        dateRange: {
-          start: new Date(Date.now() - 24 * 60 * 60 * 1000), // 24小时前
-          end: new Date(),
-        }
-      });
-
-      expect(stats).toBeDefined();
-      expect(typeof stats.totalExecutions).toBe('number');
-      expect(typeof stats.successRate).toBe('number');
-      expect(typeof stats.avgProcessingTime).toBe('number');
-      expect(stats.tokenUsage).toBeDefined();
-      expect(stats.byAgentType).toBeDefined();
-
-      console.log('✅ 统计报告生成成功:');
-      console.log(`   - 总执行次数: ${stats.totalExecutions}`);
-      console.log(`   - 成功率: ${Math.round(stats.successRate * 100)}%`);
-      console.log(`   - 平均处理时间: ${Math.round(stats.avgProcessingTime)}ms`);
-      console.log(`   - Token使用: ${stats.tokenUsage.totalTokens}`);
+      await expect(service.getRecordsBySessionId(sessionId)).rejects.toThrow('Database error');
     });
   });
 
-  describe('分表管理', () => {
-    it('应该能够获取分表统计信息', async () => {
-      const stats = await shardingService.getShardingStats();
-      
-      expect(stats).toBeDefined();
-      expect(typeof stats.totalTables).toBe('number');
-      expect(stats.tables).toBeDefined();
+  describe('getAgentCallHistory', () => {
+    it('should return paginated agent call history', async () => {
+      const agentType = 'BasicDataAgent';
+      const page = 1;
+      const limit = 20;
+      const mockRecords = [
+        {
+          id: 1,
+          sessionId: 'session-1',
+          agentType,
+          agentName: 'Basic Data Agent',
+          llmProvider: 'dashscope',
+          llmModel: 'qwen-plus',
+          inputMessages: {},
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 150,
+          executionTimeMs: 1000,
+          status: 'success',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          deletedAt: null,
+          version: 1,
+        },
+        {
+          id: 2,
+          sessionId: 'session-2',
+          agentType,
+          agentName: 'Basic Data Agent',
+          llmProvider: 'dashscope',
+          llmModel: 'qwen-plus',
+          inputMessages: {},
+          inputTokens: 80,
+          outputTokens: 40,
+          totalTokens: 120,
+          executionTimeMs: 800,
+          status: 'success',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          deletedAt: null,
+          version: 1,
+        },
+      ] as AgentExecutionRecord[];
 
-      console.log('✅ 分表统计信息获取成功:');
-      console.log(`   - 总分表数: ${stats.totalTables}`);
-      
-      Object.entries(stats.tables).forEach(([agentType, info]: [string, any]) => {
-        console.log(`   - ${agentType}: ${info.recordCount} 条记录`);
-      });
+      mockExecutionRecordService.getAgentCallHistory.mockResolvedValue(mockRecords);
+
+      const result = await service.getAgentCallHistory(agentType, page, limit);
+
+      expect(executionRecordService.getAgentCallHistory).toHaveBeenCalledWith(agentType, 20);
+      expect(result.data.items).toHaveLength(2);
+      expect(result.data.total).toBe(2);
+      expect(result.data.page).toBe(1);
+      expect(result.data.limit).toBe(20);
     });
+  });
 
-    it('应该能够创建所有分表', async () => {
-      try {
-        await shardingService.createAllShardTables();
-        console.log('✅ 所有分表创建成功');
-      } catch (error) {
-        console.log('⚠️ 分表创建失败（可能已存在）:', error.message);
-      }
+  describe('getExecutionStats', () => {
+    it('should return execution statistics', async () => {
+      const filters = { agentType: 'BasicDataAgent' };
+      const mockStats = {
+        totalExecutions: 100,
+        successRate: 0.95,
+        avgExecutionTime: 1500,
+        tokenUsage: {
+          totalInputTokens: 10000,
+          totalOutputTokens: 5000,
+          totalTokens: 15000,
+        },
+        byAgentType: {},
+        byLLMModel: {},
+        byDate: {},
+      };
+
+      mockExecutionRecordService.getStats.mockResolvedValue(mockStats);
+
+      const result = await service.getExecutionStats(filters);
+
+      expect(executionRecordService.getStats).toHaveBeenCalledWith(filters);
+      expect(result.data).toEqual(mockStats);
+    });
+  });
+
+  describe('getPopularAgents', () => {
+    it('should return popular agents statistics', async () => {
+      const mockStats = {
+        totalExecutions: 100,
+        successRate: 0.95,
+        avgExecutionTime: 1500,
+        tokenUsage: {
+          totalInputTokens: 10000,
+          totalOutputTokens: 5000,
+          totalTokens: 15000,
+        },
+        byAgentType: {
+          'BasicDataAgent': { count: 50, successRate: 0.98, avgExecutionTime: 1200, totalTokens: 7500 },
+          'TechnicalAnalystAgent': { count: 30, successRate: 0.90, avgExecutionTime: 1800, totalTokens: 4500 },
+        },
+        byLLMModel: {},
+        byDate: {},
+      };
+
+      mockExecutionRecordService.getStats.mockResolvedValue(mockStats);
+
+      const result = await service.getPopularAgents();
+
+      expect(result.data.popularAgents).toHaveLength(2);
+      expect(result.data.popularAgents[0].agentType).toBe('BasicDataAgent');
+      expect(result.data.totalExecutions).toBe(100);
+    });
+  });
+
+  describe('getTokenUsageStats', () => {
+    it('should return token usage statistics', async () => {
+      const mockStats = {
+        totalExecutions: 100,
+        successRate: 0.95,
+        avgExecutionTime: 1500,
+        tokenUsage: {
+          totalInputTokens: 10000,
+          totalOutputTokens: 5000,
+          totalTokens: 15000,
+        },
+        byAgentType: {},
+        byLLMModel: {
+          'qwen-plus': { count: 60, successRate: 0.95, totalTokens: 9000 },
+          'qwen-turbo': { count: 40, successRate: 0.95, totalTokens: 6000 },
+        },
+        byDate: {
+          '2023-01-01': 10,
+          '2023-01-02': 15,
+        },
+      };
+
+      mockExecutionRecordService.getStats.mockResolvedValue(mockStats);
+
+      const result = await service.getTokenUsageStats();
+
+      expect(result.data.totalTokens).toBe(15000);
+      expect(result.data.avgTokensPerCall).toBe(150);
+      expect(result.data.byLLMModel).toEqual(mockStats.byLLMModel);
+      expect(result.data.dailyUsage).toEqual(mockStats.byDate);
     });
   });
 });

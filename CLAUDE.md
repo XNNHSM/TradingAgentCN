@@ -204,6 +204,31 @@ const result = await this.mcpClient.callTool('get_stock_basic_info', {
 └── UnifiedOrchestratorAgent: 综合所有结果生成最终投资建议
 ```
 
+### LLM调用执行记录规范 ⭐
+
+**核心设计**: `AgentExecutionRecord` 统一存储所有LLM调用记录，不再按agent类型水平分表
+
+#### 记录内容要求
+- **调用追踪**: 记录完整的LLM调用链路和上下文信息
+- **成本监控**: 详细记录消耗的token数量（input/output/total）
+- **性能统计**: 记录调用耗时、成功/失败状态
+- **上下文保存**: 保存请求参数、响应结果供后续分析
+- **关联信息**: 建立与业务流程的关联关系
+
+#### 自动记录机制
+- **BaseAgent集成**: 所有继承自BaseAgent的智能体自动记录LLM调用
+- **透明化**: 业务逻辑无需关注记录过程，由基础设施层自动处理
+- **实时落盘**: 每次LLM调用完成后立即存储到数据库
+- **异常捕获**: 记录调用失败的错误信息和异常堆栈
+
+#### 核心字段规范
+- **会话追踪**: sessionId关联同一业务请求的多次LLM调用
+- **智能体标识**: agentType和agentName明确调用来源
+- **模型信息**: llmProvider和llmModel记录具体使用的LLM
+- **Token统计**: inputTokens/outputTokens/totalTokens精确记录消耗
+- **状态管理**: status字段追踪调用状态(pending/success/failed)
+- **元数据扩展**: metadata字段存储额外的业务上下文信息
+
 ## 🔧 开发规范
 
 ### 日期时间格式 ⭐
