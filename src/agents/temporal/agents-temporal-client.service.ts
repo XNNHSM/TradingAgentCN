@@ -9,14 +9,8 @@ import { WorkflowHandle } from '@temporalio/client';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { TemporalManager } from '../../common/temporal/temporal.manager';
 import { WorkflowStartOptions } from '../../common/temporal/interfaces/temporal-config.interface';
-import { stockAnalysisMCPWorkflow } from '../../workflows/orchestrators/stock-analysis-mcp.workflow';
-
-export interface StockAnalysisWorkflowInput {
-  stockCode: string;
-  stockName?: string;
-  sessionId: string;
-  metadata: Record<string, any>;
-}
+import { stockAnalysisWorkflow } from '../../workflows/orchestrators/stock-analysis.workflow';
+import type { StockAnalysisInput } from '../../workflows/orchestrators/stock-analysis.workflow';
 
 // 注意：不再支持批量分析，每次只处理一只股票
 
@@ -45,70 +39,6 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
   }
 
 
-  /**
-   * 启动股票分析工作流
-   * 使用新的Temporal统一封装架构
-   */
-  async startStockAnalysisWorkflow(input: StockAnalysisWorkflowInput): Promise<WorkflowHandle | null> {
-    try {
-      // 使用股票代码+当前日期作为workflowId，确保当天同一股票不重复执行
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD格式
-      const workflowId = `stock-analysis-${input.stockCode}-${today}`;
-
-      // 构建工作流启动选项
-      const workflowOptions: WorkflowStartOptions<StockAnalysisWorkflowInput> = {
-        workflowType: stockAnalysisMCPWorkflow,
-        taskQueue: 'stock-analysis',
-        workflowId,
-        args: [input],
-        timeout: this.configService.get('WORKFLOW_EXECUTION_TIMEOUT', '30m'),
-        retryPolicy: {
-          maximumAttempts: 3,
-          initialInterval: '1s',
-          maximumInterval: '60s',
-          backoffCoefficient: 2,
-        },
-      };
-
-      // 使用统一管理器启动工作流
-      const handle = await this.temporalManager.startWorkflow(workflowOptions);
-
-      this.logger.serviceInfo('股票分析工作流已启动', {
-        workflowId,
-        taskQueue: workflowOptions.taskQueue,
-        stockCode: input.stockCode,
-        analysisDate: today,
-      });
-
-      return handle;
-    } catch (error) {
-      // 如果是因为workflowId已存在导致的错误，尝试获取已存在的工作流
-      if (error.message && error.message.includes('WorkflowExecutionAlreadyStarted')) {
-        const today = new Date().toISOString().split('T')[0];
-        const workflowId = `stock-analysis-${input.stockCode}-${today}`;
-        
-        this.logger.serviceInfo('当天该股票的分析工作流已存在，返回已存在的句柄', {
-          workflowId,
-          stockCode: input.stockCode,
-        });
-        
-        try {
-          return await this.temporalManager.getWorkflowHandle(workflowId);
-        } catch (getHandleError) {
-          this.logger.serviceError('获取已存在的工作流句柄失败', getHandleError);
-          return null;
-        }
-      }
-      
-      this.logger.serviceError('启动股票分析工作流失败', error, {
-        stockCode: input.stockCode,
-      });
-      throw error;
-    }
-  }
-
-  // 注意：根据需求，不再支持批量分析工作流
-  // 每次只分析一只股票，并使用股票代码+日期保证唯一性
 
   /**
    * 获取工作流句柄
@@ -168,5 +98,71 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.logger.serviceInfo('智能体模块 Temporal 客户端服务正在关闭...');
     // TemporalManager 会处理连接关闭，这里不需要额外操作
+  }
+
+  /**
+   * 启动股票分析工作流
+   * 使用三阶段智能体工作流：数据收集 -> 专业分析 -> 决策整合
+   */
+  async startStockAnalysisWorkflow(input: StockAnalysisInput): Promise<WorkflowHandle | null> {
+    try {
+      // 使用股票代码+当前日期作为workflowId
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD格式
+      const workflowId = `stock-analysis-${input.stockCode}-${today}`;
+
+      // 构建工作流启动选项
+      const workflowOptions: WorkflowStartOptions<StockAnalysisInput> = {
+        workflowType: stockAnalysisWorkflow,
+        taskQueue: 'stock-analysis',
+        workflowId,
+        args: [input],
+        timeout: this.configService.get('WORKFLOW_EXECUTION_TIMEOUT', '45m'), // 工作流需要更长时间
+        retryPolicy: {
+          maximumAttempts: 2, // 减少重试次数，因为智能体分析更复杂
+          initialInterval: '2s',
+          maximumInterval: '120s',
+          backoffCoefficient: 2,
+        },
+      };
+
+      // 使用统一管理器启动工作流
+      const handle = await this.temporalManager.startWorkflow(workflowOptions);
+
+      this.logger.serviceInfo('股票分析工作流已启动', {
+        workflowId,
+        taskQueue: workflowOptions.taskQueue,
+        stockCode: input.stockCode,
+        analysisDate: today,
+        analysisType: 'comprehensive',
+      });
+
+      return handle;
+    } catch (error) {
+      // 如果是因为workflowId已存在导致的错误，尝试获取已存在的工作流
+      if (error.message && error.message.includes('WorkflowExecutionAlreadyStarted')) {
+        const today = new Date().toISOString().split('T')[0];
+        const workflowId = `stock-analysis-${input.stockCode}-${today}`;
+        
+        this.logger.serviceInfo('当天该股票的分析工作流已存在，返回已存在的句柄', {
+          workflowId,
+          stockCode: input.stockCode,
+        });
+
+        try {
+          // 获取已存在的工作流句柄
+          const existingHandle = await this.temporalManager.getWorkflowHandle(workflowId);
+          return existingHandle;
+        } catch (getError) {
+          this.logger.serviceError('获取已存在的工作流句柄失败', getError);
+          throw getError;
+        }
+      }
+
+      this.logger.serviceError('启动股票分析工作流失败', error, {
+        stockCode: input.stockCode,
+        sessionId: input.sessionId,
+      });
+      throw error;
+    }
   }
 }

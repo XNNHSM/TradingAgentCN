@@ -24,7 +24,7 @@ export class AnalysisService {
   ) {}
 
   /**
-   * 创建股票分析任务 - 基于MCP统一智能体架构
+   * 创建股票分析任务 - 基于三阶段智能体工作流
    * 启动工作流后立即返回，不等待工作流完成
    */
   async createAnalysis(
@@ -41,25 +41,127 @@ export class AnalysisService {
         stockCode: dto.stockCode,
         stockName: dto.stockName,
         sessionId,
-        metadata: dto.metadata || {},
+        metadata: {
+          ...dto.metadata,
+          analysisType: 'comprehensive',
+          requestedAt: new Date().toISOString(),
+        },
       });
       
       if (!workflowHandle) {
         throw new Error('无法启动股票分析工作流');
       }
+
+      // 保存分析记录到数据库
+      await this.saveAnalysisRecord({
+        workflowId: workflowHandle.workflowId,
+        sessionId,
+        stockCode: dto.stockCode,
+        stockName: dto.stockName,
+        analysisType: 'comprehensive',
+        status: 'success',
+      });
       
       const result = {
         workflowId: workflowHandle.workflowId,
         sessionId,
-        message: `股票 ${dto.stockCode} 的分析工作流已启动，正在后台执行分析`
+        message: `股票 ${dto.stockCode} 的分析工作流已启动，正在执行三阶段智能体分析`
       };
 
-      this.logger.log(`股票分析工作流已启动: ${workflowHandle.workflowId}`);
+      this.logger.log(`分析工作流已启动: ${workflowHandle.workflowId}`);
       
       return Result.success(result, "分析工作流已启动");
     } catch (error) {
       this.logger.error(`创建分析任务失败: ${error.message}`, error.stack);
       throw new BadRequestException(`创建分析任务失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 创建股票分析任务 - 基于三阶段智能体工作流
+   * 启动工作流后立即返回，不等待工作流完成
+   */
+  async createEnhancedAnalysis(
+    dto: CreateAnalysisDto,
+  ): Promise<Result<{ workflowId: string; sessionId: string; message: string; analysisType: string }>> {
+    this.logger.log(`开始分析股票: ${dto.stockCode}`);
+
+    try {
+      // 生成会话ID
+      const sessionId = `analysis_session_${Date.now()}`;
+      
+      // 使用Temporal工作流执行分析
+      const workflowHandle = await this.agentsTemporalClient.startStockAnalysisWorkflow({
+        stockCode: dto.stockCode,
+        stockName: dto.stockName,
+        sessionId,
+        metadata: {
+          ...dto.metadata,
+          analysisType: 'comprehensive',
+          requestedAt: new Date().toISOString(),
+        },
+      });
+      
+      if (!workflowHandle) {
+        throw new Error('无法启动股票分析工作流');
+      }
+
+      // 保存分析记录到数据库
+      await this.saveAnalysisRecord({
+        workflowId: workflowHandle.workflowId,
+        sessionId,
+        stockCode: dto.stockCode,
+        stockName: dto.stockName,
+        analysisType: 'comprehensive',
+        status: 'success',
+      });
+
+      const result = {
+        workflowId: workflowHandle.workflowId,
+        sessionId,
+        analysisType: 'comprehensive',
+        message: `股票 ${dto.stockCode} 的分析工作流已启动，正在执行三阶段智能体分析`,
+      };
+
+      this.logger.log(`分析工作流已启动: ${workflowHandle.workflowId}`);
+      return Result.success(result, "分析工作流已启动");
+    } catch (error) {
+      this.logger.error(`创建增强版分析任务失败: ${error.message}`, error.stack);
+      throw new BadRequestException(`创建增强版分析任务失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 保存分析记录
+   */
+  private async saveAnalysisRecord(data: {
+    workflowId: string;
+    sessionId: string;
+    stockCode: string;
+    stockName?: string;
+    analysisType: string;
+    status: "success" | "partial" | "failed";
+  }): Promise<void> {
+    try {
+      const record = this.analysisRepository.create({
+        workflowId: data.workflowId,
+        sessionId: data.sessionId,
+        stockCode: data.stockCode,
+        stockName: data.stockName,
+        analysisType: data.analysisType,
+        status: data.status,
+        startTime: new Date(),
+        metadata: {
+          createdBy: 'analysis_service',
+          version: '2.0.0',
+        },
+      });
+      
+      await this.analysisRepository.save(record);
+      this.logger.debug(`分析记录已保存: ${data.workflowId}`);
+    } catch (error) {
+      this.logger.warn(`保存分析记录失败: ${error.message}`);
+      // 不影响主流程
     }
   }
 

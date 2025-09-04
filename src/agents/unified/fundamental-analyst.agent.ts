@@ -16,8 +16,8 @@ import { BusinessLogger } from '../../common/utils/business-logger.util';
 
 /**
  * 基本面分析智能体
- * 专门负责 get_stock_financial_data MCP 服务
- * 按需调用原则: 只有这个智能体可以调用财务数据相关的 MCP 服务
+ * 专门负责分析财务数据，并支持多种专业分析模式
+ * 支持模式：基本面分析、行业分析、竞争分析、估值分析
  */
 @Injectable()
 export class FundamentalAnalystAgent extends BaseAgent {
@@ -26,8 +26,7 @@ export class FundamentalAnalystAgent extends BaseAgent {
   constructor(
     protected readonly llmService: LLMService,
     protected readonly configService: ConfigService,
-    protected readonly executionRecordService: AgentExecutionRecordService,
-    protected readonly mcpClientService: MCPClientService,
+    protected readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
@@ -106,7 +105,7 @@ export class FundamentalAnalystAgent extends BaseAgent {
 
   /**
    * 执行基本面分析
-   * 按需调用 get_stock_financial_data
+   * 基于从Activities传入的数据进行分析，支持多种分析类型
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = Date.now();
@@ -117,11 +116,38 @@ export class FundamentalAnalystAgent extends BaseAgent {
         `开始基本面分析股票 ${context.stockCode}`
       );
 
-      // 按需调用 MCP 服务 - 只调用财务数据相关的服务
-      const financialData = await this.getFinancialData(context.stockCode);
+      // 从context中获取数据（由Activities提供）
+      const mcpData = context.metadata?.mcpData;
+      const analysisData = context.metadata?.analysisData;
+      const analysisType = context.metadata?.analysisType || 'fundamental_analysis';
+      
+      let financialData, basicInfo, marketOverview, realtimeData, stage1Analysis;
+      
+      if (analysisType === 'fundamental_analysis' && mcpData) {
+        // 第一阶段：基本面分析模式
+        financialData = mcpData.financialData;
+      } else if (analysisData) {
+        // 第二阶段：专业分析模式
+        financialData = analysisData.financialData;
+        basicInfo = analysisData.basicInfo;
+        marketOverview = analysisData.marketOverview;
+        realtimeData = analysisData.realtimeData;
+        stage1Analysis = analysisData.stage1Analysis;
+      }
+
+      if (!financialData && !analysisData) {
+        throw new Error('财务数据或分析数据均未提供');
+      }
 
       // 构建分析提示词
-      const analysisPrompt = this.buildAnalysisPrompt(context, financialData);
+      const analysisPrompt = this.buildAnalysisPrompt(context, {
+        financialData,
+        basicInfo,
+        marketOverview,
+        realtimeData,
+        stage1Analysis,
+        analysisType,
+      });
 
       // 调用 LLM 进行基本面分析
       const analysisResult = await this.llmService.generate(analysisPrompt, {
@@ -147,7 +173,8 @@ export class FundamentalAnalystAgent extends BaseAgent {
         keyInsights: this.extractFundamentalInsights(analysisResult),
         risks: this.identifyFundamentalRisks(analysisResult),
         supportingData: {
-          mcpServices: ["get_stock_financial_data"],
+          analysisType,
+          dataSource: 'mcp_activities',
           financialMetrics: this.extractKeyMetrics(financialData),
           valuationLevels: this.extractValuationLevels(analysisResult),
           profitabilityAnalysis: this.extractProfitabilityAnalysis(financialData),
@@ -160,13 +187,13 @@ export class FundamentalAnalystAgent extends BaseAgent {
 
       this.status = AgentStatus.COMPLETED;
       this.businessLogger.serviceInfo(
-        `基本面分析完成，评分: ${score}，建议: ${recommendation}，耗时 ${processingTime}ms`
+        `${analysisType}分析完成，评分: ${score}，建议: ${recommendation}，耗时 ${processingTime}ms`
       );
 
       return result;
     } catch (error) {
       this.status = AgentStatus.ERROR;
-      this.businessLogger.serviceError("基本面分析失败", error);
+      this.businessLogger.businessError(`${context.metadata?.analysisType || '基本面'}分析失败`, error);
       throw error;
     }
   }
@@ -180,26 +207,11 @@ export class FundamentalAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 获取财务数据 (MCP调用)
-   */
-  private async getFinancialData(stockCode: string): Promise<any> {
-    try {
-      this.businessLogger.serviceInfo(`获取 ${stockCode} 财务数据`);
-      const result = await this.mcpClientService.callTool('get_stock_financial_data', { 
-        stock_code: stockCode
-      });
-      return result;
-    } catch (error) {
-      this.businessLogger.serviceError(`获取 ${stockCode} 财务数据失败`, error);
-      return null;
-    }
-  }
-
-  /**
    * 构建基本面分析提示词
    */
-  private buildAnalysisPrompt(context: AgentContext, financialData: any): string {
+  private buildAnalysisPrompt(context: AgentContext, data: any): string {
     const { stockCode, stockName } = context;
+    const { financialData, basicInfo, marketOverview, realtimeData, stage1Analysis, analysisType } = data;
     
     let prompt = `请对股票 ${stockCode}`;
     if (stockName) {

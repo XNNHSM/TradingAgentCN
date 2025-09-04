@@ -11,6 +11,9 @@ import { TemporalManager } from '../../common/temporal/temporal.manager';
 import { WorkerCreateOptions } from '../../common/temporal/interfaces/temporal-config.interface';
 import { createActivities } from '../../workflows/temporal/worker';
 import { NewsSummaryService } from '../../modules/news/services/news-summary.service';
+import { LLMService } from '../services/llm.service';
+import { MCPClientService } from '../services/mcp-client.service';
+import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
 
 @Injectable()
 export class AgentsWorkerService implements OnModuleDestroy {
@@ -22,6 +25,9 @@ export class AgentsWorkerService implements OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly temporalManager: TemporalManager,
     private readonly newsSummaryService: NewsSummaryService,
+    private readonly llmService: LLMService,
+    private readonly mcpClientService: MCPClientService,
+    private readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
   }
@@ -32,13 +38,19 @@ export class AgentsWorkerService implements OnModuleDestroy {
    */
   async startWorkers(): Promise<void> {
     try {
-      // 创建所有活动实现（包括MCP和政策分析活动）
-      const activities = createActivities(this.configService, this.newsSummaryService);
+      // 创建所有活动实现（包括MCP、政策分析和智能体分析活动）
+      const activities = createActivities(
+        this.configService, 
+        this.llmService, 
+        this.mcpClientService,
+        this.executionRecordService, 
+        this.newsSummaryService
+      );
 
-      // 定义Worker配置
+      // 定义Worker配置 - 直接指向股票分析工作流
       const workerOptions: WorkerCreateOptions = {
         taskQueue: 'stock-analysis',
-        workflowsPath: require.resolve('../../workflows/orchestrators/stock-analysis-mcp.workflow'),
+        workflowsPath: require.resolve(__dirname + '/../../workflows/orchestrators/stock-analysis.workflow'),
         activities,
         options: {
           maxConcurrentActivities: 10,

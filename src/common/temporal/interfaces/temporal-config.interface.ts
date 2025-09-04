@@ -90,7 +90,7 @@ export interface ChildWorkflowOptions<T = any> {
  */
 export interface WorkerCreateOptions {
   taskQueue: string;                     // 任务队列名称
-  workflowsPath?: string;               // 工作流文件路径
+  workflowsPath?: string | string[];    // 工作流文件路径，支持多个文件
   activities?: any; // Activity实现 (支持各种类型)
   options?: {
     maxConcurrentActivities?: number;    // 最大并发Activity数量

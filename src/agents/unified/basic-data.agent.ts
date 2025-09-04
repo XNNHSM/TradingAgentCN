@@ -15,8 +15,8 @@ import { BusinessLogger } from '../../common/utils/business-logger.util';
 
 /**
  * 基础数据智能体
- * 专门负责 get_stock_basic_info 和 get_stock_realtime_data 两个 MCP 服务
- * 按需调用原则: 只有这个智能体可以调用基础股票信息相关的 MCP 服务
+ * 专门负责分析来自Activities传递的基础股票信息和实时数据
+ * 按需调用原则: 只有这个智能体负责基础股票信息相关的分析
  */
 @Injectable()
 export class BasicDataAgent extends BaseAgent {
@@ -25,8 +25,7 @@ export class BasicDataAgent extends BaseAgent {
   constructor(
     protected readonly llmService: LLMService,
     protected readonly configService: ConfigService,
-    protected readonly executionRecordService: AgentExecutionRecordService,
-    protected readonly mcpClientService: MCPClientService,
+    protected readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
@@ -85,7 +84,7 @@ export class BasicDataAgent extends BaseAgent {
 
   /**
    * 执行基础数据分析
-   * 按需调用 get_stock_basic_info 和 get_stock_realtime_data
+   * 基于从Activities传入的MCP数据进行分析，而不是自己调用MCP服务
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = Date.now();
@@ -93,12 +92,17 @@ export class BasicDataAgent extends BaseAgent {
 
     try {
       this.businessLogger.serviceInfo(
-        `开始获取股票 ${context.stockCode} 的基础数据`
+        `开始分析股票 ${context.stockCode} 的基础数据`
       );
 
-      // 按需调用 MCP 服务 - 只调用基础数据相关的服务
-      const basicInfo = await this.getBasicInfo(context.stockCode);
-      const realtimeData = await this.getRealtimeData(context.stockCode);
+      // 从context中获取MCP数据（由Activities提供）
+      const mcpData = context.metadata?.mcpData;
+      const basicInfo = mcpData?.basicInfo;
+      const realtimeData = mcpData?.realtimeData;
+
+      if (!basicInfo && !realtimeData) {
+        throw new Error('基础数据和实时数据均未提供');
+      }
 
       // 构建分析提示词
       const analysisPrompt = this.buildAnalysisPrompt(context, basicInfo, realtimeData);
@@ -113,15 +117,22 @@ export class BasicDataAgent extends BaseAgent {
 
       const processingTime = Date.now() - startTime;
 
+      // 从分析结果中提取评分和建议
+      const score = this.extractScore(analysisResult);
+      const recommendation = this.extractRecommendation(analysisResult);
+
       const result: AgentResult = {
         agentName: this.name,
         agentType: this.type,
         analysis: analysisResult,
+        score,
+        recommendation,
         confidence: this.calculateConfidence(basicInfo, realtimeData),
         keyInsights: this.extractBasicInsights(analysisResult),
         risks: this.identifyRisks(analysisResult),
         supportingData: {
-          mcpServices: ["get_stock_basic_info", "get_stock_realtime_data"],
+          analysisType: 'basic_data_analysis',
+          dataSource: 'mcp_activities',
           basicInfo,
           realtimeData,
           dataQuality: this.assessDataQuality(basicInfo, realtimeData),
@@ -133,13 +144,13 @@ export class BasicDataAgent extends BaseAgent {
 
       this.status = AgentStatus.COMPLETED;
       this.businessLogger.serviceInfo(
-        `基础数据分析完成，耗时 ${processingTime}ms`
+        `基础数据分析完成，耗时 ${processingTime}ms，评分: ${score}`
       );
 
       return result;
     } catch (error) {
       this.status = AgentStatus.ERROR;
-      this.businessLogger.serviceError("基础数据分析失败", error);
+      this.businessLogger.businessError("基础数据分析失败", error);
       throw error;
     }
   }
@@ -150,38 +161,6 @@ export class BasicDataAgent extends BaseAgent {
   protected async buildPrompt(context: AgentContext): Promise<string> {
     // 这个方法在 analyze 中通过 buildAnalysisPrompt 实现
     return `请分析股票 ${context.stockCode} 的基础数据。`;
-  }
-
-  /**
-   * 获取股票基本信息 (MCP调用)
-   */
-  private async getBasicInfo(stockCode: string): Promise<any> {
-    try {
-      this.businessLogger.serviceInfo(`获取 ${stockCode} 基本信息`);
-      const result = await this.mcpClientService.callTool('get_stock_basic_info', { 
-        stock_code: stockCode 
-      });
-      return result;
-    } catch (error) {
-      this.businessLogger.serviceError(`获取 ${stockCode} 基本信息失败`, error);
-      return null;
-    }
-  }
-
-  /**
-   * 获取实时数据 (MCP调用)
-   */
-  private async getRealtimeData(stockCode: string): Promise<any> {
-    try {
-      this.businessLogger.serviceInfo(`获取 ${stockCode} 实时数据`);
-      const result = await this.mcpClientService.callTool('get_stock_realtime_data', { 
-        stock_code: stockCode 
-      });
-      return result;
-    } catch (error) {
-      this.businessLogger.serviceError(`获取 ${stockCode} 实时数据失败`, error);
-      return null;
-    }
   }
 
   /**

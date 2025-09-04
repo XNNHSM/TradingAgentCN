@@ -16,8 +16,8 @@ import { BusinessLogger } from '../../common/utils/business-logger.util';
 
 /**
  * 技术分析智能体
- * 专门负责 get_stock_historical_data 和 get_stock_technical_indicators 两个 MCP 服务
- * 按需调用原则: 只有这个智能体可以调用技术分析相关的 MCP 服务
+ * 专门负责分析来自Activities传递的历史数据和技术指标
+ * 按需调用原则: 只有这个智能体负责技术分析相关的分析
  */
 @Injectable()
 export class TechnicalAnalystAgent extends BaseAgent {
@@ -26,8 +26,7 @@ export class TechnicalAnalystAgent extends BaseAgent {
   constructor(
     protected readonly llmService: LLMService,
     protected readonly configService: ConfigService,
-    protected readonly executionRecordService: AgentExecutionRecordService,
-    protected readonly mcpClientService: MCPClientService,
+    protected readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(
@@ -107,7 +106,7 @@ export class TechnicalAnalystAgent extends BaseAgent {
 
   /**
    * 执行技术分析
-   * 按需调用 get_stock_historical_data 和 get_stock_technical_indicators
+   * 基于从Activities传入的历史数据和技术指标进行分析
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = Date.now();
@@ -118,9 +117,26 @@ export class TechnicalAnalystAgent extends BaseAgent {
         `开始技术分析股票 ${context.stockCode}`
       );
 
-      // 按需调用 MCP 服务 - 只调用技术分析相关的服务
-      const historicalData = await this.getHistoricalData(context.stockCode);
-      const technicalIndicators = await this.getTechnicalIndicators(context.stockCode);
+      // 从context中获取MCP数据（由Activities提供）
+      const mcpData = context.metadata?.mcpData;
+      const analysisData = context.metadata?.analysisData;
+      
+      // 根据分析类型获取相应数据
+      let historicalData, technicalIndicators;
+      
+      if (context.metadata?.analysisType === 'risk_analysis' && analysisData) {
+        // 风险分析模式：使用所有MCP数据
+        historicalData = analysisData.allMcpData?.historicalData;
+        technicalIndicators = analysisData.allMcpData?.technicalIndicators;
+      } else if (mcpData) {
+        // 技术分析模式：使用专门的技术数据
+        historicalData = mcpData.historicalData;
+        technicalIndicators = mcpData.technicalIndicators;
+      }
+
+      if (!historicalData && !technicalIndicators) {
+        throw new Error('历史数据和技术指标均未提供');
+      }
 
       // 构建分析提示词
       const analysisPrompt = this.buildAnalysisPrompt(context, historicalData, technicalIndicators);
@@ -149,7 +165,8 @@ export class TechnicalAnalystAgent extends BaseAgent {
         keyInsights: this.extractTechnicalInsights(analysisResult),
         risks: this.identifyTechnicalRisks(analysisResult),
         supportingData: {
-          mcpServices: ["get_stock_historical_data", "get_stock_technical_indicators"],
+          analysisType: context.metadata?.analysisType || 'technical_analysis',
+          dataSource: 'mcp_activities',
           historicalDataPeriod: this.getDataPeriod(historicalData),
           technicalIndicators: this.extractIndicatorSummary(technicalIndicators),
           keyLevels: this.extractKeyLevels(analysisResult),
@@ -179,40 +196,6 @@ export class TechnicalAnalystAgent extends BaseAgent {
   protected async buildPrompt(context: AgentContext): Promise<string> {
     // 这个方法在 analyze 中通过 buildAnalysisPrompt 实现
     return `请对股票 ${context.stockCode} 进行技术分析。`;
-  }
-
-  /**
-   * 获取历史数据 (MCP调用)
-   */
-  private async getHistoricalData(stockCode: string): Promise<any> {
-    try {
-      this.businessLogger.serviceInfo(`获取 ${stockCode} 历史数据`);
-      const result = await this.mcpClientService.callTool('get_stock_historical_data', { 
-        stock_code: stockCode,
-        period: "1d", // 日线数据
-        count: 60 // 获取60个交易日数据
-      });
-      return result;
-    } catch (error) {
-      this.businessLogger.serviceError(`获取 ${stockCode} 历史数据失败`, error);
-      return null;
-    }
-  }
-
-  /**
-   * 获取技术指标 (MCP调用)
-   */
-  private async getTechnicalIndicators(stockCode: string): Promise<any> {
-    try {
-      this.businessLogger.serviceInfo(`获取 ${stockCode} 技术指标`);
-      const result = await this.mcpClientService.callTool('get_stock_technical_indicators', { 
-        stock_code: stockCode
-      });
-      return result;
-    } catch (error) {
-      this.businessLogger.serviceError(`获取 ${stockCode} 技术指标失败`, error);
-      return null;
-    }
   }
 
   /**

@@ -121,7 +121,10 @@ export class AgentsModule {
       // 启动智能体模块专属的Temporal Workers
       await this.agentsWorkerService.startWorkers();
     } catch (error) {
-      console.warn('模块初始化部分失败，将在使用时重试:', error.message);
+      console.error('模块初始化失败:', error.message);
+      console.error('错误堆栈:', error.stack);
+      // 重新抛出错误以确保问题被注意到
+      throw error;
     }
   }
 

@@ -11,6 +11,22 @@ import { TradingRecommendation } from "../../../agents/interfaces/agent.interfac
 export class AnalysisRecord extends BaseEntity {
   @Column({
     type: "varchar",
+    length: 200,
+    nullable: true,
+    comment: "工作流ID",
+  })
+  workflowId?: string;
+
+  @Column({
+    type: "varchar",
+    length: 200,
+    nullable: true,
+    comment: "会话ID",
+  })
+  sessionId?: string;
+
+  @Column({
+    type: "varchar",
     length: 10,
     comment: "股票代码",
   })
@@ -25,12 +41,12 @@ export class AnalysisRecord extends BaseEntity {
   stockName?: string;
 
   @Column({
-    type: "enum",
-    enum: ["full", "quick"],
+    type: "varchar",
+    length: 50,
     default: "full",
     comment: "分析类型",
   })
-  analysisType: "full" | "quick";
+  analysisType: string;
 
   @Column({
     type: "json",
@@ -83,6 +99,13 @@ export class AnalysisRecord extends BaseEntity {
     comment: "主要风险",
   })
   majorRisks?: string[];
+
+  @Column({
+    type: "timestamp",
+    nullable: true,
+    comment: "开始时间",
+  })
+  startTime?: Date;
 
   @Column({
     type: "int",

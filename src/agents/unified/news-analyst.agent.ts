@@ -26,8 +26,8 @@ export class NewsAnalystAgent extends BaseAgent {
   constructor(
     protected readonly llmService: LLMService,
     protected readonly configService: ConfigService,
-    protected readonly executionRecordService: AgentExecutionRecordService,
     protected readonly mcpClientService: MCPClientService,
+    protected readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     const config: Partial<AgentConfig> = {
       model: configService.get<string>(

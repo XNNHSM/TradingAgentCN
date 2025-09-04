@@ -21,12 +21,12 @@ export class AnalysisController {
   constructor(private readonly analysisService: AnalysisService) {}
 
   /**
-   * 股票分析接口 - 根据股票代码启动分析工作流
+   * 股票分析接口 - 根据股票代码启动增强版分析工作流
    */
   @Post("analyze")
   @ApiOperation({
     summary: "股票分析",
-    description: "根据股票代码启动MCP统一智能体分析工作流，立即返回工作流信息，分析在后台执行",
+    description: "根据股票代码启动三阶段智能体分析工作流（数据收集 -> 专业分析 -> 决策整合），立即返回工作流信息，分析在后台执行",
   })
   @ApiResponse({
     status: 201,
@@ -40,7 +40,7 @@ export class AnalysisController {
           properties: {
             workflowId: { type: 'string', example: 'stock-analysis-000001-2024-08-26' },
             sessionId: { type: 'string', example: 'analysis_session_1724654321000' },
-            message: { type: 'string', example: '股票 000001 的分析工作流已启动，正在后台执行分析' }
+            message: { type: 'string', example: '股票 000001 的增强版分析工作流已启动，正在执行三阶段智能体分析' }
           }
         },
         message: { type: 'string', example: '分析工作流已启动' },
@@ -58,5 +58,44 @@ export class AnalysisController {
       stockName: body.stockName,
     };
     return await this.analysisService.createAnalysis(dto);
+  }
+
+  /**
+   * 股票分析接口 - 使用三阶段智能体工作流
+   */
+  @Post("analyze-enhanced")
+  @ApiOperation({
+    summary: "股票分析",
+    description: "使用三阶段智能体工作流进行股票分析：数据收集 -> 专业分析 -> 决策整合",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "分析工作流已启动",
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'number', example: 0 },
+        data: {
+          type: 'object',
+          properties: {
+            workflowId: { type: 'string', example: 'stock-analysis-000001-2024-08-26' },
+            sessionId: { type: 'string', example: 'analysis_session_1724654321000' },
+            message: { type: 'string', example: '股票 000001 的分析工作流已启动' },
+            analysisType: { type: 'string', example: 'comprehensive' }
+          }
+        },
+        message: { type: 'string', example: '分析工作流已启动' },
+        timestamp: { type: 'string', example: '2024-08-26T10:30:00.000Z' }
+      }
+    }
+  })
+  async analyzeStockEnhanced(
+    @Body() body: { stockCode: string; stockName?: string },
+  ): Promise<Result<{ workflowId: string; sessionId: string; message: string; analysisType: string }>> {
+    const dto: CreateAnalysisDto = {
+      stockCode: body.stockCode,
+      stockName: body.stockName,
+    };
+    return await this.analysisService.createEnhancedAnalysis(dto);
   }
 }
