@@ -1,14 +1,14 @@
 # TradingAgentCN
 
-基于大语言模型(LLM)和阿里云百炼MCP协议的智能交易决策系统，专门针对中国A股市场设计。通过统一智能体架构、实时数据采集、情绪分析和技术指标分析，为投资者提供专业的交易建议和风险评估。
+基于大语言模型(LLM)和阿里云百炼MCP协议的智能交易决策系统，专门针对中国A股市场设计。通过三阶段增强版工作流、9个专业智能体协同分析、实时数据采集和多维度智能分析，为投资者提供专业的交易建议和风险评估。
 
 ## 🎯 核心价值
 
-- **智能化决策**: 基于MCP协议的统一智能体决策引擎
-- **全景分析**: 技术面、基本面、新闻情绪三维度综合分析
-- **架构简化**: 从8个智能体简化为2个核心智能体，降低75%复杂度
-- **数据统一**: 基于阿里云百炼MCP协议的统一数据获取接口
-- **实时响应**: 支持定时任务和手动触发的灵活决策模式
+- **三阶段智能工作流**: 数据收集 → 专业分析 → 决策整合的完整分析链路
+- **9个专业智能体**: 按需调用，严格遵循股票分析8步标准流程
+- **全景深度分析**: 基本面、技术面、行业环境、竞争优势、估值、风险6大维度
+- **MCP+LLM双引擎**: MCP数据获取 + LLM智能分析的完美结合
+- **成本可控**: 按需调用原则，避免重复MCP调用，智能成本管理
 
 ## 🏗️ 技术架构
 
@@ -21,31 +21,44 @@
 - **工作流引擎**: Temporal - 分布式工作流协调和状态管理
 - **部署**: Docker 容器化
 
-### 新一代MCP + Temporal架构设计
+### 增强版三阶段工作流架构
 ```
-API接口层 → NestJS服务层 → Temporal工作流引擎 → 统一智能体框架 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
+API接口层 → NestJS服务层 → Temporal工作流引擎 → 三阶段智能体工作流 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
+
+三阶段工作流详细架构：
+第一阶段：数据收集 (MCP+LLM) → 第二阶段：专业分析 (纯LLM) → 第三阶段：决策整合 (纯LLM)
 ```
 
-### 智能体架构 (重构后)
+### 三阶段9智能体架构 (增强版)
 ```
-统一智能体系统/
-├── 综合分析师 (ComprehensiveAnalyst)
-│   └── 集成技术分析 + 基本面分析 + 新闻分析
-├── 交易策略师 (TradingStrategist) 
-│   └── 集成多空分析 + 交易决策 + 风险管控
-└── 统一协调服务 (UnifiedOrchestrator)
-    └── MCP协议数据获取 + 智能体协调 + 决策生成
+第一阶段：数据收集阶段
+├── BasicDataAgent          # 基础信息+实时数据 (MCP+LLM)
+├── TechnicalAnalystAgent   # 历史+技术指标 (MCP+LLM)
+├── FundamentalAnalystAgent # 财务数据 (MCP+LLM)
+└── NewsAnalystAgent        # 新闻数据 (MCP+LLM)
+
+第二阶段：专业分析阶段 (纯LLM)
+├── IndustryAnalystAgent    # 行业环境分析
+├── CompetitiveAnalystAgent # 竞争优势分析
+├── ValuationAnalystAgent   # 估值水平分析
+└── RiskAnalystAgent        # 风险因素分析
+
+第三阶段：决策整合阶段 (纯LLM)
+└── UnifiedOrchestratorAgent # 综合决策生成
 ```
 
-### MCP数据工具 (8个核心工具)
-- `get_stock_basic_info` - 获取股票基本信息
-- `get_stock_realtime_data` - 获取实时行情数据  
-- `get_stock_historical_data` - 获取历史价格数据
-- `get_stock_technical_indicators` - 获取技术指标
-- `get_stock_financial_data` - 获取财务数据
-- `get_market_overview` - 获取市场概览
-- `search_stocks` - 搜索股票
-- `get_stock_news` - 获取相关新闻
+### 股票分析8步标准流程映射
+
+| 分析步骤 | 对应智能体 | MCP工具调用 | LLM分析内容 |
+|---------|-----------|-------------|------------|
+| 1. 股票基础信息 | BasicDataAgent | get_stock_basic_info, get_stock_realtime_data | 公司概况、市值分析 |
+| 2. 基本面数据 | FundamentalAnalystAgent | get_stock_financial_data | 财务健康度、盈利能力 |
+| 3. 行业环境 | IndustryAnalystAgent | 无 (基于已有数据) | 行业前景、政策影响 |
+| 4. 竞争优势 | CompetitiveAnalystAgent | 无 (基于已有数据) | 护城河、市场地位 |
+| 5. 市场情绪 | TechnicalAnalystAgent + NewsAnalystAgent | get_stock_historical_data, get_stock_technical_indicators, get_stock_news | 技术走势、资金流向、新闻情绪 |
+| 6. 估值水平 | ValuationAnalystAgent | 无 (基于已有数据) | PE/PB分析、估值合理性 |
+| 7. 风险因素 | RiskAnalystAgent | 无 (基于已有数据) | 风险识别、风险量化 |
+| 8. 综合判断 | UnifiedOrchestratorAgent | 无 (基于已有数据) | 投资建议、行动计划 |
 
 ## 🚀 快速开始
 
@@ -224,9 +237,58 @@ POST /api/v1/health/database
 POST /api/v1/health/redis
 ```
 
-### 智能体决策接口 (新增)
+### 智能体分析接口 (新增)
 
-#### 单个股票分析
+#### 增强版股票分析 (三阶段工作流)
+```http
+POST /api/v1/analysis/analyze-enhanced
+Content-Type: application/json
+
+{
+  "stockCode": "000001",
+  "stockName": "平安银行"
+}
+```
+
+**响应结构**:
+```json
+{
+  "code": 200,
+  "data": {
+    "stage1DataCollection": {
+      "basicDataAnalysis": "...",
+      "technicalAnalysis": "...", 
+      "fundamentalAnalysis": "...",
+      "newsAnalysis": "..."
+    },
+    "stage2ProfessionalAnalysis": {
+      "industryAnalysis": "...",
+      "competitiveAnalysis": "...",
+      "valuationAnalysis": "...",
+      "riskAnalysis": "..."
+    },
+    "stage3DecisionIntegration": {
+      "overallScore": 78,
+      "recommendation": "买入",
+      "confidence": 85,
+      "keyDecisionFactors": ["基本面良好", "行业前景乐观"],
+      "riskAssessment": ["市场波动风险"],
+      "actionPlan": "建议在回调时分批买入"
+    },
+    "mcpDataSummary": {
+      "basicInfo": {...},
+      "realtimeData": {...},
+      "historicalData": {...},
+      "technicalIndicators": {...},
+      "financialData": {...},
+      "marketOverview": {...},
+      "news": [{...}]
+    }
+  }
+}
+```
+
+#### 传统单阶段分析 (兼容)
 ```http
 POST /api/v1/agents/analyze-stock
 Content-Type: application/json
@@ -272,32 +334,42 @@ src/
 │   └── utils/       # 工具函数
 ├── config/          # 配置文件
 ├── modules/         # 业务模块
+│   ├── analysis/    # 股票分析模块 (增强版API)
 │   ├── watchlist/   # 自选股模块
 │   ├── health/      # 健康检查模块
 │   └── ...
-├── agents/          # 智能体模块 (MCP架构)
+├── agents/          # 智能体模块 (MCP+LLM架构)
 │   ├── services/    # MCP客户端服务
 │   │   ├── mcp-client.service.ts        # MCP协议客户端
 │   │   └── llm.service.ts              # LLM调用服务
-│   ├── unified/     # 统一智能体架构
-│   │   ├── comprehensive-analyst.agent.ts   # 综合分析师
-│   │   ├── trading-strategist.agent.ts      # 交易策略师  
-│   │   └── unified-orchestrator.service.ts # 统一协调服务
+│   ├── unified/     # 9个专业智能体架构
+│   │   ├── basic-data.agent.ts              # 基础数据智能体
+│   │   ├── technical-analyst.agent.ts       # 技术分析师
+│   │   ├── fundamental-analyst.agent.ts     # 基本面分析师
+│   │   ├── news-analyst.agent.ts            # 新闻分析师
+│   │   ├── industry-analyst.agent.ts        # 行业分析师
+│   │   ├── competitive-analyst.agent.ts     # 竞争分析师
+│   │   ├── valuation-analyst.agent.ts       # 估值分析师
+│   │   ├── risk-analyst.agent.ts            # 风险分析师
+│   │   └── unified-orchestrator.agent.ts   # 统一协调器
+│   ├── temporal/    # Temporal Worker服务
 │   ├── interfaces/  # 智能体接口定义
 │   └── agents.module.ts # 智能体模块
 ├── workflows/       # Temporal 工作流模块
 │   ├── orchestrators/  # 工作流协调器
-│   │   ├── stock-analysis.workflow.ts        # 股票分析工作流
-│   │   ├── news-crawling.workflow.ts         # 新闻爬取工作流
-│   │   └── daily-report.workflow.ts          # 每日报告工作流
+│   │   ├── enhanced-stock-analysis.workflow.ts  # 增强版三阶段工作流
+│   │   ├── stock-analysis.workflow.ts            # 传统股票分析工作流
+│   │   ├── news-crawling.workflow.ts             # 新闻爬取工作流
+│   │   └── daily-report.workflow.ts              # 每日报告工作流
 │   ├── activities/     # 业务活动定义
-│   │   ├── stock.activities.ts               # 股票相关活动
-│   │   ├── news.activities.ts                # 新闻相关活动
-│   │   └── analysis.activities.ts            # 分析相关活动
+│   │   ├── agent-analysis.activities.ts          # 智能体分析活动
+│   │   ├── stock.activities.ts                   # 股票相关活动
+│   │   ├── news.activities.ts                    # 新闻相关活动
+│   │   └── analysis.activities.ts                # 分析相关活动
 │   └── temporal/       # Temporal 配置
-│       ├── client.ts                         # Temporal 客户端
-│       ├── worker.ts                         # Temporal Worker
-│       └── types.ts                          # 类型定义
+│       ├── client.ts                             # Temporal 客户端
+│       ├── worker.ts                             # Temporal Worker
+│       └── types.ts                              # 类型定义
 ├── app.module.ts    # 应用主模块
 └── main.ts          # 应用入口
 ```
@@ -308,12 +380,12 @@ src/
 - 所有查询限制最多关联3张表
 - 列表接口必须分页，最多200条记录
 
-### MCP智能体开发规范
-- 所有数据获取通过MCP客户端服务，不直接调用外部API
-- 智能体必须实现标准的AgentInterface接口
-- 使用统一的日志记录格式和错误处理机制
-- 所有分析结果必须包含置信度评分(0-100)
-- 工具调用必须处理超时和重试机制
+### 三阶段增强版工作流开发规范
+- **阶段分工**: 第一阶段MCP数据获取+LLM基础分析，第二阶段纯LLM专业分析，第三阶段纯LLM决策整合
+- **按需调用**: 严格遵循按需调用原则，每个智能体只调用其专门负责的MCP服务
+- **8步标准流程**: 完全遵循股票分有8步标准流程（基础信息→基本面→行业→竞争→市场情绪→估值→风险→综合判断）
+- **结果结构化**: 所有分析结果必须包含置信度评分(0-100)、关键决策因素、风险评估、行动计划
+- **数据流转**: 第一阶段数据传递给后续阶段，避免重复MCP调用
 
 ### Temporal工作流开发规范
 - **工作流协调**: 所有复杂业务流程通过Temporal工作流管理
@@ -499,9 +571,16 @@ const worker = await Worker.create({
 - 支持结构化日志输出 (JSON格式)
 - 提供健康检查端点用于监控
 - MCP连接状态实时监控
-- 智能体分析性能指标跟踪
+- **三阶段工作流监控**: 每个阶段的执行状态、持续时间、成功率
+- **智能体性能指标**: 9个智能体的LLM调用次数、响应时间、成本统计
 - **Temporal Web UI**: http://localhost:8088 - 工作流执行状态监控
 - **工作流追踪**: 完整的执行历史、失败重试、性能指标
+
+### 新增监控项目
+- **MCP调用统计**: 每个智能体的MCP服务调用次数和成本
+- **分阶段性能分析**: 每个阶段的平均耗时和资源消耗
+- **LLM使用统计**: Token消耗、模型选择、调用成功率
+- **决策质量评估**: 置信度分数、关键因素识别率
 
 ## 🧪 测试指南
 
@@ -510,20 +589,28 @@ const worker = await Worker.create({
 # 运行所有测试
 npm run test
 
+# 运行增强版工作流测试
+npm test -- --testPathPattern="enhanced-stock-analysis"
+
 # 运行MCP相关测试
 npm test -- --testPathPattern="mcp"
 
 # 运行智能体测试
 npm test -- --testPathPattern="agents"
 
+# 运行三阶段工作流集成测试
+npm test -- --testPathPattern="agents-temporal-client.service.spec.ts"
+
 # 运行测试并查看覆盖率
 npm run test:cov
 ```
 
 ### 测试说明
-- MCP测试使用模拟数据，不依赖真实API
-- 智能体测试覆盖完整的分析流程
-- 集成测试验证端到端的决策workflow
+- **增强版工作流测试**: 验证三阶段工作流的完整执行流程
+- **MCP+LLM集成测试**: 验证MCP数据获取和LLM智能分析的结合
+- **按需调用测试**: 验证每个智能体只调用其专门负责的MCP服务
+- **8步流程测试**: 验证股票分有8步标准流程的完整覆盖
+- **结果结构测试**: 验证三阶段分析结果的结构化输出
 
 ## 🤝 贡献指南
 
@@ -543,4 +630,17 @@ npm run test:cov
 
 ---
 
-🚀 **TradingAgentCN** - 让智能投资决策触手可及！
+## 🎆 新版本亮点
+
+### v2.0 增强版三阶段工作流
+- ✨ **全新三阶段架构**: 数据收集 → 专业分析 → 决策整合
+- 🤖 **9个专业智能体**: 从简单数据获取升级为全方位智能分析
+- 🎨 **MCP+LLM双引擎**: 数据获取与智能分析的完美结合
+- 📋 **8步标准流程**: 严格遵循股票分析专业流程
+- 💰 **成本可控**: 按需调用原则，避免重复MCP调用
+- 📈 **结果结构化**: 置信度评分、关键因素、行动计划
+- 🚀 **新API端点**: `/api/v1/analysis/analyze-enhanced` 提供三阶段分析
+
+---
+
+🚀 **TradingAgentCN v2.0** - 三阶段增强版工作流，让智能投资决策更加专业、精准、可靠！
