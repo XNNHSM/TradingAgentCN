@@ -3,17 +3,9 @@
  * 参考Python版本实现，提供完整的DashScope API适配
  */
 
-import { Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import {
-  BaseLLMAdapter,
-  LLMConfig,
-  LLMMessage,
-  LLMResponse,
-  ModelInfo,
-  TokenUsage,
-  ToolCall,
-} from "./base-llm-adapter";
+import {Injectable} from "@nestjs/common";
+import {ConfigService} from "@nestjs/config";
+import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo, TokenUsage, ToolCall,} from "./base-llm-adapter";
 
 /**
  * DashScope API请求体接口

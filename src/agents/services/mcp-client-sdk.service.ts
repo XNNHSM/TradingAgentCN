@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { BusinessLogger } from '../../common/utils/business-logger.util';
+import {Injectable} from '@nestjs/common';
+import {ConfigService} from '@nestjs/config';
+import {Client} from '@modelcontextprotocol/sdk/client/index.js';
+import {SSEClientTransport} from '@modelcontextprotocol/sdk/client/sse.js';
+import {BusinessLogger} from '../../common/utils/business-logger.util';
 
 @Injectable()
 export class MCPClientSDKService {
@@ -20,10 +20,10 @@ export class MCPClientSDKService {
     try {
       this.logger.serviceInfo("正在初始化MCP SDK客户端连接...");
       
-      // 验证API密钥
-      const apiKey = this.configService.get<string>("DASHSCOPE_API_KEY");
+      // 验证MCP专用API密钥
+      const apiKey = this.configService.get<string>("MCP_API_KEY");
       if (!apiKey || apiKey.trim() === '') {
-        throw new Error("DASHSCOPE_API_KEY 环境变量未设置或为空");
+        throw new Error("MCP_API_KEY 环境变量未设置或为空");
       }
 
       // 创建MCP客户端

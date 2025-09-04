@@ -1,7 +1,7 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { ConfigService } from "@nestjs/config";
-import { LLMService } from "./llm.service";
-import { DashScopeAdapter } from "./llm-adapters";
+import {Test, TestingModule} from "@nestjs/testing";
+import {ConfigService} from "@nestjs/config";
+import {LLMService} from "./llm.service";
+import {DashScopeAdapter} from "./llm-adapters";
 
 describe("LLMService - 集成测试", () => {
   let service: LLMService;

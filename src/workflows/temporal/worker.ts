@@ -6,7 +6,7 @@
 import { Worker } from '@temporalio/worker';
 import { ConfigService } from '@nestjs/config';
 import { LLMService } from '../../agents/services/llm.service';
-import { MCPClientService } from '../../agents/services/mcp-client.service';
+import { MCPClientSDKService } from '../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../agents/services/agent-execution-record.service';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import type { MCPActivities } from '../activities/mcp.activities';
@@ -24,7 +24,7 @@ import { NewsSummaryService } from '../../modules/news/services/news-summary.ser
 export function createActivities(
   configService: ConfigService,
   llmService?: LLMService,
-  mcpClientService?: MCPClientService,
+  mcpClientService?: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService,
   newsSummaryService?: NewsSummaryService
 ): MCPActivities & PolicyAnalysisActivities & AgentAnalysisActivities {
@@ -100,7 +100,7 @@ export function createActivities(
 export async function createTemporalWorker(
   configService: ConfigService,
   llmService?: LLMService,
-  mcpClientService?: MCPClientService,
+  mcpClientService?: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService
 ): Promise<Worker> {
   // 创建所有活动实现

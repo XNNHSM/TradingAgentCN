@@ -12,7 +12,7 @@ import { WorkerCreateOptions } from '../../common/temporal/interfaces/temporal-c
 import { createActivities } from '../../workflows/temporal/worker';
 import { NewsSummaryService } from '../../modules/news/services/news-summary.service';
 import { LLMService } from '../services/llm.service';
-import { MCPClientService } from '../services/mcp-client.service';
+import { MCPClientSDKService } from '../services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
 
 @Injectable()
@@ -26,7 +26,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
     private readonly temporalManager: TemporalManager,
     private readonly newsSummaryService: NewsSummaryService,
     private readonly llmService: LLMService,
-    private readonly mcpClientService: MCPClientService,
+    private readonly mcpClientService: MCPClientSDKService,
     private readonly executionRecordService?: AgentExecutionRecordService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');

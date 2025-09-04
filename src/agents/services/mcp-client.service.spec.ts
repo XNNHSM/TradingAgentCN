@@ -1,6 +1,6 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import { MCPClientService } from './mcp-client.service';
+import {Test, TestingModule} from '@nestjs/testing';
+import {ConfigService} from '@nestjs/config';
+import {MCPClientService} from './mcp-client.service';
 
 describe('MCPClientService', () => {
   let service: MCPClientService;

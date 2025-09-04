@@ -1,41 +1,43 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import {Module} from '@nestjs/common';
+import {ConfigModule} from '@nestjs/config';
+import {TypeOrmModule} from '@nestjs/typeorm';
 
 // Temporal统一封装模块
-import { TemporalModule } from '../common/temporal/temporal.module';
+import {TemporalModule} from '../common/temporal/temporal.module';
 
 // 新闻模块（为政策分析提供数据支持）
-import { NewsModule } from '../modules/news/news.module';
+import {NewsModule} from '../modules/news/news.module';
 
 // MCP相关服务
-import { MCPClientService } from './services/mcp-client.service';
-import { MCPClientSDKService } from './services/mcp-client-sdk.service';
-import { LLMService } from './services/llm.service';
-import { DashScopeAdapter } from './services/llm-adapters/dashscope-adapter';
+import {MCPClientSDKService} from './services/mcp-client-sdk.service';
+import {MCPClientFallbackService} from './services/mcp-client-fallback.service';
+import {LLMService} from './services/llm.service';
+import {DashScopeAdapter} from './services/llm-adapters/dashscope-adapter';
 
 // 智能体模块专属Temporal服务
-import { AgentsTemporalClientService } from './temporal/agents-temporal-client.service';
-import { AgentsWorkerService } from './temporal/agents-worker.service';
+import {AgentsTemporalClientService} from './temporal/agents-temporal-client.service';
+import {AgentsWorkerService} from './temporal/agents-worker.service';
 
 // 新的按需调用智能体架构
-import { BasicDataAgent } from './unified/basic-data.agent';
-import { TechnicalAnalystAgent } from './unified/technical-analyst.agent';
-import { FundamentalAnalystAgent } from './unified/fundamental-analyst.agent';
-import { NewsAnalystAgent } from './unified/news-analyst.agent';
-import { SocialMediaAnalystAgent } from './unified/social-media-analyst.agent';
-import { QuantitativeTraderAgent } from './unified/quantitative-trader.agent';
-import { MacroEconomistAgent } from './unified/macro-economist.agent';
-import { UnifiedOrchestratorAgent } from './unified/unified-orchestrator.agent';
-import { PolicyAnalystAgent } from './policy/policy-analyst.agent';
+import {BasicDataAgent} from './unified/basic-data.agent';
+import {TechnicalAnalystAgent} from './unified/technical-analyst.agent';
+import {FundamentalAnalystAgent} from './unified/fundamental-analyst.agent';
+import {NewsAnalystAgent} from './unified/news-analyst.agent';
+import {SocialMediaAnalystAgent} from './unified/social-media-analyst.agent';
+import {QuantitativeTraderAgent} from './unified/quantitative-trader.agent';
+import {MacroEconomistAgent} from './unified/macro-economist.agent';
+import {UnifiedOrchestratorAgent} from './unified/unified-orchestrator.agent';
+import {PolicyAnalystAgent} from './policy/policy-analyst.agent';
 
 // 执行记录相关（保持兼容）
-import { AgentExecutionRecord } from './entities/agent-execution-record.entity';
-import { AgentExecutionRecordService } from './services/agent-execution-record.service';
-import { AgentExecutionShardingService } from './services/agent-execution-sharding.service';
+import {AgentExecutionRecord} from './entities/agent-execution-record.entity';
+import {AgentExecutionRecordService} from './services/agent-execution-record.service';
+import {AgentExecutionShardingService} from './services/agent-execution-sharding.service';
 
 // 执行记录控制器
-import { ExecutionRecordsController } from './execution-records/execution-records.controller';
+import {ExecutionRecordsController} from './execution-records/execution-records.controller';
+import {AgentExecutionRecordsController} from './controllers/agent-execution-records.controller';
+import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-recorder.interceptor';
 
 /**
  * 智能体模块
@@ -54,8 +56,8 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     DashScopeAdapter,
     
     // 核心服务
-    MCPClientService,
     MCPClientSDKService,
+    MCPClientFallbackService,
     LLMService,
     
     // 智能体模块专属Temporal服务
@@ -76,13 +78,17 @@ import { ExecutionRecordsController } from './execution-records/execution-record
     // 执行记录服务
     AgentExecutionRecordService,
     AgentExecutionShardingService,
+    
+    // 拦截器
+    AgentExecutionRecorderInterceptor,
   ],
   controllers: [
     ExecutionRecordsController,
+    AgentExecutionRecordsController,
   ],
   exports: [
     // 对外提供的主要服务
-    MCPClientService,
+    MCPClientSDKService,
     
     // 按需调用智能体架构
     BasicDataAgent,
@@ -106,7 +112,7 @@ import { ExecutionRecordsController } from './execution-records/execution-record
 })
 export class AgentsModule {
   constructor(
-    private readonly mcpClient: MCPClientService,
+    private readonly mcpClient: MCPClientSDKService,
     private readonly agentsWorkerService: AgentsWorkerService,
   ) {}
 

@@ -1,16 +1,16 @@
-import { Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { BaseAgent } from "../base/base-agent";
+import {Injectable} from "@nestjs/common";
+import {ConfigService} from "@nestjs/config";
+import {BaseAgent} from "../base/base-agent";
 import {
-  AgentType,
-  AgentContext,
   AgentConfig,
+  AgentContext,
   AgentResult,
-  TradingRecommendation,
   AgentStatus,
+  AgentType,
+  TradingRecommendation,
 } from "../interfaces/agent.interface";
-import { LLMService } from "../services/llm.service";
-import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
+import {LLMService} from "../services/llm.service";
+import {AgentExecutionRecordService} from "../services/agent-execution-record.service";
 
 /**
  * 统一协调器智能体

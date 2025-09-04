@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { AgentExecutionRecord } from '../entities/agent-execution-record.entity';
-import { AgentExecutionShardingService } from './agent-execution-sharding.service';
-import { AgentType, AgentContext, AgentResult, TradingRecommendation } from '../interfaces/agent.interface';
-import { LLMResponse } from './llm.service';
+import {Injectable, Logger} from '@nestjs/common';
+import {AgentExecutionRecord} from '../entities/agent-execution-record.entity';
+import {AgentExecutionShardingService} from './agent-execution-sharding.service';
+import {AgentContext, AgentResult, AgentType, TradingRecommendation} from '../interfaces/agent.interface';
+import {LLMResponse} from './llm.service';
 
 /**
  * Agent执行记录创建DTO
@@ -88,6 +88,10 @@ export class AgentExecutionRecordService {
    * 创建执行记录
    */
   async createExecutionRecord(dto: CreateAgentExecutionRecordDto): Promise<AgentExecutionRecord> {
+    if (!dto.agentType) {
+      throw new Error('AgentType是必需的字段');
+    }
+    
     try {
       const repository = await this.shardingService.getRepository(dto.agentType);
       
@@ -107,7 +111,7 @@ export class AgentExecutionRecordService {
       record.executionDate = dto.startTime;
       record.startTime = dto.startTime;
       record.endTime = dto.endTime;
-      record.processingTimeMs = dto.endTime.getTime() - dto.startTime.getTime();
+      record.processingTimeMs = dto.endTime && dto.startTime ? dto.endTime.getTime() - dto.startTime.getTime() : 0;
       record.executionStatus = dto.errorMessage ? 'error' : 'success';
       
       // LLM调用信息

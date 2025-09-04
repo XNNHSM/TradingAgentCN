@@ -11,7 +11,7 @@ import { FundamentalAnalystAgent } from '../../agents/unified/fundamental-analys
 import { NewsAnalystAgent } from '../../agents/unified/news-analyst.agent';
 import { UnifiedOrchestratorAgent } from '../../agents/unified/unified-orchestrator.agent';
 import { LLMService } from '../../agents/services/llm.service';
-import { MCPClientService } from '../../agents/services/mcp-client.service';
+import { MCPClientSDKService } from '../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../agents/services/agent-execution-record.service';
 import { AgentContext, AgentResult } from '../../agents/interfaces/agent.interface';
 
@@ -178,7 +178,7 @@ export interface AgentAnalysisActivities {
 export function createAgentAnalysisActivities(
   configService: ConfigService,
   llmService: LLMService,
-  mcpClientService: MCPClientService,
+  mcpClientService: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService
 ): AgentAnalysisActivities {
   const logger = new BusinessLogger('AgentAnalysisActivities');

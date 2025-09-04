@@ -1,17 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BaseAgent } from '../base/base-agent';
-import { MCPClientService } from '../services/mcp-client.service';
-import { LLMService } from '../services/llm.service';
-import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
-import { 
-  AgentConfig, 
-  AgentType, 
-  AgentContext, 
-  AgentResult, 
-  AgentStatus 
-} from '../interfaces/agent.interface';
-import { BusinessLogger } from '../../common/utils/business-logger.util';
+import {Injectable} from '@nestjs/common';
+import {ConfigService} from '@nestjs/config';
+import {BaseAgent} from '../base/base-agent';
+import {LLMService} from '../services/llm.service';
+import {AgentExecutionRecordService} from '../services/agent-execution-record.service';
+import {AgentConfig, AgentContext, AgentResult, AgentStatus, AgentType} from '../interfaces/agent.interface';
+import {BusinessLogger} from '../../common/utils/business-logger.util';
 
 /**
  * 基础数据智能体

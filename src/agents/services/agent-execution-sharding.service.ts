@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
-import { AgentType } from '../interfaces/agent.interface';
-import { AgentExecutionRecord } from '../entities/agent-execution-record.entity';
+import {Injectable, Logger} from '@nestjs/common';
+import {InjectDataSource} from '@nestjs/typeorm';
+import {DataSource, Repository} from 'typeorm';
+import {AgentType} from '../interfaces/agent.interface';
+import {AgentExecutionRecord} from '../entities/agent-execution-record.entity';
 
 /**
  * Agent执行记录分表管理服务

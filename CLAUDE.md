@@ -9,6 +9,7 @@
 ### 核心技术栈
 - **后端**: NestJS + TypeScript + TypeORM + PostgreSQL + Redis
 - **数据源**: 阿里云百炼MCP协议 (qtf_mcp股票数据服务)
+- **MCP客户端**: 基于 @modelcontextprotocol/sdk 的统一调用架构
 - **智能体**: 分层LLM配置 (qwen-turbo/plus/max)
 - **工作流**: Temporal分布式协调引擎
 - **架构**: 单体应用 (NestJS应用即Temporal Worker)
@@ -117,6 +118,46 @@ NestJS启动 → AgentsModule初始化 → startWorkers() → worker.run() → �
 
 ## 🎯 MCP智能体系统
 
+### MCP SDK调用规范 ⭐
+
+**统一规范**: 项目中所有MCP调用必须通过 `MCPClientSDKService` 进行，基于 `@modelcontextprotocol/sdk`
+
+#### 核心原则
+- **统一入口**: 使用 `MCPClientSDKService.callTool()` 方法调用所有MCP工具
+- **SDK优先**: 基于官方 MCP SDK，确保协议兼容性和稳定性
+- **工具映射**: 将业务工具名称映射到MCP服务的实际工具名称
+- **连接管理**: SDK自动处理连接管理、重连和错误处理
+
+#### MCP工具映射规则
+| 业务工具名称 | MCP工具名称 | 用途说明 | 调用成本 |
+|-------------|------------|----------|----------|
+| `get_stock_basic_info` | `brief` | 股票基础信息 | 低 |
+| `get_stock_realtime_data` | `brief` | 实时行情数据 | 低 |
+| `search_stocks` | `brief` | 股票搜索 | 低 |
+| `get_market_overview` | `brief` | 市场概况 | 低 |
+| `get_stock_historical_data` | `medium` | 历史行情数据 | 中 |
+| `get_stock_financial_data` | `medium` | 财务数据 | 中 |
+| `get_stock_technical_indicators` | `full` | 技术指标 | 高 |
+| `get_stock_news` | `full` | 股票新闻 | 高 |
+
+#### 标准调用示例
+```typescript
+// 注入服务
+constructor(
+  private readonly mcpClient: MCPClientSDKService
+) {}
+
+// 调用MCP工具
+const result = await this.mcpClient.callTool('get_stock_basic_info', {
+  stock_code: '600519'
+});
+```
+
+#### 股票代码自动转换
+- **输入格式**: `600519` 或 `000001`
+- **输出格式**: `SH600519` 或 `SZ000001`
+- **转换规则**: 6、9开头 → SH；0、3开头 → SZ
+
 ### 股票分析标准流程 ⭐
 ```
 1. 获取股票基础信息（公司名称、代码、所属行业/板块、上市时间、市值规模等）
@@ -213,8 +254,9 @@ businessLogger.businessError("操作", error, context);
 DATABASE_URL=postgresql://user:pass@localhost/db
 REDIS_URL=redis://localhost:6379
 
-# MCP服务
-DASHSCOPE_API_KEY=your_api_key
+# MCP服务配置
+MCP_API_KEY=your_mcp_api_key        # MCP专用API密钥
+DASHSCOPE_API_KEY=your_api_key      # DashScope LLM API密钥 
 
 # Temporal
 TEMPORAL_HOST=localhost:7233

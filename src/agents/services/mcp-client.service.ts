@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BusinessLogger } from '../../common/utils/business-logger.util';
+import {Injectable} from '@nestjs/common';
+import {ConfigService} from '@nestjs/config';
+import {BusinessLogger} from '../../common/utils/business-logger.util';
 
 /**
  * MCP配置接口
@@ -39,7 +39,7 @@ export class MCPClientService {
       type: "sse",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1/mcps/qtf_mcp/sse",
       headers: {
-        Authorization: `Bearer ${this.configService.get<string>("DASHSCOPE_API_KEY")}`,
+        Authorization: `Bearer ${this.configService.get<string>("MCP_API_KEY")}`,
         "Content-Type": "application/json",
       },
       description: "股票数据以 MCP 协议，提供及时、准确的股票基本信息、行情、财务、技术指标等股票数据",
@@ -54,10 +54,10 @@ export class MCPClientService {
     try {
       this.logger.serviceInfo("正在初始化MCP客户端连接...");
       
-      // 验证API密钥
-      const apiKey = this.configService.get<string>("DASHSCOPE_API_KEY");
+      // 验证MCP专用API密钥
+      const apiKey = this.configService.get<string>("MCP_API_KEY");
       if (!apiKey || apiKey.trim() === '') {
-        throw new Error("DASHSCOPE_API_KEY 环境变量未设置或为空");
+        throw new Error("MCP_API_KEY 环境变量未设置或为空");
       }
 
       // 更新配置中的API密钥

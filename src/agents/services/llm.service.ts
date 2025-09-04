@@ -3,20 +3,14 @@
  * 支持多适配器架构，具备更好的扩展性和错误处理
  */
 
-import { Injectable, OnModuleInit } from "@nestjs/common";
-import { BusinessLogger, LogCategory } from "../../common/utils/business-logger.util";
-import { ConfigService } from "@nestjs/config";
-import {
-  BaseLLMAdapter,
-  LLMConfig,
-  LLMMessage,
-  LLMResponse,
-  ModelInfo,
-} from "./llm-adapters/base-llm-adapter";
+import {Injectable, OnModuleInit} from "@nestjs/common";
+import {BusinessLogger} from "../../common/utils/business-logger.util";
+import {ConfigService} from "@nestjs/config";
+import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo,} from "./llm-adapters/base-llm-adapter";
+import {DashScopeAdapter} from "./llm-adapters/dashscope-adapter";
 
 // 重新导出类型以保持兼容性
 export { LLMConfig, LLMMessage, LLMResponse, ModelInfo } from "./llm-adapters/base-llm-adapter";
-import { DashScopeAdapter } from "./llm-adapters/dashscope-adapter";
 
 /**
  * 向后兼容的工具调用接口

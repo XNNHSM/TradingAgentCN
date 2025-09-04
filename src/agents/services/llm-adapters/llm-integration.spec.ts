@@ -3,10 +3,10 @@
  * 验证合并后LLM服务的功能完整性和性能
  */
 
-import { Test, TestingModule } from "@nestjs/testing";
-import { ConfigModule } from "@nestjs/config";
-import { LLMService } from "../llm.service";
-import { DashScopeAdapter } from "./index";
+import {Test, TestingModule} from "@nestjs/testing";
+import {ConfigModule} from "@nestjs/config";
+import {LLMService} from "../llm.service";
+import {DashScopeAdapter} from "./index";
 
 describe("LLM适配器架构集成测试", () => {
   let module: TestingModule;

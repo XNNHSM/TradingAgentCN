@@ -1,15 +1,9 @@
-import { Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { BaseAgent } from "../base/base-agent";
-import {
-  AgentType,
-  AgentContext,
-  AgentConfig,
-  AgentResult,
-  AgentStatus,
-} from "../interfaces/agent.interface";
-import { LLMService } from "../services/llm.service";
-import { AgentExecutionRecordService } from "../services/agent-execution-record.service";
+import {Injectable} from "@nestjs/common";
+import {ConfigService} from "@nestjs/config";
+import {BaseAgent} from "../base/base-agent";
+import {AgentConfig, AgentContext, AgentResult, AgentStatus, AgentType,} from "../interfaces/agent.interface";
+import {LLMService} from "../services/llm.service";
+import {AgentExecutionRecordService} from "../services/agent-execution-record.service";
 
 /**
  * 社交媒体分析师智能体
