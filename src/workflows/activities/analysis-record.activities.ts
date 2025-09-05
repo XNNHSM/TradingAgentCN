@@ -65,6 +65,7 @@ export function createAnalysisRecordActivities(
           status: params.status,
           startTime: new Date(),
           executionTime: 0,
+          context: {},
           results: {},
           metadata: {
             activityCreatedAt: new Date().toISOString(),
