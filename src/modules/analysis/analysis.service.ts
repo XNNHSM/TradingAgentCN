@@ -52,15 +52,8 @@ export class AnalysisService {
         throw new Error('无法启动股票分析工作流');
       }
 
-      // 保存分析记录到数据库
-      const recordId = await this.saveAnalysisRecord({
-        workflowId: workflowHandle.workflowId,
-        sessionId,
-        stockCode: dto.stockCode,
-        stockName: dto.stockName,
-        analysisType: 'comprehensive',
-        status: 'running',
-      });
+      // 工作流将负责创建分析记录，这里记录workflowId用于后续查询
+      this.logger.log(`分析工作流已启动，记录将在工作流中创建: ${workflowHandle.workflowId}`);
       
       const result = {
         workflowId: workflowHandle.workflowId,
@@ -106,15 +99,8 @@ export class AnalysisService {
         throw new Error('无法启动股票分析工作流');
       }
 
-      // 保存分析记录到数据库
-      const recordId = await this.saveAnalysisRecord({
-        workflowId: workflowHandle.workflowId,
-        sessionId,
-        stockCode: dto.stockCode,
-        stockName: dto.stockName,
-        analysisType: 'comprehensive',
-        status: 'running',
-      });
+      // 工作流将负责创建分析记录，这里记录workflowId用于后续查询
+      this.logger.log(`增强版分析工作流已启动，记录将在工作流中创建: ${workflowHandle.workflowId}`);
 
       const result = {
         workflowId: workflowHandle.workflowId,
@@ -123,7 +109,7 @@ export class AnalysisService {
         message: `股票 ${dto.stockCode} 的分析工作流已启动，正在执行三阶段智能体分析`,
       };
 
-      this.logger.log(`分析工作流已启动: ${workflowHandle.workflowId}`);
+      this.logger.log(`增强版分析工作流已启动: ${workflowHandle.workflowId}`);
       return Result.success(result, "分析工作流已启动");
     } catch (error) {
       this.logger.error(`创建增强版分析任务失败: ${error.message}`, error.stack);
@@ -131,41 +117,7 @@ export class AnalysisService {
     }
   }
 
-  /**
-   * 保存分析记录（用于工作流开始时）
-   */
-  private async saveAnalysisRecord(data: {
-    workflowId: string;
-    sessionId: string;
-    stockCode: string;
-    stockName?: string;
-    analysisType: string;
-    status: "success" | "partial" | "failed" | "running";
-  }): Promise<string> {
-    try {
-      const record = this.analysisRepository.create({
-        workflowId: data.workflowId,
-        sessionId: data.sessionId,
-        stockCode: data.stockCode,
-        stockName: data.stockName,
-        analysisType: data.analysisType,
-        status: data.status,
-        startTime: new Date(),
-        metadata: {
-          createdBy: 'analysis_service',
-          version: '2.0.0',
-        },
-      });
-      
-      await this.analysisRepository.save(record);
-      this.logger.debug(`分析记录已保存: ${data.workflowId}`);
-      return String(record.id);
-    } catch (error) {
-      this.logger.warn(`保存分析记录失败: ${error.message}`);
-      throw error;
-    }
-  }
-
+  
 
   /**
    * 构建时间范围

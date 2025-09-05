@@ -77,8 +77,6 @@ export interface StockAnalysisResult {
 
 // 配置MCP Activities
 const {
-  initializeMCPConnection,
-  testMCPConnection,
   getStockBasicInfo,
   getStockRealtimeData,
   getStockHistoricalData,
@@ -306,32 +304,23 @@ export async function stockAnalysisWorkflow(
     });
     
     workflow.log.info(`分析记录已创建: ${analysisRecordId}`);
-    // =================
-    // 初始化MCP连接
-    // =================
-    workflow.log.info('步骤1: 初始化MCP连接');
-    await initializeMCPConnection();
-    const connectionOk = await testMCPConnection();
-    if (!connectionOk) {
-      throw new Error('MCP连接测试失败');
-    }
 
     // =================
     // 第一阶段：数据收集阶段 (对应标准流程1-2步)
     // =================
-    workflow.log.info('步骤2: 开始第一阶段: 数据收集阶段');
+    workflow.log.info('步骤1: 开始第一阶段: 数据收集阶段');
     const stage1Result = await executeStage1DataCollection(input);
     
     // =================
     // 第二阶段：专业分析阶段 (对应标准流程3-7步)
     // =================
-    workflow.log.info('步骤3: 开始第二阶段: 专业分析阶段');
+    workflow.log.info('步骤2: 开始第二阶段: 专业分析阶段');
     const stage2Result = await executeStage2ProfessionalAnalysis(input, stage1Result);
     
     // =================
     // 第三阶段：决策整合阶段 (对应标准流程第8步)
     // =================
-    workflow.log.info('步骤4: 开始第三阶段: 决策整合阶段');
+    workflow.log.info('步骤3: 开始第三阶段: 决策整合阶段');
     const stage3Result = await executeStage3DecisionIntegration(input, stage1Result, stage2Result);
 
     // 生成最终决策
