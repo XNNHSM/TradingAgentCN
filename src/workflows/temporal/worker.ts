@@ -3,31 +3,34 @@
  * 用于执行工作流和活动
  */
 
-import { Worker } from '@temporalio/worker';
-import { ConfigService } from '@nestjs/config';
-import { LLMService } from '../../agents/services/llm.service';
-import { MCPClientSDKService } from '../../agents/services/mcp-client-sdk.service';
-import { AgentExecutionRecordService } from '../../agents/services/agent-execution-record.service';
-import { BusinessLogger } from '../../common/utils/business-logger.util';
-import type { MCPActivities } from '../activities/mcp.activities';
-import { createMCPActivities } from '../activities/mcp.activities';
-import type { PolicyAnalysisActivities } from '../activities/policy-analysis.activities';
-import { createPolicyAnalysisActivities } from '../activities/policy-analysis.activities';
-import type { AgentAnalysisActivities } from '../activities/agent-analysis.activities';
-import { createAgentAnalysisActivities } from '../activities/agent-analysis.activities';
-import { NewsSummaryService } from '../../modules/news/services/news-summary.service';
+import {Worker} from '@temporalio/worker';
+import {ConfigService} from '@nestjs/config';
+import {LLMService} from '../../agents/services/llm.service';
+import {MCPClientSDKService} from '../../agents/services/mcp-client-sdk.service';
+import {AgentExecutionRecordService} from '../../agents/services/agent-execution-record.service';
+import type {MCPActivities} from '../activities/mcp.activities';
+import {createMCPActivities} from '../activities/mcp.activities';
+import type {PolicyAnalysisActivities} from '../activities/policy-analysis.activities';
+import {createPolicyAnalysisActivities} from '../activities/policy-analysis.activities';
+import type {AgentAnalysisActivities} from '../activities/agent-analysis.activities';
+import {createAgentAnalysisActivities} from '../activities/agent-analysis.activities';
+import type {AnalysisRecordActivities} from '../activities/analysis-record.activities';
+import {createAnalysisRecordActivities} from '../activities/analysis-record.activities';
+import {NewsSummaryService} from '../../modules/news/services/news-summary.service';
+import {AnalysisService} from '../../modules/analysis/analysis.service';
 
 /**
  * 创建所有活动实现
- * 包含MCP数据获取活动、政策分析活动和智能体分析活动
+ * 包含MCP数据获取活动、政策分析活动、智能体分析活动和分析记录活动
  */
 export function createActivities(
   configService: ConfigService,
   llmService?: LLMService,
   mcpClientService?: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService,
-  newsSummaryService?: NewsSummaryService
-): MCPActivities & PolicyAnalysisActivities & AgentAnalysisActivities {
+  newsSummaryService?: NewsSummaryService,
+  analysisService?: AnalysisService
+): MCPActivities & PolicyAnalysisActivities & AgentAnalysisActivities & AnalysisRecordActivities {
   // 创建MCP Activities
   const mcpActivities = createMCPActivities(configService);
   
@@ -48,6 +51,24 @@ export function createActivities(
       callValuationAnalystAgent: async () => ({ agentName: 'ValuationAnalystAgent', agentType: 'VALUATION_ANALYST', analysis: 'LLMService未配置', processingTime: 0 }),
       callRiskAnalystAgent: async () => ({ agentName: 'RiskAnalystAgent', agentType: 'RISK_ANALYST', analysis: 'LLMService未配置', processingTime: 0 }),
       callUnifiedOrchestratorAgent: async () => ({ agentName: 'UnifiedOrchestratorAgent', agentType: 'UNIFIED_ORCHESTRATOR', analysis: 'LLMService未配置', processingTime: 0 }),
+    };
+  }
+  
+  // 创建分析记录Activities
+  let analysisRecordActivities: AnalysisRecordActivities;
+  if (analysisService) {
+    analysisRecordActivities = createAnalysisRecordActivities(analysisService);
+  } else {
+    console.warn('AnalysisService未提供，分析记录活动将使用默认实现');
+    // 创建默认的空实现
+    analysisRecordActivities = {
+      createAnalysisRecord: async () => {
+        console.log('AnalysisService未配置，无法创建分析记录');
+        return 'dummy-record-id';
+      },
+      updateAnalysisRecord: async () => {
+        console.log('AnalysisService未配置，无法更新分析记录');
+      },
     };
   }
   
@@ -90,6 +111,7 @@ export function createActivities(
     ...mcpActivities,
     ...agentActivities,
     ...policyActivities,
+    ...analysisRecordActivities,
   };
 }
 

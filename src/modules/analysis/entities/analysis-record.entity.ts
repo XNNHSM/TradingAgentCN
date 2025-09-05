@@ -115,11 +115,11 @@ export class AnalysisRecord extends BaseEntity {
 
   @Column({
     type: "enum",
-    enum: ["success", "partial", "failed"],
+    enum: ["success", "partial", "failed", "running"],
     default: "success",
     comment: "执行状态",
   })
-  status: "success" | "partial" | "failed";
+  status: "success" | "partial" | "failed" | "running";
 
   @Column({
     type: "text",

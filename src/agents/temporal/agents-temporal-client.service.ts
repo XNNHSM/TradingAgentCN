@@ -115,7 +115,10 @@ export class AgentsTemporalClientService implements OnModuleDestroy {
         workflowType: stockAnalysisWorkflow,
         taskQueue: 'stock-analysis',
         workflowId,
-        args: [input],
+        args: [{
+          ...input,
+          workflowId,
+        }],
         timeout: this.configService.get('WORKFLOW_EXECUTION_TIMEOUT', '45m'), // 工作流需要更长时间
         retryPolicy: {
           maximumAttempts: 2, // 减少重试次数，因为智能体分析更复杂

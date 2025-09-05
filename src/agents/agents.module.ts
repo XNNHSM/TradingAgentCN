@@ -8,6 +8,9 @@ import {TemporalModule} from '../common/temporal/temporal.module';
 // 新闻模块（为政策分析提供数据支持）
 import {NewsModule} from '../modules/news/news.module';
 
+// 分析模块（为分析记录提供支持）
+import {AnalysisModule} from '../modules/analysis/analysis.module';
+
 // MCP相关服务
 import {MCPClientSDKService} from './services/mcp-client-sdk.service';
 import {MCPClientFallbackService} from './services/mcp-client-fallback.service';
@@ -50,6 +53,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     TypeOrmModule.forFeature([AgentExecutionRecord]),
     TemporalModule, // 导入Temporal统一封装模块
     NewsModule, // 导入新闻模块，提供政策分析数据支持
+    AnalysisModule, // 导入分析模块，提供分析记录功能
   ],
   providers: [
     // LLM适配器

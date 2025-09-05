@@ -14,6 +14,7 @@ import { NewsSummaryService } from '../../modules/news/services/news-summary.ser
 import { LLMService } from '../services/llm.service';
 import { MCPClientSDKService } from '../services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
+import { AnalysisService } from '../../modules/analysis/analysis.service';
 
 @Injectable()
 export class AgentsWorkerService implements OnModuleDestroy {
@@ -28,6 +29,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
     private readonly llmService: LLMService,
     private readonly mcpClientService: MCPClientSDKService,
     private readonly executionRecordService?: AgentExecutionRecordService,
+    private readonly analysisService?: AnalysisService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
   }
@@ -38,13 +40,14 @@ export class AgentsWorkerService implements OnModuleDestroy {
    */
   async startWorkers(): Promise<void> {
     try {
-      // 创建所有活动实现（包括MCP、政策分析和智能体分析活动）
+      // 创建所有活动实现（包括MCP、政策分析、智能体分析活动和分析记录活动）
       const activities = createActivities(
         this.configService, 
         this.llmService, 
         this.mcpClientService,
         this.executionRecordService, 
-        this.newsSummaryService
+        this.newsSummaryService,
+        this.analysisService
       );
 
       // 定义Worker配置 - 直接指向股票分析工作流

@@ -10,6 +10,7 @@
  * - 容错机制：当某个智能体调用失败时，自动跳过并继续下一步分析
  * - 数据验证：对MCP数据进行验证，失败时提供默认值
  * - 阶段隔离：每个阶段独立处理错误，不影响其他阶段
+ * - 执行记录：在开始时创建analysis_records记录，完成时更新状态
  */
 
 import * as workflow from '@temporalio/workflow';
@@ -22,6 +23,7 @@ export interface StockAnalysisInput {
   stockCode: string;
   stockName?: string;
   sessionId: string;
+  workflowId?: string; // 可选，由服务端传入
   metadata: Record<string, any>;
 }
 
@@ -125,6 +127,42 @@ const {
     maximumAttempts: 2,
     initialInterval: '2s',
     maximumInterval: '15s',
+  },
+});
+
+// 配置分析记录Activities
+const {
+  createAnalysisRecord,
+  updateAnalysisRecord,
+} = workflow.proxyActivities<{
+  createAnalysisRecord: (params: {
+    sessionId: string;
+    workflowId: string;
+    stockCode: string;
+    stockName?: string;
+    analysisType: string;
+    status: 'running' | 'success' | 'partial' | 'failed';
+  }) => Promise<string>; // 返回记录ID
+  updateAnalysisRecord: (params: {
+    recordId: string;
+    status?: 'running' | 'success' | 'partial' | 'failed';
+    results?: Record<string, any>;
+    averageScore?: number;
+    finalRecommendation?: string;
+    confidence?: number;
+    keyInsights?: string[];
+    majorRisks?: string[];
+    executionTime?: number;
+    errorMessage?: string;
+    metadata?: Record<string, any>;
+  }) => Promise<void>;
+}>({
+  startToCloseTimeout: '30s',
+  scheduleToCloseTimeout: '1m',
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: '1s',
+    maximumInterval: '10s',
   },
 });
 
@@ -242,6 +280,7 @@ export async function stockAnalysisWorkflow(
   input: StockAnalysisInput
 ): Promise<StockAnalysisResult> {
   const startTime = Date.now();
+  let analysisRecordId: string;
   
   workflow.log.info('开始股票分析工作流', {
     stockCode: input.stockCode,
@@ -250,9 +289,27 @@ export async function stockAnalysisWorkflow(
 
   try {
     // =================
+    // 初始化阶段：创建分析记录
+    // =================
+    workflow.log.info('步骤0: 创建分析记录');
+    if (!input.workflowId) {
+      throw new Error('workflowId is required for analysis record creation');
+    }
+    
+    analysisRecordId = await createAnalysisRecord({
+      sessionId: input.sessionId,
+      workflowId: input.workflowId,
+      stockCode: input.stockCode,
+      stockName: input.stockName,
+      analysisType: 'comprehensive',
+      status: 'running',
+    });
+    
+    workflow.log.info(`分析记录已创建: ${analysisRecordId}`);
+    // =================
     // 初始化MCP连接
     // =================
-    workflow.log.info('步骤0: 初始化MCP连接');
+    workflow.log.info('步骤1: 初始化MCP连接');
     await initializeMCPConnection();
     const connectionOk = await testMCPConnection();
     if (!connectionOk) {
@@ -262,19 +319,19 @@ export async function stockAnalysisWorkflow(
     // =================
     // 第一阶段：数据收集阶段 (对应标准流程1-2步)
     // =================
-    workflow.log.info('开始第一阶段: 数据收集阶段');
+    workflow.log.info('步骤2: 开始第一阶段: 数据收集阶段');
     const stage1Result = await executeStage1DataCollection(input);
     
     // =================
     // 第二阶段：专业分析阶段 (对应标准流程3-7步)
     // =================
-    workflow.log.info('开始第二阶段: 专业分析阶段');
+    workflow.log.info('步骤3: 开始第二阶段: 专业分析阶段');
     const stage2Result = await executeStage2ProfessionalAnalysis(input, stage1Result);
     
     // =================
     // 第三阶段：决策整合阶段 (对应标准流程第8步)
     // =================
-    workflow.log.info('开始第三阶段: 决策整合阶段');
+    workflow.log.info('步骤4: 开始第三阶段: 决策整合阶段');
     const stage3Result = await executeStage3DecisionIntegration(input, stage1Result, stage2Result);
 
     // 生成最终决策
@@ -286,7 +343,37 @@ export async function stockAnalysisWorkflow(
     const mcpDataFromStage1 = (stage1Result.results[0] as any)?.mcpData || {};
     const policyDataFromStage1 = (stage1Result.results[0] as any)?.policyData;
 
-    workflow.log.info('股票分析工作流完成', {
+    // 更新分析记录为完成状态
+  await updateAnalysisRecord({
+    recordId: analysisRecordId,
+    status: 'success',
+    results: {
+      sessionId: input.sessionId,
+      stockCode: input.stockCode,
+      stockName: input.stockName,
+      stage1DataCollection: stage1Result,
+      stage2ProfessionalAnalysis: stage2Result,
+      stage3DecisionIntegration: stage3Result,
+      mcpDataSummary: mcpDataFromStage1,
+      policyAnalysis: policyDataFromStage1,
+      finalDecision,
+      totalProcessingTime,
+      timestamp: new Date(),
+    },
+    averageScore: finalDecision.overallScore,
+    finalRecommendation: finalDecision.recommendation,
+    confidence: finalDecision.confidence,
+    keyInsights: finalDecision.keyDecisionFactors,
+    majorRisks: finalDecision.riskAssessment,
+    executionTime: totalProcessingTime,
+    metadata: {
+      completedAt: new Date().toISOString(),
+      workflowCompleted: true,
+      stagesCompleted: [stage1Result, stage2Result, stage3Result],
+    },
+  });
+
+  workflow.log.info('股票分析工作流完成', {
       stockCode: input.stockCode,
       sessionId: input.sessionId,
       totalProcessingTime: `${totalProcessingTime}ms`,
@@ -314,6 +401,28 @@ export async function stockAnalysisWorkflow(
       sessionId: input.sessionId,
       error: error.message,
     });
+
+    // 更新分析记录为失败状态
+    try {
+      if (analysisRecordId) {
+        await updateAnalysisRecord({
+          recordId: analysisRecordId,
+          status: 'failed',
+          errorMessage: error.message,
+          executionTime: Date.now() - startTime,
+          metadata: {
+            failedAt: new Date().toISOString(),
+            workflowCompleted: false,
+            error: error.message,
+          },
+        });
+      }
+    } catch (recordUpdateError) {
+      workflow.log.warn('更新分析记录失败时记录失败', {
+        error: recordUpdateError.message,
+        originalError: error.message,
+      });
+    }
     
     throw new workflow.ApplicationFailure(
       `股票分析失败: ${error.message}`,

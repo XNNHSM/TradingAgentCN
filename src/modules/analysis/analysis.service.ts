@@ -53,13 +53,13 @@ export class AnalysisService {
       }
 
       // 保存分析记录到数据库
-      await this.saveAnalysisRecord({
+      const recordId = await this.saveAnalysisRecord({
         workflowId: workflowHandle.workflowId,
         sessionId,
         stockCode: dto.stockCode,
         stockName: dto.stockName,
         analysisType: 'comprehensive',
-        status: 'success',
+        status: 'running',
       });
       
       const result = {
@@ -107,13 +107,13 @@ export class AnalysisService {
       }
 
       // 保存分析记录到数据库
-      await this.saveAnalysisRecord({
+      const recordId = await this.saveAnalysisRecord({
         workflowId: workflowHandle.workflowId,
         sessionId,
         stockCode: dto.stockCode,
         stockName: dto.stockName,
         analysisType: 'comprehensive',
-        status: 'success',
+        status: 'running',
       });
 
       const result = {
@@ -132,7 +132,7 @@ export class AnalysisService {
   }
 
   /**
-   * 保存分析记录
+   * 保存分析记录（用于工作流开始时）
    */
   private async saveAnalysisRecord(data: {
     workflowId: string;
@@ -140,8 +140,8 @@ export class AnalysisService {
     stockCode: string;
     stockName?: string;
     analysisType: string;
-    status: "success" | "partial" | "failed";
-  }): Promise<void> {
+    status: "success" | "partial" | "failed" | "running";
+  }): Promise<string> {
     try {
       const record = this.analysisRepository.create({
         workflowId: data.workflowId,
@@ -159,9 +159,10 @@ export class AnalysisService {
       
       await this.analysisRepository.save(record);
       this.logger.debug(`分析记录已保存: ${data.workflowId}`);
+      return String(record.id);
     } catch (error) {
       this.logger.warn(`保存分析记录失败: ${error.message}`);
-      // 不影响主流程
+      throw error;
     }
   }
 
