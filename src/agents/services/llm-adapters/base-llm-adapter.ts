@@ -94,16 +94,77 @@ export interface ModelInfo {
 }
 
 /**
+ * 供应商特定的长度限制配置
+ */
+export interface ProviderLengthLimits {
+  maxInputLength: number;
+  recommendedMaxInputLength: number;
+  chunkOverlap: number;
+  chunkSize: number;
+}
+
+/**
+ * 内容管理策略接口
+ */
+export interface ContentManagementStrategy {
+  canHandle(content: string | LLMMessage[], model: string): boolean;
+  process(content: string | LLMMessage[], model: string, config?: LLMConfig): Promise<string | LLMMessage[]>;
+  getEstimatedTokens(content: string | LLMMessage[]): number;
+}
+
+/**
+ * 内容管理结果
+ */
+export interface ContentManagementResult {
+  processedContent: string | LLMMessage[];
+  strategy: string;
+  compressionRatio?: number;
+  segmentCount?: number;
+  originalTokens: number;
+  processedTokens: number;
+}
+
+/**
+ * 分片信息接口
+ */
+export interface ChunkInfo {
+  id: string;
+  content: string;
+  index: number;
+  totalChunks: number;
+  isLastChunk: boolean;
+  overlapWithNext?: string;
+}
+
+/**
+ * 分片管理结果
+ */
+export interface ChunkManagementResult {
+  strategy: string;
+  chunks: ChunkInfo[];
+  totalChunks: number;
+  originalLength: number;
+  averageChunkLength: number;
+  overlapRate: number;
+}
+
+/**
  * LLM适配器抽象基类
  */
 export abstract class BaseLLMAdapter {
   protected readonly logger: Logger;
   protected readonly providerName: string;
   protected initialized = false;
+  
+  // 内容管理策略注册表
+  protected contentStrategies: Map<string, ContentManagementStrategy> = new Map();
 
   constructor(providerName: string) {
     this.providerName = providerName;
     this.logger = new Logger(`${this.constructor.name}`);
+    
+    // 注册默认的内容管理策略
+    this.registerDefaultStrategies();
   }
 
   /**
@@ -170,6 +231,304 @@ export abstract class BaseLLMAdapter {
     return modelInfo?.supportsFunctionCalling || false;
   }
 
+  /**
+   * 注册内容管理策略
+   */
+  protected registerContentStrategy(name: string, strategy: ContentManagementStrategy): void {
+    this.contentStrategies.set(name, strategy);
+    this.logger.debug(`已注册内容管理策略: ${name}`);
+  }
+
+  /**
+   * 执行内容管理
+   */
+  protected async manageContent(
+    content: string | LLMMessage[],
+    model: string,
+    config?: LLMConfig
+  ): Promise<ContentManagementResult> {
+    const originalTokens = this.estimateTokens(content);
+    const modelInfo = this.getSupportedModels().find(m => m.name === model);
+    
+    if (!modelInfo) {
+      throw new Error(`不支持的模型: ${model}`);
+    }
+
+    // 检查是否需要内容管理
+    if (originalTokens <= modelInfo.contextLength * 0.9) {
+      return {
+        processedContent: content,
+        strategy: "none",
+        originalTokens,
+        processedTokens: originalTokens
+      };
+    }
+
+    // 尝试各个策略
+    for (const [strategyName, strategy] of this.contentStrategies) {
+      try {
+        if (strategy.canHandle(content, model)) {
+          this.logger.debug(`使用内容管理策略: ${strategyName}`);
+          const processedContent = await strategy.process(content, model, config);
+          const processedTokens = this.estimateTokens(processedContent);
+          
+          return {
+            processedContent,
+            strategy: strategyName,
+            compressionRatio: originalTokens > 0 ? processedTokens / originalTokens : 1,
+            originalTokens,
+            processedTokens
+          };
+        }
+      } catch (error) {
+        this.logger.warn(`内容管理策略 ${strategyName} 失败: ${error.message}`);
+      }
+    }
+
+    // 如果所有策略都失败，尝试分片策略
+    this.logger.debug(`尝试使用分片策略处理长文本 (${originalTokens} tokens)`);
+    const chunkingResult = this.handleChunking(content, model, config);
+    
+    if (chunkingResult) {
+      return chunkingResult;
+    }
+
+    // 如果所有策略都失败，抛出错误
+    throw new Error(`内容过长 (${originalTokens} tokens)，超过模型上下文限制 (${modelInfo.contextLength} tokens)，且无法通过现有策略处理`);
+  }
+
+  /**
+   * 估算内容token数量
+   */
+  protected estimateTokens(content: string | LLMMessage[]): number {
+    if (typeof content === "string") {
+      return Math.floor(content.length / 4); // 粗略估算：中文字符约为0.25个token
+    }
+    
+    // 对于消息数组，计算所有内容的总长度
+    const totalLength = content.reduce((sum, message) => sum + message.content.length, 0);
+    return Math.floor(totalLength / 4);
+  }
+
+  /**
+   * 注册默认的内容管理策略
+   */
+  protected abstract registerDefaultStrategies(): void;
+
+  /**
+   * 获取供应商特定的长度限制配置
+   */
+  protected abstract getProviderLengthLimits(model: string): ProviderLengthLimits;
+
+  /**
+   * 获取供应商特定的长度限制配置
+   */
+  protected getDefaultLengthLimits(): ProviderLengthLimits {
+    return {
+      maxInputLength: 30720,
+      recommendedMaxInputLength: 28000,
+      chunkOverlap: 200,
+      chunkSize: 4000
+    };
+  }
+
+  /**
+   * 智能分片策略
+   */
+  protected intelligentChunking(
+    content: string,
+    model: string,
+    config?: LLMConfig
+  ): ChunkManagementResult {
+    const lengthLimits = this.getProviderLengthLimits(model);
+    const chunkSize = config?.chunkSize || lengthLimits.chunkSize;
+    const chunkOverlap = config?.chunkOverlap || lengthLimits.chunkOverlap;
+    
+    // 检查是否需要分片
+    if (content.length <= lengthLimits.recommendedMaxInputLength) {
+      return {
+        strategy: "none",
+        chunks: [{
+          id: "single-chunk",
+          content,
+          index: 0,
+          totalChunks: 1,
+          isLastChunk: true
+        }],
+        totalChunks: 1,
+        originalLength: content.length,
+        averageChunkLength: content.length,
+        overlapRate: 0
+      };
+    }
+
+    // 执行智能分片
+    const chunks: ChunkInfo[] = [];
+    const totalLength = content.length;
+    let currentPosition = 0;
+    let chunkIndex = 0;
+
+    while (currentPosition < totalLength) {
+      const endPosition = Math.min(currentPosition + chunkSize, totalLength);
+      let chunkContent = content.substring(currentPosition, endPosition);
+      
+      // 如果不是最后一个chunk，尝试在句子边界结束
+      if (endPosition < totalLength && chunkSize < 1000) {
+        // 如果chunk很小，尝试在句子边界分割
+        const lastSentenceEnd = this.findLastSentenceEnd(chunkContent);
+        if (lastSentenceEnd > 0 && lastSentenceEnd < chunkContent.length - 50) {
+          chunkContent = chunkContent.substring(0, lastSentenceEnd);
+        }
+      }
+      
+      const chunkId = `chunk-${chunkIndex.toString().padStart(3, '0')}`;
+      const isLastChunk = endPosition >= totalLength;
+      
+      chunks.push({
+        id: chunkId,
+        content: chunkContent,
+        index: chunkIndex,
+        totalChunks: Math.ceil(totalLength / chunkSize),
+        isLastChunk,
+        overlapWithNext: isLastChunk ? undefined : chunkContent.substring(Math.max(0, chunkContent.length - chunkOverlap))
+      });
+
+      currentPosition = endPosition;
+      chunkIndex++;
+    }
+
+    return {
+      strategy: "intelligent-chunking",
+      chunks,
+      totalChunks: chunks.length,
+      originalLength: totalLength,
+      averageChunkLength: chunks.reduce((sum, chunk) => sum + chunk.content.length, 0) / chunks.length,
+      overlapRate: chunkOverlap / chunkSize
+    };
+  }
+
+  /**
+   * 查找最后一个句子结束位置
+   */
+  private findLastSentenceEnd(text: string): number {
+    const sentenceEndings = ['。', '！', '？', '.', '!', '?', ';', '；', '\n'];
+    let lastEnd = -1;
+    
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (sentenceEndings.includes(text[i])) {
+        // 检查是否是真正的句子结束（后面没有跟随英文小写字母）
+        if (i < text.length - 1 && /[a-z]/.test(text[i + 1])) {
+          continue;
+        }
+        lastEnd = i + 1;
+        break;
+      }
+    }
+    
+    return lastEnd;
+  }
+
+  /**
+   * 重建分片响应
+   */
+  protected reconstructChunkedResponses(
+    responses: string[],
+    chunkInfo: ChunkManagementResult
+  ): string {
+    if (responses.length === 1) {
+      return responses[0];
+    }
+
+    // 简单的拼接策略，可以根据需要改进
+    let reconstructed = responses[0];
+    
+    for (let i = 1; i < responses.length; i++) {
+      // 移除重叠部分
+      const overlap = chunkInfo.chunks[i - 1].overlapWithNext;
+      if (overlap && responses[i].startsWith(overlap)) {
+        reconstructed += responses[i].substring(overlap.length);
+      } else {
+        reconstructed += responses[i];
+      }
+    }
+
+    return reconstructed;
+  }
+
+  /**
+   * 处理分片逻辑
+   */
+  protected handleChunking(
+    content: string | LLMMessage[],
+    model: string,
+    config?: LLMConfig
+  ): ContentManagementResult | null {
+    if (typeof content !== 'string') {
+      this.logger.warn('分片策略仅支持字符串内容');
+      return null;
+    }
+
+    const chunkingResult = this.intelligentChunking(content, model, config);
+    
+    return {
+      processedContent: this.createChunkedPrompt(chunkingResult, content),
+      strategy: "chunking",
+      compressionRatio: 1,
+      segmentCount: chunkingResult.totalChunks,
+      originalTokens: this.estimateTokens(content),
+      processedTokens: this.estimateTokens(this.createChunkedPrompt(chunkingResult, content))
+    };
+  }
+
+  /**
+   * 创建分片后的提示
+   */
+  protected createChunkedPrompt(chunkingResult: ChunkManagementResult, originalContent: string): LLMMessage[] {
+    const messages: LLMMessage[] = [];
+    
+    // 添加系统提示说明
+    messages.push({
+      role: "system",
+      content: `您正在处理一个长文档的片段。这是第 ${chunkingResult.chunks[0].index + 1} 片段，共 ${chunkingResult.chunks[0].totalChunks} 个片段。请专注于当前片段的内容，并保持您的回答的连贯性和完整性。`
+    });
+
+    // 添加当前片段内容
+    messages.push({
+      role: "user",
+      content: chunkingResult.chunks[0].content
+    });
+
+    // 如果有前一片段的重叠部分，提供上下文
+    if (chunkingResult.chunks[0].overlapWithNext) {
+      messages.push({
+        role: "system",
+        content: `请注意，您的回答应该与后续片段保持连贯。后续片段的开始部分将是：${chunkingResult.chunks[0].overlapWithNext.substring(0, 100)}...`
+      });
+    }
+
+    return messages;
+  }
+
+  /**
+   * 处理分片响应的抽象方法
+   */
+  protected abstract processChunkedResponse(
+    responses: string[],
+    chunkingResult: ChunkManagementResult
+  ): Promise<LLMResponse>;
+
+  /**
+   * 检查内容是否需要分片
+   */
+  protected needsChunking(
+    content: string | LLMMessage[],
+    model: string
+  ): boolean {
+    const lengthLimits = this.getProviderLengthLimits(model);
+    const estimatedTokens = this.estimateTokens(content);
+    
+    return estimatedTokens > lengthLimits.recommendedMaxInputLength;
+  }
 
   /**
    * 标准化消息格式

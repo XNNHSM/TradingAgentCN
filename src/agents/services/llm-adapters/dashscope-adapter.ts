@@ -5,7 +5,7 @@
 
 import {Injectable} from "@nestjs/common";
 import {ConfigService} from "@nestjs/config";
-import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo, TokenUsage, ToolCall,} from "./base-llm-adapter";
+import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo, TokenUsage, ToolCall, ProviderLengthLimits, ChunkManagementResult, ChunkInfo} from "./base-llm-adapter";
 
 /**
  * DashScope API请求体接口
@@ -109,6 +109,36 @@ const DASHSCOPE_MODELS: ModelInfo[] = [
   },
 ];
 
+/**
+ * DashScope供应商特定的长度限制配置
+ */
+const DASHSCOPE_LENGTH_LIMITS: Record<string, ProviderLengthLimits> = {
+  "qwen-turbo": {
+    maxInputLength: 8192,
+    recommendedMaxInputLength: 7000,
+    chunkOverlap: 100,
+    chunkSize: 3000
+  },
+  "qwen-plus": {
+    maxInputLength: 32768,
+    recommendedMaxInputLength: 28000,
+    chunkOverlap: 200,
+    chunkSize: 4000
+  },
+  "qwen-max": {
+    maxInputLength: 32768,
+    recommendedMaxInputLength: 28000,
+    chunkOverlap: 200,
+    chunkSize: 4000
+  },
+  "qwen-max-longcontext": {
+    maxInputLength: 1000000,
+    recommendedMaxInputLength: 800000,
+    chunkOverlap: 1000,
+    chunkSize: 50000
+  }
+};
+
 @Injectable()
 export class DashScopeAdapter extends BaseLLMAdapter {
   private apiKey: string;
@@ -165,6 +195,13 @@ export class DashScopeAdapter extends BaseLLMAdapter {
 
     const messages = this.normalizeMessages(prompt);
     const startTime = Date.now();
+
+    // 检查是否需要分片处理
+    const model = config?.model || this.defaultModel;
+    if (this.needsChunking(prompt, model)) {
+      this.logger.log(`检测到长文本内容，开始分片处理，模型: ${model}`);
+      return await this.processChunkedPrompt(prompt, model, startTime, config);
+    }
 
     try {
       const requestBody = this.buildRequestBody(messages, config);
@@ -496,5 +533,121 @@ export class DashScopeAdapter extends BaseLLMAdapter {
     }
 
     return { estimatedInputTokens, estimatedCost };
+  }
+
+  /**
+   * 获取供应商特定的长度限制配置
+   */
+  protected getProviderLengthLimits(model: string): ProviderLengthLimits {
+    return DASHSCOPE_LENGTH_LIMITS[model] || this.getDefaultLengthLimits();
+  }
+
+  /**
+   * 注册默认的内容管理策略
+   */
+  protected registerDefaultStrategies(): void {
+    // 可以在这里注册特定的内容管理策略
+    this.logger.log("DashScope适配器注册了默认内容管理策略");
+  }
+
+  /**
+   * 处理分片响应
+   */
+  protected async processChunkedResponse(
+    responses: string[],
+    chunkingResult: ChunkManagementResult
+  ): Promise<LLMResponse> {
+    // 对于DashScope，简单地将分片响应连接起来
+    const content = this.reconstructChunkedResponses(responses, chunkingResult);
+    
+    return {
+      content,
+      usage: {
+        inputTokens: 0,
+        outputTokens: this.estimateTokens(content),
+        totalTokens: this.estimateTokens(content)
+      },
+      model: this.defaultModel
+    };
+  }
+
+  /**
+   * 处理分片提示
+   */
+  private async processChunkedPrompt(
+    prompt: string | LLMMessage[],
+    model: string,
+    startTime: number,
+    config?: LLMConfig
+  ): Promise<LLMResponse> {
+    if (typeof prompt !== 'string') {
+      throw new Error('分片处理仅支持字符串内容');
+    }
+
+    const lengthLimits = this.getProviderLengthLimits(model);
+    const chunkingResult = this.intelligentChunking(prompt, model, config);
+    
+    this.logger.log(`文本分片完成：共 ${chunkingResult.totalChunks} 个片段，平均长度 ${chunkingResult.averageChunkLength.toFixed(0)} 字符`);
+
+    const responses: string[] = [];
+    
+    // 逐个处理每个片段
+    for (let i = 0; i < chunkingResult.chunks.length; i++) {
+      const chunk = chunkingResult.chunks[i];
+      
+      this.logger.debug(`处理第 ${i + 1}/${chunkingResult.totalChunks} 个片段`);
+      
+      // 创建当前片段的提示
+      const chunkMessages = this.createChunkedMessages(chunk, chunkingResult);
+      
+      try {
+        const requestBody = this.buildRequestBody(chunkMessages, config);
+        const response = await this.callDashScopeAPI(requestBody, config);
+        const llmResponse = this.parseResponse(response, requestBody.model);
+        
+        responses.push(llmResponse.content);
+      } catch (error) {
+        this.logger.error(`处理第 ${i + 1} 个片段时出错: ${error.message}`);
+        // 如果某个片段失败，使用空字符串继续
+        responses.push('');
+      }
+    }
+
+    // 合并所有片段的响应
+    const finalResponse = await this.processChunkedResponse(responses, chunkingResult);
+    
+    const duration = Date.now() - startTime;
+    this.logApiCall([{ role: "user", content: prompt }], config, finalResponse, undefined, duration);
+
+    return finalResponse;
+  }
+
+  /**
+   * 创建分片消息
+   */
+  private createChunkedMessages(chunk: ChunkInfo, chunkingResult: ChunkManagementResult): LLMMessage[] {
+    const messages: LLMMessage[] = [];
+    
+    // 添加系统提示
+    messages.push({
+      role: "system",
+      content: `您正在处理一个长文档的片段。这是第 ${chunk.index + 1} 片段，共 ${chunk.totalChunks} 个片段。请专注于当前片段的内容，并保持您的回答的连贯性和完整性。`
+    });
+
+    // 添加当前片段内容
+    messages.push({
+      role: "user",
+      content: chunk.content
+    });
+
+    // 如果有重叠部分，提供上下文
+    if (chunk.overlapWithNext) {
+      messages.push({
+        role: "system",
+        content: `请注意，您的回答应该与后续片段保持连贯。后续片段的开始部分将是：${chunk.overlapWithNext.substring(0, 100)}...`
+      });
+    }
+
+    return messages;
   }
 }
