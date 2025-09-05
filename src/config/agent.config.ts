@@ -95,7 +95,7 @@ export class AgentConfigService {
 
       // 默认参数
       defaults: {
-        timeout: this.configService.get<number>("LLM_DEFAULT_TIMEOUT", 30),
+        timeout: this.configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
         maxRetries: this.configService.get<number>("LLM_MAX_RETRIES", 3),
         temperature: this.configService.get<number>(
           "LLM_DEFAULT_TEMPERATURE",
@@ -121,7 +121,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.fast,
         temperature: 0.3,
         maxTokens: 1500,
-        timeout: 30,
+        timeout: 120,
       }),
 
       // 技术分析智能体配置
@@ -129,7 +129,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.standard,
         temperature: 0.5,
         maxTokens: 3000,
-        timeout: 60,
+        timeout: 120,
       }),
 
       // 基本面分析智能体配置
@@ -137,7 +137,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.premium,
         temperature: 0.4,
         maxTokens: 3500,
-        timeout: 75,
+        timeout: 120,
       }),
 
       // 新闻分析智能体配置
@@ -145,7 +145,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.standard,
         temperature: 0.6,
         maxTokens: 3000,
-        timeout: 60,
+        timeout: 120,
       }),
 
       // 社交媒体分析师配置
@@ -153,7 +153,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.standard,
         temperature: 0.7,
         maxTokens: 3000,
-        timeout: 45,
+        timeout: 120,
       }),
 
       // 量化交易员配置
@@ -161,7 +161,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.premium,
         temperature: 0.3,
         maxTokens: 3500,
-        timeout: 60,
+        timeout: 120,
       }),
 
       // 宏观经济分析师配置
@@ -169,7 +169,15 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.premium,
         temperature: 0.6,
         maxTokens: 4000,
-        timeout: 60,
+        timeout: 120,
+      }),
+
+      // 政策分析师配置
+      policyAnalyst: this.buildAgentConfig("POLICY_ANALYST", {
+        model: llmConfig.dashscope.models.premium,
+        temperature: 0.5,
+        maxTokens: 3500,
+        timeout: 120,
       }),
 
       // 统一协调器配置
@@ -177,7 +185,7 @@ export class AgentConfigService {
         model: llmConfig.dashscope.models.premium,
         temperature: 0.4,
         maxTokens: 4500,
-        timeout: 90,
+        timeout: 120,
       }),
     };
   }
@@ -353,6 +361,7 @@ export class AgentConfigService {
         socialMediaAnalyst: configs.socialMediaAnalyst.model,
         quantitativeTrader: configs.quantitativeTrader.model,
         macroEconomist: configs.macroEconomist.model,
+        policyAnalyst: configs.policyAnalyst.model,
         unifiedOrchestrator: configs.unifiedOrchestrator.model,
       },
     };
