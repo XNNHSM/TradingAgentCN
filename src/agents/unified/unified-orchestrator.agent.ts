@@ -1,14 +1,7 @@
 import {Injectable} from "@nestjs/common";
 import {ConfigService} from "@nestjs/config";
 import {BaseAgent} from "../base/base-agent";
-import {
-  AgentConfig,
-  AgentContext,
-  AgentResult,
-  AgentStatus,
-  AgentType,
-  TradingRecommendation,
-} from "../interfaces/agent.interface";
+import {AgentConfig, AgentContext, AgentResult, AgentType, TradingRecommendation,} from "../interfaces/agent.interface";
 import {LLMService} from "../services/llm.service";
 import {AgentExecutionRecordService} from "../services/agent-execution-record.service";
 
@@ -39,7 +32,7 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "UNIFIED_ORCHESTRATOR_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 90), // 更长超时
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120), // 更长超时
       ),
       retryCount: configService.get<number>(
         "UNIFIED_ORCHESTRATOR_RETRY_COUNT",
@@ -114,64 +107,71 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
   }
 
   /**
-   * 执行统一协调分析
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
-
-    try {
-      // 构建协调分析上下文
-      const analysisPrompt = this.buildOrchestrationPrompt(context);
-
-      // 调用LLM进行协调分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      // 从协调结果中提取评分和建议
-      const score = this.extractFinalScore(analysisResult);
-      const recommendation = this.extractFinalRecommendation(analysisResult);
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        score,
-        recommendation,
-        confidence: this.calculateOrchestrationConfidence(context, analysisResult),
-        keyInsights: this.extractOrchestrationInsights(analysisResult),
-        risks: this.identifyOrchestrationRisks(analysisResult),
-        supportingData: {
-          orchestrationWeights: {
-            comprehensive_analyst: "40%",
-            trading_strategist: "30%", 
-            quantitative_trader: "20%",
-            macro_economist: "15%",
-            social_media_analyst: "10%"
-          },
-          inputAgents: context.previousResults?.map(r => r.agentType) || [],
-          decisionFramework: [
-            "观点整理", "一致性分析", "权重计算", 
-            "风险评估", "决策生成", "执行策略"
-          ],
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      throw error;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 验证是否有其他智能体的分析结果
+    if (!context.previousResults || context.previousResults.length === 0) {
+      throw new Error('需要至少一个其他分析师的分析结果才能进行协调');
     }
+
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          previousResults: context.previousResults,
+          analysisType: context.metadata?.analysisType || 'orchestration_analysis'
+        }
+      }
+    };
+  }
+
+  /**
+   * 执行协调分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 构建协调分析提示词
+    const analysisPrompt = this.buildOrchestrationPrompt(context);
+
+    // 调用LLM进行协调分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    // 从协调结果中提取评分和建议
+    const score = this.extractFinalScore(analysis);
+    const recommendation = this.extractFinalRecommendation(analysis);
+
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      score,
+      recommendation,
+      confidence: this.calculateOrchestrationConfidence(context, analysis),
+      keyInsights: this.extractOrchestrationInsights(analysis),
+      risks: this.identifyOrchestrationRisks(analysis),
+      supportingData: {
+        orchestrationWeights: {
+          comprehensive_analyst: "40%",
+          trading_strategist: "30%", 
+          quantitative_trader: "20%",
+          macro_economist: "15%",
+          social_media_analyst: "10%"
+        },
+        inputAgents: context.previousResults?.map(r => r.agentType) || [],
+        decisionFramework: [
+          "观点整理", "一致性分析", "权重计算", 
+          "风险评估", "决策生成", "执行策略"
+        ],
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
   }
 
   /**

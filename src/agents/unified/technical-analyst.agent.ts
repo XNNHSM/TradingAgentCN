@@ -3,14 +3,7 @@ import {ConfigService} from '@nestjs/config';
 import {BaseAgent} from '../base/base-agent';
 import {LLMService} from '../services/llm.service';
 import {AgentExecutionRecordService} from '../services/agent-execution-record.service';
-import {
-  AgentConfig,
-  AgentContext,
-  AgentResult,
-  AgentStatus,
-  AgentType,
-  TradingRecommendation
-} from '../interfaces/agent.interface';
+import {AgentConfig, AgentContext, AgentResult, AgentType, TradingRecommendation} from '../interfaces/agent.interface';
 import {BusinessLogger} from '../../common/utils/business-logger.util';
 
 /**
@@ -42,7 +35,7 @@ export class TechnicalAnalystAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "TECHNICAL_ANALYST_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 60),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "TECHNICAL_ANALYST_RETRY_COUNT",
@@ -104,89 +97,91 @@ export class TechnicalAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 执行技术分析
-   * 基于从Activities传入的历史数据和技术指标进行分析
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
-
-    try {
-      this.businessLogger.serviceInfo(
-        `开始技术分析股票 ${context.stockCode}`
-      );
-
-      // 从context中获取MCP数据（由Activities提供）
-      const mcpData = context.metadata?.mcpData;
-      const analysisData = context.metadata?.analysisData;
-      
-      // 根据分析类型获取相应数据
-      let historicalData, technicalIndicators;
-      
-      if (context.metadata?.analysisType === 'risk_analysis' && analysisData) {
-        // 风险分析模式：使用所有MCP数据
-        historicalData = analysisData.allMcpData?.historicalData;
-        technicalIndicators = analysisData.allMcpData?.technicalIndicators;
-      } else if (mcpData) {
-        // 技术分析模式：使用专门的技术数据
-        historicalData = mcpData.historicalData;
-        technicalIndicators = mcpData.technicalIndicators;
-      }
-
-      if (!historicalData && !technicalIndicators) {
-        throw new Error('历史数据和技术指标均未提供');
-      }
-
-      // 构建分析提示词
-      const analysisPrompt = this.buildAnalysisPrompt(context, historicalData, technicalIndicators);
-
-      // 调用 LLM 进行技术分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      // 从分析结果中提取评分和建议
-      const score = this.extractTechnicalScore(analysisResult);
-      const recommendation = this.extractTechnicalRecommendation(analysisResult);
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        score,
-        recommendation,
-        confidence: this.calculateTechnicalConfidence(historicalData, technicalIndicators, analysisResult),
-        keyInsights: this.extractTechnicalInsights(analysisResult),
-        risks: this.identifyTechnicalRisks(analysisResult),
-        supportingData: {
-          analysisType: context.metadata?.analysisType || 'technical_analysis',
-          dataSource: 'mcp_activities',
-          historicalDataPeriod: this.getDataPeriod(historicalData),
-          technicalIndicators: this.extractIndicatorSummary(technicalIndicators),
-          keyLevels: this.extractKeyLevels(analysisResult),
-          trendAnalysis: this.extractTrendAnalysis(analysisResult),
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      this.businessLogger.serviceInfo(
-        `技术分析完成，评分: ${score}，建议: ${recommendation}，耗时 ${processingTime}ms`
-      );
-
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      this.businessLogger.serviceError("技术分析失败", error);
-      throw error;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 从context中获取MCP数据（由Activities提供）
+    const mcpData = context.metadata?.mcpData;
+    const analysisData = context.metadata?.analysisData;
+    
+    // 根据分析类型获取相应数据
+    let historicalData, technicalIndicators;
+    
+    if (context.metadata?.analysisType === 'risk_analysis' && analysisData) {
+      // 风险分析模式：使用所有MCP数据
+      historicalData = analysisData.allMcpData?.historicalData;
+      technicalIndicators = analysisData.allMcpData?.technicalIndicators;
+    } else if (mcpData) {
+      // 技术分析模式：使用专门的技术数据
+      historicalData = mcpData.historicalData;
+      technicalIndicators = mcpData.technicalIndicators;
     }
+
+    if (!historicalData && !technicalIndicators) {
+      throw new Error('历史数据和技术指标均未提供');
+    }
+
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          historicalData,
+          technicalIndicators,
+          analysisType: context.metadata?.analysisType || 'technical_analysis'
+        }
+      }
+    };
+  }
+
+  /**
+   * 执行技术分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 从准备好的上下文中获取分析数据
+    const analysisData = context.metadata?.analysisData;
+    const historicalData = analysisData?.historicalData;
+    const technicalIndicators = analysisData?.technicalIndicators;
+
+    // 构建分析提示词
+    const analysisPrompt = this.buildAnalysisPrompt(context);
+
+    // 调用LLM进行技术分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    const analysisData = context.metadata?.analysisData;
+    const historicalData = analysisData?.historicalData;
+    const technicalIndicators = analysisData?.technicalIndicators;
+
+    // 从分析结果中提取评分和建议
+    const score = this.extractTechnicalScore(analysis);
+    const recommendation = this.extractTechnicalRecommendation(analysis);
+
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      score,
+      recommendation,
+      confidence: this.calculateTechnicalConfidence(historicalData, technicalIndicators, analysis),
+      keyInsights: this.extractTechnicalInsights(analysis),
+      risks: this.identifyTechnicalRisks(analysis),
+      supportingData: {
+        analysisType: context.metadata?.analysisType || 'technical_analysis',
+        dataSource: 'mcp_activities',
+        historicalDataPeriod: this.getDataPeriod(historicalData),
+        technicalIndicators: this.extractIndicatorSummary(technicalIndicators),
+        keyLevels: this.extractKeyLevels(analysis),
+        trendAnalysis: this.extractTrendAnalysis(analysis),
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
   }
 
   /**
@@ -200,7 +195,7 @@ export class TechnicalAnalystAgent extends BaseAgent {
   /**
    * 构建技术分析提示词
    */
-  private buildAnalysisPrompt(context: AgentContext, historicalData: any, technicalIndicators: any): string {
+  private buildAnalysisPrompt(context: AgentContext): string {
     const { stockCode, stockName } = context;
     
     let prompt = `请对股票 ${stockCode}`;
@@ -208,6 +203,11 @@ export class TechnicalAnalystAgent extends BaseAgent {
       prompt += ` (${stockName})`;
     }
     prompt += ` 进行专业的技术分析。\n\n`;
+
+    // 从context中获取分析数据
+    const analysisData = context.metadata?.analysisData;
+    const historicalData = analysisData?.historicalData;
+    const technicalIndicators = analysisData?.technicalIndicators;
 
     // 添加历史数据
     if (historicalData) {

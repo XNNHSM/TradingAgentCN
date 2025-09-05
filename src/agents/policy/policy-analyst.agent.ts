@@ -3,7 +3,7 @@ import { BaseAgent } from '../base/base-agent';
 import { LLMService } from '../services/llm.service';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { PolicyRelevantNews } from '../../modules/news/services/news-summary.service';
-import { AgentType, AgentContext } from '../interfaces/agent.interface';
+import { AgentType, AgentContext, AgentResult, TradingRecommendation } from '../interfaces/agent.interface';
 
 export interface PolicyAnalysisInput {
   stockCode: string;
@@ -91,7 +91,62 @@ export class PolicyAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 实现BaseAgent的抽象方法：构建提示词
+   * 准备上下文 - 验证和准备分析所需的上下文数据
+   */
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 从context中提取PolicyAnalysisInput
+    const input = context.metadata?.policyAnalysisInput as PolicyAnalysisInput;
+    if (!input) {
+      throw new Error('PolicyAnalysisInput not found in context metadata');
+    }
+    
+    return context;
+  }
+
+  /**
+   * 执行政策分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 从context中提取PolicyAnalysisInput
+    const input = context.metadata?.policyAnalysisInput as PolicyAnalysisInput;
+    if (!input) {
+      throw new Error('PolicyAnalysisInput not found in context metadata');
+    }
+    
+    const prompt = await this.buildPrompt(context);
+    return await this.callLLM(prompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    const input = context.metadata?.policyAnalysisInput as PolicyAnalysisInput;
+    
+    const result: AgentResult = {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      timestamp: new Date(),
+      score: 75, // 默认评分
+      confidence: 0.8, // 默认置信度
+      recommendation: TradingRecommendation.HOLD, // 默认建议
+      keyInsights: [
+        '政策分析完成',
+        '相关新闻摘要已处理',
+      ],
+      risks: [],
+    };
+
+    this.businessLogger.serviceInfo(
+      `政策分析完成，股票代码: ${input.stockCode}`
+    );
+
+    return result;
+  }
+
+  /**
+   * 构建政策分析提示词
    */
   protected async buildPrompt(context: AgentContext): Promise<string> {
     // 从context中提取PolicyAnalysisInput

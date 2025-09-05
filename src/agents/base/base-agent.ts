@@ -41,8 +41,8 @@ export abstract class BaseAgent implements IAgent {
   }
 
   /**
-   * 执行分析任务（支持 function calling）
-   * 改进的数据落盘策略：LLM调用前先创建记录，调用后更新结果
+   * 执行分析任务 - 最终方法，子类不能重写
+   * 负责数据落盘、状态管理和流程编排
    */
   async analyze(context: AgentContext): Promise<AgentResult> {
     const startTime = new Date();
@@ -64,15 +64,18 @@ export abstract class BaseAgent implements IAgent {
     let executionRecordId: number | null = null;
 
     try {
-      // 预处理上下文
+      // 步骤1: 预处理上下文
       const processedContext = await this.preprocessContext(context);
 
-      // 构建提示词
-      prompt = await this.buildPrompt(processedContext);
+      // 步骤2: 准备上下文（子类实现）
+      const preparedContext = await this.prepareContext(processedContext);
 
-      // 在LLM调用前先创建执行记录（pending状态）
+      // 步骤3: 在LLM调用前先创建执行记录（pending状态）
       if (this.executionRecordService) {
         try {
+          // 构建提示词（用于记录）
+          prompt = await this.buildPrompt(preparedContext);
+          
           const initialRecord = await this.executionRecordService.create({
             sessionId,
             agentType: this.type,
@@ -104,71 +107,28 @@ export abstract class BaseAgent implements IAgent {
         }
       }
 
-      let analysis: string;
+      // 步骤4: 执行分析（子类实现）
+      const analysis = await this.executeAnalysis(preparedContext);
 
-      // 先检查子类是否重写了performAnalysis方法（MCP模式）
-      if (this.hasCustomPerformAnalysis()) {
-        // 使用子类的自定义分析方法（MCP模式）
-        analysis = await this.performAnalysis(processedContext);
+      // 步骤5: 处理结果（子类实现）
+      result = await this.processResult(analysis, preparedContext);
+
+      // 步骤6: 估算token数量（如果LLMResponse不存在）
+      if (!llmResponse) {
+        const estimatedInputTokens = prompt ? Math.floor(prompt.length / 4) : 0;
+        const estimatedOutputTokens = Math.floor(analysis.length / 4);
+        const estimatedTotalTokens = estimatedInputTokens + estimatedOutputTokens;
         
-        // 创建简化的LLMResponse
         llmResponse = {
           content: analysis,
           finishReason: 'stop',
           usage: {
-            inputTokens: Math.floor(prompt.length / 4), // 粗略估算
-            outputTokens: Math.floor(analysis.length / 4),
-            totalTokens: Math.floor((prompt.length + analysis.length) / 4),
-          }
-        };
-      } else if (this.dataToolkit) {
-        // 传统的function calling模式
-        // 获取可用工具
-        const tools = this.dataToolkit.getToolDefinitions();
-
-        // 调用LLM进行分析（支持工具调用）
-        llmResponse = await this.callLLMWithTools(prompt, tools);
-
-        // 记录工具调用
-        if (llmResponse.toolCalls) {
-          toolCalls = llmResponse.toolCalls;
-        }
-
-        // 处理工具调用
-        const enhancedResponse = await this.processToolCalls(
-          llmResponse,
-          processedContext,
-        );
-
-        analysis = enhancedResponse.content;
-        
-        // 记录工具调用结果
-        if (enhancedResponse.toolCalls) {
-          toolResults = enhancedResponse.toolCalls.map(call => ({
-            id: call.id,
-            function: call.function.name,
-            result: 'Tool execution completed', // 可以更详细地记录结果
-          }));
-        }
-      } else {
-        // 传统方式调用LLM
-        const analysisResult = await this.callLLM(prompt);
-        analysis = analysisResult;
-        
-        // 创建简化的LLMResponse
-        llmResponse = {
-          content: analysis,
-          finishReason: 'stop',
-          usage: {
-            inputTokens: Math.floor(prompt.length / 4), // 粗略估算
-            outputTokens: Math.floor(analysis.length / 4),
-            totalTokens: Math.floor((prompt.length + analysis.length) / 4),
+            inputTokens: estimatedInputTokens,
+            outputTokens: estimatedOutputTokens,
+            totalTokens: estimatedTotalTokens,
           }
         };
       }
-
-      // 后处理分析结果
-      result = await this.postprocessResult(analysis, processedContext);
 
       // 记录处理时间
       const endTime = new Date();
@@ -213,18 +173,18 @@ export abstract class BaseAgent implements IAgent {
     } catch (error) {
       this.status = AgentStatus.ERROR;
       errorMessage = error.message;
-      // errorStack = error.stack; // 保留在metadata中记录
       
       this.logger.error(`分析失败: ${error.message}`, error.stack);
 
       // 创建错误结果
       const endTime = new Date();
+      const processingTime = endTime.getTime() - startTime.getTime();
       result = {
         agentName: this.name,
         agentType: this.type,
         analysis: `分析过程中发生错误: ${error.message}`,
         timestamp: endTime,
-        processingTime: endTime.getTime() - startTime.getTime(),
+        processingTime,
         confidence: 0,
         score: 0,
       };
@@ -237,15 +197,13 @@ export abstract class BaseAgent implements IAgent {
             inputTokens: llmResponse?.usage?.inputTokens || 0,
             outputTokens: llmResponse?.usage?.outputTokens || 0,
             totalTokens: llmResponse?.usage?.totalTokens || 0,
-            executionTimeMs: result.processingTime,
+            executionTimeMs: processingTime,
             status: 'failed',
             errorMessage,
             errorCode: error.code || 'UNKNOWN_ERROR',
             metadata: {
               stockCode: context.stockCode,
               stockName: context.stockName,
-              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-              toolResults: toolResults.length > 0 ? toolResults : undefined,
               analysisType: context.metadata?.analysisType || 'single',
               environment: process.env.NODE_ENV || 'development',
               errorDetails: error.stack,
@@ -272,7 +230,7 @@ export abstract class BaseAgent implements IAgent {
             inputTokens: 0,
             outputTokens: 0,
             totalTokens: 0,
-            executionTimeMs: result.processingTime,
+            executionTimeMs: processingTime,
             status: 'failed',
             errorMessage,
             errorCode: error.code || 'UNKNOWN_ERROR',
@@ -311,30 +269,44 @@ export abstract class BaseAgent implements IAgent {
   }
 
   /**
-   * 构建提示词 - 子类必须实现
+   * 准备上下文 - 子类必须实现
+   * 用于验证和准备分析所需的上下文数据
    */
-  protected abstract buildPrompt(context: AgentContext): Promise<string>;
+  protected abstract prepareContext(context: AgentContext): Promise<AgentContext>;
 
   /**
-   * 执行分析 - 子类可以重写（用于MCP模式）
-   * 如果子类重写了这个方法，将跳过传统的tool calling流程
+   * 执行分析 - 子类必须实现
+   * 子类可以在这里调用LLM或其他分析逻辑
+   */
+  protected abstract executeAnalysis(context: AgentContext): Promise<string>;
+
+  /**
+   * 处理结果 - 子类必须实现
+   * 用于处理和分析结果，转换为AgentResult格式
+   */
+  protected abstract processResult(analysis: string, context: AgentContext): Promise<AgentResult>;
+
+  /**
+   * 构建提示词 - 可选方法，子类可以重写
+   * 如果子类需要使用传统的LLM调用模式，可以重写此方法
+   */
+  protected async buildPrompt(context: AgentContext): Promise<string> {
+    // 默认实现：使用简单的提示词
+    return `请分析股票 ${context.stockCode} ${context.stockName || ''} 的相关信息。`;
+  }
+
+  /**
+   * 执行分析 - 兼容旧版本的可选重写方法
+   * 为了兼容性，允许子类重写performAnalysis，但不推荐
    */
   protected async performAnalysis(context: AgentContext): Promise<string> {
-    // 默认实现：使用传统的LLM调用
+    // 默认实现：使用buildPrompt + executeAnalysis的组合
     const prompt = await this.buildPrompt(context);
-    return await this.callLLM(prompt);
+    return await this.executeAnalysis(context);
   }
 
   /**
-   * 检查子类是否重写了performAnalysis方法
-   */
-  private hasCustomPerformAnalysis(): boolean {
-    // 检查子类是否有自己的performAnalysis实现
-    return this.performAnalysis !== BaseAgent.prototype.performAnalysis;
-  }
-
-  /**
-   * 调用LLM进行分析
+   * 调用LLM进行分析 - 子类可以使用此方法进行LLM调用
    */
   protected async callLLM(prompt: string): Promise<string> {
     const fullPrompt = this.config.systemPrompt
@@ -379,7 +351,7 @@ export abstract class BaseAgent implements IAgent {
   }
 
   /**
-   * 调用LLM（支持工具调用）
+   * 调用LLM（支持工具调用） - 子类可以使用此方法进行工具调用
    */
   protected async callLLMWithTools(
     prompt: string,
@@ -404,53 +376,6 @@ export abstract class BaseAgent implements IAgent {
     );
 
     return await this.llmService.generateWithTools(fullPrompt, llmConfig);
-  }
-
-  /**
-   * 处理工具调用
-   */
-  protected async processToolCalls(
-    llmResponse: LLMResponse,
-    _context: AgentContext,
-  ): Promise<LLMResponse> {
-    if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
-      return llmResponse;
-    }
-
-    if (!this.dataToolkit) {
-      this.logger.warn("收到工具调用请求，但数据工具包不可用");
-      return llmResponse;
-    }
-
-    this.logger.debug(`处理 ${llmResponse.toolCalls.length} 个工具调用`);
-
-    let enhancedContent = llmResponse.content;
-
-    // 执行所有工具调用
-    for (const toolCall of llmResponse.toolCalls) {
-      try {
-        const functionName = toolCall.function.name;
-        const arguments_ = JSON.parse(toolCall.function.arguments);
-
-        this.logger.debug(`执行工具: ${functionName}`, arguments_);
-
-        const toolResult = await this.dataToolkit.executeTool(
-          functionName,
-          arguments_,
-        );
-
-        // 将工具结果添加到内容中
-        enhancedContent += `\n\n## 数据获取结果 - ${functionName}\n\n${toolResult}`;
-      } catch (error) {
-        this.logger.error(`工具调用失败: ${toolCall.function.name}`, error);
-        enhancedContent += `\n\n工具调用失败 (${toolCall.function.name}): ${error.message}`;
-      }
-    }
-
-    return {
-      ...llmResponse,
-      content: enhancedContent,
-    };
   }
 
   /**

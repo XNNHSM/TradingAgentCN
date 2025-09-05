@@ -1,7 +1,7 @@
 import {Injectable} from "@nestjs/common";
 import {ConfigService} from "@nestjs/config";
 import {BaseAgent} from "../base/base-agent";
-import {AgentConfig, AgentContext, AgentResult, AgentStatus, AgentType,} from "../interfaces/agent.interface";
+import {AgentConfig, AgentContext, AgentResult, AgentType,} from "../interfaces/agent.interface";
 import {LLMService} from "../services/llm.service";
 import {AgentExecutionRecordService} from "../services/agent-execution-record.service";
 
@@ -32,7 +32,7 @@ export class SocialMediaAnalystAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "SOCIAL_MEDIA_ANALYST_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 45),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "SOCIAL_MEDIA_ANALYST_RETRY_COUNT",
@@ -86,48 +86,68 @@ export class SocialMediaAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 执行社交媒体情绪分析
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 检查必需的数据
+    const newsData = context.newsData;
+    const historicalData = context.historicalData;
 
-    try {
-      // 构建分析上下文
-      const analysisPrompt = this.buildAnalysisPrompt(context);
-
-      // 调用LLM进行分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000, // 转换为毫秒
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        confidence: this.calculateConfidence(context, analysisResult),
-        keyInsights: this.extractSocialInsights(analysisResult),
-        risks: this.identifyRisks(analysisResult),
-        supportingData: {
-          socialMediaSources: ["Reddit", "Twitter", "StockTwits", "雪球"],
-          analysisMetrics: ["情绪倾向", "讨论热度", "关键词频率", "用户行为模式"],
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      throw error;
+    if (!newsData && !historicalData) {
+      throw new Error('新闻数据或历史数据至少需要提供一种');
     }
+
+    // 返回包含可用数据的上下文
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          newsData,
+          historicalData,
+          previousResults: context.previousResults,
+          analysisType: context.metadata?.analysisType || 'social_media_analysis'
+        }
+      }
+    };
+  }
+
+  /**
+   * 执行社交媒体情绪分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 构建分析提示词
+    const analysisPrompt = this.buildAnalysisPrompt(context);
+
+    // 调用LLM进行社交媒体情绪分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    const analysisData = context.metadata?.analysisData;
+
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      confidence: this.calculateConfidence(context, analysis),
+      keyInsights: this.extractSocialInsights(analysis),
+      risks: this.identifyRisks(analysis),
+      supportingData: {
+        socialMediaSources: ["Reddit", "Twitter", "StockTwits", "雪球"],
+        analysisMetrics: ["情绪倾向", "讨论热度", "关键词频率", "用户行为模式"],
+        analysisData: {
+          hasNewsData: !!analysisData?.newsData,
+          hasHistoricalData: !!analysisData?.historicalData,
+          hasPreviousResults: !!(analysisData?.previousResults?.length),
+        },
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
   }
 
   /**

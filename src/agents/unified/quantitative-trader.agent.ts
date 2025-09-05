@@ -1,14 +1,7 @@
 import {Injectable} from "@nestjs/common";
 import {ConfigService} from "@nestjs/config";
 import {BaseAgent} from "../base/base-agent";
-import {
-  AgentConfig,
-  AgentContext,
-  AgentResult,
-  AgentStatus,
-  AgentType,
-  TradingRecommendation,
-} from "../interfaces/agent.interface";
+import {AgentConfig, AgentContext, AgentResult, AgentType, TradingRecommendation,} from "../interfaces/agent.interface";
 import {LLMService} from "../services/llm.service";
 import {AgentExecutionRecordService} from "../services/agent-execution-record.service";
 
@@ -39,7 +32,7 @@ export class QuantitativeTraderAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "QUANTITATIVE_TRADER_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 60),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "QUANTITATIVE_TRADER_RETRY_COUNT",
@@ -113,64 +106,87 @@ export class QuantitativeTraderAgent extends BaseAgent {
   }
 
   /**
-   * 执行量化分析
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 检查必需的数据
+    const historicalData = context.historicalData;
+    const financialData = context.financialData;
 
-    try {
-      // 构建量化分析上下文
-      const analysisPrompt = this.buildQuantitativePrompt(context);
-
-      // 调用LLM进行量化分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      // 从分析结果中提取评分和建议
-      const score = this.extractQuantScore(analysisResult);
-      const recommendation = this.extractQuantRecommendation(analysisResult);
-      
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        score,
-        recommendation,
-        confidence: this.calculateQuantitativeConfidence(context, analysisResult, score),
-        keyInsights: this.extractQuantitativeInsights(analysisResult),
-        risks: this.identifyQuantitativeRisks(analysisResult),
-        supportingData: {
-          modelComponents: {
-            technical: "40%",
-            fundamental: "30%", 
-            sentiment: "20%",
-            macro: "10%"
-          },
-          quantitativeMetrics: [
-            "RSI背离", "MACD信号", "布林带突破",
-            "PE/PB估值", "盈利增长", "情绪得分",
-            "资金流向", "行业轮动", "市场趋势"
-          ],
-          riskMetrics: ["VaR", "夏普比率", "最大回撤", "波动率"],
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      throw error;
+    if (!historicalData && !financialData) {
+      throw new Error('历史数据或财务数据至少需要提供一种');
     }
+
+    // 返回包含可用数据的上下文
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          historicalData,
+          financialData,
+          previousResults: context.previousResults,
+          analysisType: context.metadata?.analysisType || 'quantitative_analysis'
+        }
+      }
+    };
+  }
+
+  /**
+   * 执行量化分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 从准备好的上下文中获取分析数据
+    const analysisData = context.metadata?.analysisData;
+
+    // 构建分析提示词
+    const analysisPrompt = this.buildQuantitativePrompt(context);
+
+    // 调用LLM进行量化分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    const analysisData = context.metadata?.analysisData;
+
+    // 从分析结果中提取评分和建议
+    const score = this.extractQuantScore(analysis);
+    const recommendation = this.extractQuantRecommendation(analysis);
+    
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      score,
+      recommendation,
+      confidence: this.calculateQuantitativeConfidence(context, analysis, score),
+      keyInsights: this.extractQuantitativeInsights(analysis),
+      risks: this.identifyQuantitativeRisks(analysis),
+      supportingData: {
+        modelComponents: {
+          technical: "40%",
+          fundamental: "30%", 
+          sentiment: "20%",
+          macro: "10%"
+        },
+        quantitativeMetrics: [
+          "RSI背离", "MACD信号", "布林带突破",
+          "PE/PB估值", "盈利增长", "情绪得分",
+          "资金流向", "行业轮动", "市场趋势"
+        ],
+        riskMetrics: ["VaR", "夏普比率", "最大回撤", "波动率"],
+        analysisData: {
+          hasHistoricalData: !!analysisData?.historicalData,
+          hasFinancialData: !!analysisData?.financialData,
+          hasPreviousResults: !!(analysisData?.previousResults?.length),
+        },
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
   }
 
   /**

@@ -3,14 +3,7 @@ import {ConfigService} from '@nestjs/config';
 import {BaseAgent} from '../base/base-agent';
 import {LLMService} from '../services/llm.service';
 import {AgentExecutionRecordService} from '../services/agent-execution-record.service';
-import {
-  AgentConfig,
-  AgentContext,
-  AgentResult,
-  AgentStatus,
-  AgentType,
-  TradingRecommendation
-} from '../interfaces/agent.interface';
+import {AgentConfig, AgentContext, AgentResult, AgentType, TradingRecommendation} from '../interfaces/agent.interface';
 import {BusinessLogger} from '../../common/utils/business-logger.util';
 
 /**
@@ -42,7 +35,7 @@ export class FundamentalAnalystAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "FUNDAMENTAL_ANALYST_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 75),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "FUNDAMENTAL_ANALYST_RETRY_COUNT",
@@ -102,107 +95,104 @@ export class FundamentalAnalystAgent extends BaseAgent {
     );
   }
 
-  /**
-   * 执行基本面分析
-   * 基于从Activities传入的数据进行分析，支持多种分析类型
+          /**
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
-
-    try {
-      this.businessLogger.serviceInfo(
-        `开始基本面分析股票 ${context.stockCode}`
-      );
-
-      // 从context中获取数据（由Activities提供）
-      const mcpData = context.metadata?.mcpData;
-      const analysisData = context.metadata?.analysisData;
-      const analysisType = context.metadata?.analysisType || 'fundamental_analysis';
-      
-      let financialData, basicInfo, marketOverview, realtimeData, stage1Analysis;
-      
-      if (analysisType === 'fundamental_analysis' && mcpData) {
-        // 第一阶段：基本面分析模式
-        financialData = mcpData.financialData;
-      } else if (analysisData) {
-        // 第二阶段：专业分析模式
-        financialData = analysisData.financialData;
-        basicInfo = analysisData.basicInfo;
-        marketOverview = analysisData.marketOverview;
-        realtimeData = analysisData.realtimeData;
-        stage1Analysis = analysisData.stage1Analysis;
-      }
-
-      if (!financialData && !analysisData) {
-        throw new Error('财务数据或分析数据均未提供');
-      }
-
-      // 构建分析提示词
-      const analysisPrompt = this.buildAnalysisPrompt(context, {
-        financialData,
-        basicInfo,
-        marketOverview,
-        realtimeData,
-        stage1Analysis,
-        analysisType,
-      });
-
-      // 调用 LLM 进行基本面分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      // 从分析结果中提取评分和建议
-      const score = this.extractFundamentalScore(analysisResult);
-      const recommendation = this.extractFundamentalRecommendation(analysisResult);
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        score,
-        recommendation,
-        confidence: this.calculateFundamentalConfidence(financialData, analysisResult),
-        keyInsights: this.extractFundamentalInsights(analysisResult),
-        risks: this.identifyFundamentalRisks(analysisResult),
-        supportingData: {
-          analysisType,
-          dataSource: 'mcp_activities',
-          financialMetrics: this.extractKeyMetrics(financialData),
-          valuationLevels: this.extractValuationLevels(analysisResult),
-          profitabilityAnalysis: this.extractProfitabilityAnalysis(financialData),
-          financialHealth: this.assessFinancialHealth(financialData),
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      this.businessLogger.serviceInfo(
-        `${analysisType}分析完成，评分: ${score}，建议: ${recommendation}，耗时 ${processingTime}ms`
-      );
-
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      this.businessLogger.businessError(`${context.metadata?.analysisType || '基本面'}分析失败`, error);
-      throw error;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 从context中获取数据（由Activities提供）
+    const mcpData = context.metadata?.mcpData;
+    const analysisData = context.metadata?.analysisData;
+    const analysisType = context.metadata?.analysisType || 'fundamental_analysis';
+    
+    let financialData, basicInfo, marketOverview, realtimeData, stage1Analysis;
+    
+    if (analysisType === 'fundamental_analysis' && mcpData) {
+      // 第一阶段：基本面分析模式
+      financialData = mcpData.financialData;
+    } else if (analysisData) {
+      // 第二阶段：专业分析模式
+      financialData = analysisData.financialData;
+      basicInfo = analysisData.basicInfo;
+      marketOverview = analysisData.marketOverview;
+      realtimeData = analysisData.realtimeData;
+      stage1Analysis = analysisData.stage1Analysis;
     }
+
+    if (!financialData && !analysisData) {
+      throw new Error('财务数据或分析数据均未提供');
+    }
+
+    // 返回包含分析数据的上下文
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          financialData,
+          basicInfo,
+          marketOverview,
+          realtimeData,
+          stage1Analysis,
+          analysisType,
+        }
+      }
+    };
   }
 
   /**
-   * 实现抽象方法：构建分析提示词
+   * 执行基本面分析 - 调用LLM进行分析
    */
-  protected async buildPrompt(context: AgentContext): Promise<string> {
-    // 这个方法在 analyze 中通过 buildAnalysisPrompt 实现
-    return `请对股票 ${context.stockCode} 进行基本面分析。`;
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 从准备好的上下文中获取分析数据
+    const analysisData = context.metadata?.analysisData;
+    const analysisType = context.metadata?.analysisType || 'fundamental_analysis';
+    
+    // 构建分析提示词
+    const analysisPrompt = this.buildAnalysisPrompt(context, analysisData);
+
+    // 调用LLM进行基本面分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    // 从context中获取分析数据
+    const analysisData = context.metadata?.analysisData;
+    const financialData = analysisData?.financialData;
+    const analysisType = context.metadata?.analysisType || 'fundamental_analysis';
+
+    // 从分析结果中提取评分和建议
+    const score = this.extractFundamentalScore(analysis);
+    const recommendation = this.extractFundamentalRecommendation(analysis);
+
+    const result: AgentResult = {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      score,
+      recommendation,
+      confidence: this.calculateFundamentalConfidence(financialData, analysis),
+      keyInsights: this.extractFundamentalInsights(analysis),
+      risks: this.identifyFundamentalRisks(analysis),
+      supportingData: {
+        analysisType,
+        dataSource: 'mcp_activities',
+        financialMetrics: this.extractKeyMetrics(financialData),
+        valuationLevels: this.extractValuationLevels(analysis),
+        profitabilityAnalysis: this.extractProfitabilityAnalysis(financialData),
+        financialHealth: this.assessFinancialHealth(financialData),
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
+
+    this.businessLogger.serviceInfo(
+      `${analysisType}分析完成，评分: ${score}，建议: ${recommendation}`
+    );
+
+    return result;
   }
 
   /**

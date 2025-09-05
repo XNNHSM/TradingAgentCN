@@ -35,7 +35,7 @@ export class BasicDataAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "BASIC_DATA_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 30),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "BASIC_DATA_RETRY_COUNT",
@@ -75,85 +75,87 @@ export class BasicDataAgent extends BaseAgent {
     );
   }
 
+  
   /**
-   * 执行基础数据分析
-   * 基于从Activities传入的MCP数据进行分析，而不是自己调用MCP服务
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 从context中获取MCP数据（由Activities提供）
+    const mcpData = context.metadata?.mcpData;
+    const basicInfo = mcpData?.basicInfo;
+    const realtimeData = mcpData?.realtimeData;
 
-    try {
-      this.businessLogger.serviceInfo(
-        `开始分析股票 ${context.stockCode} 的基础数据`
-      );
+    if (!basicInfo && !realtimeData) {
+      throw new Error('基础数据和实时数据均未提供');
+    }
 
-      // 从context中获取MCP数据（由Activities提供）
-      const mcpData = context.metadata?.mcpData;
-      const basicInfo = mcpData?.basicInfo;
-      const realtimeData = mcpData?.realtimeData;
-
-      if (!basicInfo && !realtimeData) {
-        throw new Error('基础数据和实时数据均未提供');
-      }
-
-      // 构建分析提示词
-      const analysisPrompt = this.buildAnalysisPrompt(context, basicInfo, realtimeData);
-
-      // 调用 LLM 进行基础数据分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      // 从分析结果中提取评分和建议
-      const score = this.extractScore(analysisResult);
-      const recommendation = this.extractRecommendation(analysisResult);
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        score,
-        recommendation,
-        confidence: this.calculateConfidence(basicInfo, realtimeData),
-        keyInsights: this.extractBasicInsights(analysisResult),
-        risks: this.identifyRisks(analysisResult),
-        supportingData: {
-          analysisType: 'basic_data_analysis',
-          dataSource: 'mcp_activities',
+    // 返回包含MCP数据的上下文
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        mcpData: {
           basicInfo,
           realtimeData,
-          dataQuality: this.assessDataQuality(basicInfo, realtimeData),
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      this.businessLogger.serviceInfo(
-        `基础数据分析完成，耗时 ${processingTime}ms，评分: ${score}`
-      );
-
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      this.businessLogger.businessError("基础数据分析失败", error);
-      throw error;
-    }
+        }
+      }
+    };
   }
 
   /**
-   * 实现抽象方法：构建分析提示词
+   * 执行分析 - 调用LLM进行基础数据分析
    */
-  protected async buildPrompt(context: AgentContext): Promise<string> {
-    // 这个方法在 analyze 中通过 buildAnalysisPrompt 实现
-    return `请分析股票 ${context.stockCode} 的基础数据。`;
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 从准备好的上下文中获取MCP数据
+    const mcpData = context.metadata?.mcpData;
+    const basicInfo = mcpData?.basicInfo;
+    const realtimeData = mcpData?.realtimeData;
+
+    // 构建分析提示词
+    const analysisPrompt = this.buildAnalysisPrompt(context, basicInfo, realtimeData);
+
+    // 调用LLM进行基础数据分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    // 从context中获取MCP数据
+    const mcpData = context.metadata?.mcpData;
+    const basicInfo = mcpData?.basicInfo;
+    const realtimeData = mcpData?.realtimeData;
+
+    // 从分析结果中提取评分和建议
+    const score = this.extractScore(analysis);
+    const recommendation = this.extractRecommendation(analysis);
+
+    const result: AgentResult = {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      score,
+      recommendation,
+      confidence: this.calculateConfidence(basicInfo, realtimeData),
+      keyInsights: this.extractBasicInsights(analysis),
+      risks: this.identifyRisks(analysis),
+      supportingData: {
+        analysisType: 'basic_data_analysis',
+        dataSource: 'mcp_activities',
+        basicInfo,
+        realtimeData,
+        dataQuality: this.assessDataQuality(basicInfo, realtimeData),
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
+
+    this.businessLogger.serviceInfo(
+      `基础数据分析完成，评分: ${score}`
+    );
+
+    return result;
   }
 
   /**

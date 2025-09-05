@@ -43,6 +43,29 @@ class TestAgent extends BaseAgent {
     );
   }
 
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    return context;
+  }
+
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    const prompt = await this.buildPrompt(context);
+    return this.callLLM(prompt);
+  }
+
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      timestamp: new Date(),
+      score: this.extractScore(analysis),
+      confidence: this.extractConfidence(analysis),
+      recommendation: this.extractRecommendation(analysis),
+      keyInsights: this.extractKeyInsights(analysis),
+      risks: this.extractRisks(analysis),
+    };
+  }
+
   protected async buildPrompt(context: AgentContext): Promise<string> {
     return `请分析股票 ${context.stockCode} (${context.stockName || "未知"})`;
   }
@@ -63,7 +86,8 @@ class TestAgent extends BaseAgent {
     llmResponse: LLMResponse,
     context: AgentContext,
   ): Promise<LLMResponse> {
-    return this.processToolCalls(llmResponse, context);
+    // Method removed in new abstracted pattern
+    return llmResponse;
   }
 
   public testExtractScore(analysis: string): number {

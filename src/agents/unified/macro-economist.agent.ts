@@ -1,7 +1,7 @@
 import {Injectable} from "@nestjs/common";
 import {ConfigService} from "@nestjs/config";
 import {BaseAgent} from "../base/base-agent";
-import {AgentConfig, AgentContext, AgentResult, AgentStatus, AgentType,} from "../interfaces/agent.interface";
+import {AgentConfig, AgentContext, AgentResult, AgentType,} from "../interfaces/agent.interface";
 import {LLMService} from "../services/llm.service";
 import {AgentExecutionRecordService} from "../services/agent-execution-record.service";
 
@@ -32,7 +32,7 @@ export class MacroEconomistAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "MACRO_ECONOMIST_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 60),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "MACRO_ECONOMIST_RETRY_COUNT",
@@ -111,62 +111,76 @@ export class MacroEconomistAgent extends BaseAgent {
   }
 
   /**
-   * 执行宏观经济分析
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 检查必需的数据
+    const newsData = context.newsData;
+    const financialData = context.financialData;
+    const historicalData = context.historicalData;
 
-    try {
-      // 构建宏观分析上下文
-      const analysisPrompt = this.buildMacroAnalysisPrompt(context);
-
-      // 调用LLM进行宏观经济分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        confidence: this.calculateMacroConfidence(context, analysisResult),
-        keyInsights: this.extractMacroInsights(analysisResult),
-        risks: this.identifyMacroRisks(analysisResult),
-        supportingData: {
-          analysisFramework: [
-            "宏观环境评估",
-            "政策影响分析", 
-            "市场影响评估",
-            "行业影响分析",
-            "风险机遇识别"
-          ],
-          keyFactors: [
-            "货币政策", "财政政策", "监管政策",
-            "经济增长", "通胀水平", "就业数据",
-            "国际环境", "汇率变化", "资金流向"
-          ],
-          impactChannels: [
-            "政策传导", "流动性影响", "估值重估",
-            "盈利预期", "风险偏好", "资产配置"
-          ],
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      throw error;
+    if (!newsData && !financialData && !historicalData) {
+      throw new Error('新闻数据、财务数据或历史数据至少需要提供一种');
     }
+
+    // 返回包含可用数据的上下文
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          newsData,
+          financialData,
+          historicalData,
+          analysisType: context.metadata?.analysisType || 'macro_analysis'
+        }
+      }
+    };
+  }
+
+  /**
+   * 执行宏观分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 构建分析提示词
+    const analysisPrompt = this.buildMacroAnalysisPrompt(context);
+
+    // 调用LLM进行宏观分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      confidence: this.calculateMacroConfidence(context, analysis),
+      keyInsights: this.extractMacroInsights(analysis),
+      risks: this.identifyMacroRisks(analysis),
+      supportingData: {
+        analysisFramework: [
+          "宏观环境评估",
+          "政策影响分析", 
+          "市场影响评估",
+          "行业影响分析",
+          "风险机遇识别"
+        ],
+        keyFactors: [
+          "货币政策", "财政政策", "监管政策",
+          "经济增长", "通胀水平", "就业数据",
+          "国际环境", "汇率变化", "资金流向"
+        ],
+        impactChannels: [
+          "政策传导", "流动性影响", "估值重估",
+          "盈利预期", "风险偏好", "资产配置"
+        ],
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
   }
 
   /**

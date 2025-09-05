@@ -4,14 +4,7 @@ import {BaseAgent} from '../base/base-agent';
 import {MCPClientSDKService} from '../services/mcp-client-sdk.service';
 import {LLMService} from '../services/llm.service';
 import {AgentExecutionRecordService} from '../services/agent-execution-record.service';
-import {
-  AgentConfig,
-  AgentContext,
-  AgentResult,
-  AgentStatus,
-  AgentType,
-  TradingRecommendation
-} from '../interfaces/agent.interface';
+import {AgentConfig, AgentContext, AgentResult, AgentType, TradingRecommendation} from '../interfaces/agent.interface';
 import {BusinessLogger} from '../../common/utils/business-logger.util';
 
 /**
@@ -44,7 +37,7 @@ export class NewsAnalystAgent extends BaseAgent {
       ),
       timeout: configService.get<number>(
         "NEWS_ANALYST_TIMEOUT",
-        configService.get<number>("LLM_DEFAULT_TIMEOUT", 60),
+        configService.get<number>("LLM_DEFAULT_TIMEOUT", 120),
       ),
       retryCount: configService.get<number>(
         "NEWS_ANALYST_RETRY_COUNT",
@@ -110,70 +103,73 @@ export class NewsAnalystAgent extends BaseAgent {
   }
 
   /**
-   * 执行新闻分析
-   * 按需调用 get_stock_news
+   * 准备上下文 - 验证和准备分析所需的上下文数据
    */
-  async analyze(context: AgentContext): Promise<AgentResult> {
-    const startTime = Date.now();
-    this.status = AgentStatus.ANALYZING;
+  protected async prepareContext(context: AgentContext): Promise<AgentContext> {
+    // 按需调用 MCP 服务 - 只调用新闻数据相关的服务
+    const newsData = await this.getStockNews(context.stockCode);
 
-    try {
-      this.businessLogger.serviceInfo(
-        `开始新闻分析股票 ${context.stockCode}`
-      );
-
-      // 按需调用 MCP 服务 - 只调用新闻数据相关的服务
-      const newsData = await this.getStockNews(context.stockCode);
-
-      // 构建分析提示词
-      const analysisPrompt = this.buildAnalysisPrompt(context, newsData);
-
-      // 调用 LLM 进行新闻分析
-      const analysisResult = await this.llmService.generate(analysisPrompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        timeout: this.config.timeout * 1000,
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      // 从分析结果中提取评分和建议
-      const sentimentScore = this.extractSentimentScore(analysisResult);
-      const recommendation = this.extractNewsRecommendation(analysisResult);
-
-      const result: AgentResult = {
-        agentName: this.name,
-        agentType: this.type,
-        analysis: analysisResult,
-        score: this.convertSentimentToScore(sentimentScore), // 转换为0-100分制
-        recommendation,
-        confidence: this.calculateNewsConfidence(newsData, analysisResult),
-        keyInsights: this.extractNewsInsights(analysisResult),
-        risks: this.identifyNewsRisks(analysisResult),
-        supportingData: {
-          mcpServices: ["get_stock_news"],
-          sentimentScore, // 保留原始-100到+100评分
-          newsCount: this.getNewsCount(newsData),
-          keyEvents: this.extractKeyEvents(analysisResult),
-          impactAssessment: this.extractImpactAssessment(analysisResult),
-          timeRange: context.timeRange,
-        },
-        timestamp: new Date(),
-        processingTime,
-      };
-
-      this.status = AgentStatus.COMPLETED;
-      this.businessLogger.serviceInfo(
-        `新闻分析完成，情绪评分: ${sentimentScore}，建议: ${recommendation}，耗时 ${processingTime}ms`
-      );
-
-      return result;
-    } catch (error) {
-      this.status = AgentStatus.ERROR;
-      this.businessLogger.serviceError("新闻分析失败", error);
-      throw error;
+    if (!newsData) {
+      throw new Error(`无法获取股票 ${context.stockCode} 的新闻数据`);
     }
+
+    return {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        analysisData: {
+          newsData,
+          analysisType: context.metadata?.analysisType || 'news_analysis'
+        }
+      }
+    };
+  }
+
+  /**
+   * 执行新闻分析 - 调用LLM进行分析
+   */
+  protected async executeAnalysis(context: AgentContext): Promise<string> {
+    // 从准备好的上下文中获取新闻数据
+    const analysisData = context.metadata?.analysisData;
+    const newsData = analysisData?.newsData;
+
+    // 构建分析提示词
+    const analysisPrompt = this.buildAnalysisPrompt(context);
+
+    // 调用LLM进行新闻分析
+    return await this.callLLM(analysisPrompt);
+  }
+
+  /**
+   * 处理结果 - 将分析结果转换为AgentResult格式
+   */
+  protected async processResult(analysis: string, context: AgentContext): Promise<AgentResult> {
+    const analysisData = context.metadata?.analysisData;
+    const newsData = analysisData?.newsData;
+
+    // 从分析结果中提取评分和建议
+    const sentimentScore = this.extractSentimentScore(analysis);
+    const recommendation = this.extractNewsRecommendation(analysis);
+
+    return {
+      agentName: this.name,
+      agentType: this.type,
+      analysis,
+      score: this.convertSentimentToScore(sentimentScore), // 转换为0-100分制
+      recommendation,
+      confidence: this.calculateNewsConfidence(newsData, analysis),
+      keyInsights: this.extractNewsInsights(analysis),
+      risks: this.identifyNewsRisks(analysis),
+      supportingData: {
+        mcpServices: ["get_stock_news"],
+        sentimentScore, // 保留原始-100到+100评分
+        newsCount: this.getNewsCount(newsData),
+        keyEvents: this.extractKeyEvents(analysis),
+        impactAssessment: this.extractImpactAssessment(analysis),
+        timeRange: context.timeRange,
+      },
+      timestamp: new Date(),
+    };
   }
 
   /**
@@ -204,7 +200,7 @@ export class NewsAnalystAgent extends BaseAgent {
   /**
    * 构建新闻分析提示词
    */
-  private buildAnalysisPrompt(context: AgentContext, newsData: any): string {
+  private buildAnalysisPrompt(context: AgentContext): string {
     const { stockCode, stockName } = context;
     
     let prompt = `请对股票 ${stockCode}`;
@@ -214,6 +210,9 @@ export class NewsAnalystAgent extends BaseAgent {
     prompt += ` 进行专业的新闻影响分析。\n\n`;
 
     // 添加新闻数据
+    const analysisData = context.metadata?.analysisData;
+    const newsData = analysisData?.newsData;
+    
     if (newsData && Array.isArray(newsData) && newsData.length > 0) {
       prompt += `**相关新闻数据** (共${newsData.length}条):\n${JSON.stringify(newsData, null, 2)}\n\n`;
     } else {
