@@ -5,7 +5,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { Client, WorkflowHandle, WorkflowIdReusePolicy } from '@temporalio/client';
-import { BusinessLogger, LogCategory } from '../../utils/business-logger.util';
+import { BusinessLogger, LogCategory } from '../../common/utils/business-logger.util';
 import { 
   WorkflowStartOptions, 
   ChildWorkflowOptions,

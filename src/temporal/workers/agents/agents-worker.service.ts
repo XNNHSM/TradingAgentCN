@@ -6,15 +6,15 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Worker } from '@temporalio/worker';
-import { BusinessLogger } from '../../common/utils/business-logger.util';
-import { TemporalManager } from '../../common/temporal/temporal.manager';
-import { WorkerCreateOptions } from '../../common/temporal/interfaces/temporal-config.interface';
-import { createActivities } from '../../workflows/temporal/worker';
-import { NewsSummaryService } from '../../modules/news/services/news-summary.service';
-import { LLMService } from '../services/llm.service';
-import { MCPClientSDKService } from '../services/mcp-client-sdk.service';
-import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
-import { AnalysisService } from '../../modules/analysis/analysis.service';
+import { BusinessLogger } from '../../../common/utils/business-logger.util';
+import { TemporalManager } from '../../temporal.manager';
+import { WorkerCreateOptions } from '../../interfaces/temporal-config.interface';
+import { createActivities } from '../../core/worker/worker';
+import { NewsSummaryService } from '../../../modules/news/services/news-summary.service';
+import { LLMService } from '../../../agents/services/llm.service';
+import { MCPClientSDKService } from '../../../agents/services/mcp-client-sdk.service';
+import { AgentExecutionRecordService } from '../../../agents/services/agent-execution-record.service';
+import { AnalysisService } from '../../../modules/analysis/analysis.service';
 
 @Injectable()
 export class AgentsWorkerService implements OnModuleDestroy {
@@ -53,7 +53,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
       // 定义Worker配置 - 直接指向股票分析工作流
       const workerOptions: WorkerCreateOptions = {
         taskQueue: 'stock-analysis',
-        workflowsPath: require.resolve(__dirname + '/../../workflows/orchestrators/stock-analysis.workflow'),
+        workflowsPath: require.resolve(__dirname + '/../../../workflows/stock-analysis.workflow'),
         activities,
         options: {
           maxConcurrentActivities: 10,

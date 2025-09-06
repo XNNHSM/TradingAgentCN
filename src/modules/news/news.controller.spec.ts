@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NewsController } from './news.controller';
 import { NewsService } from './news.service';
-import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler.service';
+import { NewsTemporalSchedulerService } from '../../temporal/schedulers/news/news-temporal-scheduler.service';
 import { CrawlNewsDto } from './dto/crawl-news.dto';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
 

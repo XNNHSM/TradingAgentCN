@@ -2,13 +2,14 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  Optional,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { AnalysisRecord } from "./entities/analysis-record.entity";
 import { CreateAnalysisDto } from "./dto/create-analysis.dto";
 import { Result } from "../../common/dto/result.dto";
-import { AgentsTemporalClientService } from "../../agents/temporal/agents-temporal-client.service";
+import { AgentsTemporalClientService } from "../../temporal/workers/agents/agents-temporal-client.service";
 
 /**
  * 分析服务 - 基于MCP统一智能体的股票分析服务
@@ -20,7 +21,7 @@ export class AnalysisService {
   constructor(
     @InjectRepository(AnalysisRecord)
     private readonly analysisRepository: Repository<AnalysisRecord>,
-    private readonly agentsTemporalClient: AgentsTemporalClientService,
+    @Optional() private readonly agentsTemporalClient?: AgentsTemporalClientService,
   ) {}
 
   /**
@@ -33,6 +34,11 @@ export class AnalysisService {
     this.logger.log(`开始分析股票: ${dto.stockCode}`);
 
     try {
+      // 检查Temporal客户端是否可用
+      if (!this.agentsTemporalClient) {
+        return Result.error('Temporal服务暂时不可用，无法启动分析任务');
+      }
+
       // 生成会话ID
       const sessionId = `analysis_session_${Date.now()}`;
       
@@ -80,6 +86,11 @@ export class AnalysisService {
     this.logger.log(`开始分析股票: ${dto.stockCode}`);
 
     try {
+      // 检查Temporal客户端是否可用
+      if (!this.agentsTemporalClient) {
+        return Result.error('Temporal服务暂时不可用，无法启动分析任务');
+      }
+
       // 生成会话ID
       const sessionId = `analysis_session_${Date.now()}`;
       

@@ -4,7 +4,7 @@ import {ConfigModule} from '@nestjs/config';
 import {TypeOrmModule} from '@nestjs/typeorm';
 
 // Temporal统一封装模块
-import {TemporalModule} from '../common/temporal/temporal.module';
+import {TemporalModule} from '../temporal/temporal.module';
 
 // 新闻模块（为政策分析提供数据支持）
 import {NewsModule} from '../modules/news/news.module';
@@ -18,9 +18,7 @@ import {MCPClientFallbackService} from './services/mcp-client-fallback.service';
 import {LLMService} from './services/llm.service';
 import {DashScopeAdapter} from './services/llm-adapters/dashscope-adapter';
 
-// 智能体模块专属Temporal服务
-import {AgentsTemporalClientService} from './temporal/agents-temporal-client.service';
-import {AgentsWorkerService} from './temporal/agents-worker.service';
+// 智能体模块专属Temporal服务 - 从统一Temporal模块导入
 
 // 新的按需调用智能体架构
 import {BasicDataAgent} from './unified/basic-data.agent';
@@ -68,9 +66,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     MCPClientFallbackService,
     LLMService,
     
-    // 智能体模块专属Temporal服务
-    AgentsTemporalClientService,
-    AgentsWorkerService,
+    // 智能体模块专属Temporal服务 - 现在从TemporalModule统一管理
 
     // 按需调用智能体架构
     BasicDataAgent,
@@ -115,9 +111,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     MarketNewsDataService,
     NewsAnalysisCacheService,
     
-    // Temporal服务导出
-    AgentsTemporalClientService,
-    AgentsWorkerService,
+    // Temporal服务导出 - 现在从TemporalModule统一管理
     
     // 兼容性导出
     AgentExecutionRecordService,
@@ -127,19 +121,15 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
 export class AgentsModule {
   constructor(
     private readonly mcpClient: MCPClientSDKService,
-    private readonly agentsWorkerService: AgentsWorkerService,
   ) {}
 
   /**
-   * 模块初始化时自动连接MCP服务和启动Temporal Workers
+   * 模块初始化时自动连接MCP服务
    */
   async onModuleInit() {
     try {
       // 初始化MCP服务
       await this.mcpClient.initialize();
-      
-      // 启动智能体模块专属的Temporal Workers
-      await this.agentsWorkerService.startWorkers();
     } catch (error) {
       console.error('模块初始化失败:', error.message);
       console.error('错误堆栈:', error.stack);
@@ -149,12 +139,9 @@ export class AgentsModule {
   }
 
   /**
-   * 模块销毁时断开MCP连接和停止Temporal Workers
+   * 模块销毁时断开MCP连接
    */
   async onModuleDestroy() {
-    // 停止Temporal Workers
-    await this.agentsWorkerService.shutdown();
-    
     // 断开MCP连接
     await this.mcpClient.disconnect();
   }

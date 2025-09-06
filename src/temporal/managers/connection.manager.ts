@@ -6,7 +6,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Connection } from '@temporalio/client';
-import { BusinessLogger, LogCategory } from '../../utils/business-logger.util';
+import { BusinessLogger, LogCategory } from '../../common/utils/business-logger.util';
 import { TemporalConfig } from '../interfaces/temporal-config.interface';
 
 @Injectable()

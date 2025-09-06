@@ -14,9 +14,9 @@
  */
 
 import * as workflow from '@temporalio/workflow';
-import type { MCPActivities } from '../activities/mcp.activities';
-import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from '../activities/policy-analysis.activities';
-import type { AgentAnalysisActivities, AgentAnalysisResult } from '../activities/agent-analysis.activities';
+import type { MCPActivities } from './agents/mcp.activities';
+import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from './agents/policy-analysis.activities';
+import type { AgentAnalysisActivities, AgentAnalysisResult } from './agents/agent-analysis.activities';
 
 // 工作流输入类型
 export interface StockAnalysisInput {

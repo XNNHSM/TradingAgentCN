@@ -6,11 +6,11 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WorkflowHandle } from '@temporalio/client';
-import { BusinessLogger } from '../../common/utils/business-logger.util';
-import { TemporalManager } from '../../common/temporal/temporal.manager';
-import { WorkflowStartOptions } from '../../common/temporal/interfaces/temporal-config.interface';
-import { stockAnalysisWorkflow } from '../../workflows/orchestrators/stock-analysis.workflow';
-import type { StockAnalysisInput } from '../../workflows/orchestrators/stock-analysis.workflow';
+import { BusinessLogger } from '../../../common/utils/business-logger.util';
+import { TemporalManager } from '../../temporal.manager';
+import { WorkflowStartOptions } from '../../interfaces/temporal-config.interface';
+import { stockAnalysisWorkflow } from '../../workflows/stock-analysis.workflow';
+import type { StockAnalysisInput } from '../../workflows/stock-analysis.workflow';
 
 // 注意：不再支持批量分析，每次只处理一只股票
 

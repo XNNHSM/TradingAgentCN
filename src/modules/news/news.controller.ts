@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { NewsService } from './news.service';
 import { CrawlNewsDto } from './dto/crawl-news.dto';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
-import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler.service';
+import { NewsTemporalSchedulerService } from '../../temporal/schedulers/news/news-temporal-scheduler.service';
 import { Result } from '../../common/dto/result.dto';
 
 @ApiTags('news')

@@ -7,7 +7,7 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Connection, WorkflowHandle, Client } from '@temporalio/client';
 import { Worker } from '@temporalio/worker';
-import { BusinessLogger, LogCategory } from '../utils/business-logger.util';
+import { BusinessLogger, LogCategory } from '../common/utils/business-logger.util';
 
 import { TemporalConnectionManager } from './managers/connection.manager';
 import { TemporalWorkerManager } from './managers/worker.manager';

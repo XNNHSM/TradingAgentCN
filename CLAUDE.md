@@ -68,18 +68,24 @@ src/
 ├── agents/                    # MCP智能体模块
 │   ├── unified/              # 统一智能体架构
 │   ├── services/             # MCP客户端、LLM服务
-│   └── temporal/             # Temporal Worker服务
+│   └── entities/             # 智能体执行记录实体
 ├── common/                   # 公共组件
-│   ├── temporal/             # Temporal统一封装
+│   ├── dto/                  # 通用DTO
 │   ├── utils/                # BusinessLogger等工具
 │   └── entities/             # 基础实体
 ├── modules/                  # 业务模块
 │   ├── news/                 # 新闻爬虫模块
 │   ├── watchlist/            # 自选股管理
 │   └── analysis/             # 股票分析接口
-└── workflows/                # Temporal工作流定义
-    ├── orchestrators/        # 工作流协调器
-    └── activities/           # 业务活动实现
+└── temporal/                 # Temporal统一模块
+    ├── core/                 # 核心组件
+    ├── schedulers/           # 调度器服务
+    ├── workers/              # Worker实现
+    ├── workflows/            # 工作流定义
+    ├── interfaces/           # 接口定义
+    ├── config/               # 配置文件
+    ├── managers/             # 管理器
+    └── temporal.module.ts    # 统一模块入口
 ```
 
 ## 🔄 Temporal架构
@@ -103,6 +109,115 @@ NestJS启动 → AgentsModule初始化 → startWorkers() → worker.run() → �
 |--------|-----------|----------|
 | 股票分析 | `stock-analysis` | MCP数据获取→智能分析→决策生成 |
 | 新闻爬取 | `news-crawling` | 定时爬取→实时落盘→摘要生成 |
+
+### 统一调度架构规范 ⭐
+- 🏗️ **模块解耦**: 各业务模块只提供基础能力和方法，不包含调度逻辑
+- 🚀 **统一调度**: Temporal作为统一的调度中心，管理所有定时任务和工作流
+- 📦 **职责分离**: 业务模块专注业务逻辑，Temporal专注任务调度和执行
+
+**架构原则**:
+```
+业务模块 (提供基础能力) → Temporal统一调度 (任务编排) → 工作流执行 (业务处理)
+```
+
+**调度器组织结构**:
+```
+src/common/temporal/
+├── schedulers/              # 统一调度器服务
+│   ├── news-temporal-client.service.ts      # 新闻Temporal客户端
+│   ├── news-worker.service.ts              # 新闻Worker服务
+│   └── news-temporal-scheduler.service.ts   # 新闻调度服务
+├── workflows/              # 工作流定义
+│   └── news/                 # 新闻相关工作流
+│       ├── news-crawling.workflow.ts
+│       ├── news-content-processing.workflow.ts
+│       ├── single-source-crawling.workflow.ts
+│       └── news.activities.ts
+├── managers/               # 基础管理器
+│   ├── connection.manager.ts
+│   ├── worker.manager.ts
+│   └── workflow.manager.ts
+└── temporal.module.ts      # 统一Temporal模块
+```
+
+## 🏗️ Temporal统一目录结构
+
+### 新的目录架构
+```
+src/temporal/                           # Temporal统一模块
+├── core/                              # 核心组件
+│   ├── interfaces/                     # 通用接口定义
+│   │   ├── connection.config.ts       # 连接配置接口
+│   │   ├── worker.config.ts           # Worker配置接口
+│   │   └── workflow.config.ts         # 工作流配置接口
+│   └── worker/                         # Worker核心实现
+│       └── worker.ts                  # Worker基类和工厂方法
+├── schedulers/                        # 调度器服务
+│   ├── news/                          # 新闻调度器
+│   │   ├── news-temporal-client.service.ts     # 客户端服务
+│   │   ├── news-worker.service.ts             # Worker服务
+│   │   └── news-temporal-scheduler.service.ts  # 调度器服务
+│   └── agents/                        # 智能体调度器
+│       ├── agents-temporal-client.service.ts  # 客户端服务
+│       └── agents-worker.service.ts          # Worker服务
+├── workers/                           # Worker实现
+│   ├── agents/                        # 智能体Worker
+│   │   ├── agents-worker.service.ts          # Worker服务
+│   │   └── agents-temporal-client.service.ts  # 客户端服务
+│   └── news/                          # 新闻Worker
+│       └── news-worker.service.ts             # Worker服务
+├── workflows/                         # 工作流定义
+│   ├── news/                          # 新闻工作流
+│   │   ├── news-crawling.workflow.ts  # 新闻爬取工作流
+│   │   └── news.activities.ts         # 新闻活动接口
+│   ├── agents/                        # 智能体工作流
+│   │   ├── agent-analysis.activities.ts # 智能体分析活动
+│   │   ├── mcp.activities.ts          # MCP活动接口
+│   │   └── policy-analysis.activities.ts # 政策分析活动
+│   └── stock-analysis.workflow.ts     # 股票分析工作流
+├── interfaces/                        # 接口定义
+│   ├── connection.ts                  # 连接相关接口
+│   ├── worker.ts                      # Worker相关接口
+│   └── workflow.ts                    # 工作流相关接口
+├── config/                            # 配置文件
+│   ├── connection.config.ts            # 连接配置
+│   ├── worker.config.ts                # Worker配置
+│   └── workflow.config.ts              # 工作流配置
+├── managers/                          # 管理器
+│   ├── connection.manager.ts           # 连接管理器
+│   ├── worker.manager.ts               # Worker管理器
+│   └── workflow.manager.ts             # 工作流管理器
+└── temporal.module.ts                  # Temporal统一模块
+```
+
+### 模块导入规范
+- **统一入口**: 所有Temporal功能通过 `src/temporal/temporal.module.ts` 统一导入
+- **调度器服务**: 位于 `src/temporal/schedulers/[业务领域]/` 目录
+- **Worker实现**: 位于 `src/temporal/workers/[业务领域]/` 目录
+- **工作流定义**: 位于 `src/temporal/workflows/[业务领域]/` 目录
+- **管理器组件**: 位于 `src/temporal/managers/` 目录，提供底层管理功能
+
+**示例用法**:
+```typescript
+// 新闻模块导入调度器服务
+import { NewsTemporalSchedulerService } from '../../temporal/schedulers/news/news-temporal-scheduler.service';
+
+@Module({
+  imports: [
+    ConfigModule,
+    TemporalModule, // 导入统一Temporal模块
+  ],
+  providers: [NewsService],
+  exports: [NewsService],
+})
+export class NewsModule {}
+```
+
+### 架构优势
+1. **统一管理**: 所有Temporal相关功能集中在一个模块中
+2. **清晰分离**: 调度器、Worker、工作流各自独立
+3. **易于扩展**: 新增业务领域时只需在相应目录下创建文件
+4. **依赖清晰**: 通过统一模块管理所有依赖关系
 
 ## 🗄️ 数据架构
 
@@ -302,7 +417,7 @@ NODE_ENV=development
 业务逻辑：
 - src/modules/analysis/analysis.controller.ts    # 股票分析API
 - src/agents/unified/unified-orchestrator.agent.ts # 统一协调器
-- src/modules/news/temporal/news-crawling.workflow.ts # 新闻爬取工作流
+- src/common/temporal/workflows/news/news-crawling.workflow.ts # 新闻爬取工作流
 
 工具组件：
 - src/common/utils/business-logger.util.ts    # 业务日志

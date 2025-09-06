@@ -5,7 +5,7 @@
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NewsTemporalClientService } from '../temporal/news-temporal-client.service';
+import { NewsTemporalClientService } from './news-temporal-client.service';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
 
 @Injectable()

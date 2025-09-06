@@ -4,8 +4,8 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { NewsService } from '../news.service';
-import { NewsSource } from '../interfaces/news-crawler-factory.interface';
+import { NewsService } from '../../../modules/news/news.service';
+import { NewsSource } from '../../../modules/news/interfaces/news-crawler-factory.interface';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
 import { DateTimeUtil } from '../../../common/utils/date-time.util';
 

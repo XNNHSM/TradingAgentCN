@@ -7,7 +7,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Connection, Client, WorkflowHandle, ScheduleHandle } from '@temporalio/client';
 import { ScheduleOverlapPolicy } from '@temporalio/client';
-import { newsCrawlingWorkflow, NewsCrawlingWorkflowInput, NewsCrawlingWorkflowResult } from './news-crawling.workflow';
+import { newsCrawlingWorkflow, NewsCrawlingWorkflowInput, NewsCrawlingWorkflowResult } from '../../workflows/news/news-crawling.workflow';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
 
 /**

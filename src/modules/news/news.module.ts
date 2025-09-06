@@ -8,15 +8,15 @@ import { NewsSummary } from './entities/news-summary.entity';
 import { NewsCrawlerFactory } from './factories/news-crawler.factory';
 import { XWLBCrawlerService } from './crawlers/xwlb-crawler.service';
 import { NewsSummaryService } from './services/news-summary.service';
-// Temporal 相关服务
-import { NewsTemporalClientService } from './temporal/news-temporal-client.service';
 import { NewsWorkerService } from './temporal/news-worker.service';
-import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler.service';
+// Temporal 相关服务 - 从统一Temporal模块导入
+import { TemporalModule } from '../../temporal/temporal.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RawNews, NewsSummary]),
     ConfigModule,
+    TemporalModule,
   ],
   controllers: [NewsController],
   providers: [
@@ -24,17 +24,12 @@ import { NewsTemporalSchedulerService } from './services/news-temporal-scheduler
     NewsSummaryService,
     NewsCrawlerFactory,
     XWLBCrawlerService,
-    // Temporal 服务
-    NewsTemporalClientService,
     NewsWorkerService,
-    NewsTemporalSchedulerService,
   ],
   exports: [
     NewsService,
     NewsSummaryService,
     NewsCrawlerFactory, 
-    NewsTemporalClientService,
-    NewsTemporalSchedulerService,
   ],
 })
 export class NewsModule {}

@@ -1,6 +1,6 @@
 import { RawNews, NewsRegion } from '../entities/raw-news.entity';
 import { BusinessLogger, LogCategory } from '../../../common/utils/business-logger.util';
-import { NewsLink, NewsContent } from '../temporal/news.activities';
+import { NewsLink, NewsContent } from '../../../temporal/workflows/news/news.activities';
 
 /**
  * 新闻文章数据接口

@@ -9,7 +9,7 @@ import { NewsCrawlerFactory } from './factories/news-crawler.factory';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
 import { Result } from '../../common/dto/result.dto';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
-import { NewsLink, NewsContent, NewsSummaryResult } from './temporal/news.activities';
+import { NewsLink, NewsContent, NewsSummaryResult } from '../../temporal/workflows/news/news.activities';
 
 @Injectable()
 export class NewsService {

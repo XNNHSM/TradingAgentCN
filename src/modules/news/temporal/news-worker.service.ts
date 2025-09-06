@@ -7,7 +7,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { Worker, Runtime, NativeConnection } from '@temporalio/worker';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
-import { NewsActivitiesImpl } from './news.activities';
+import { NewsActivitiesImpl } from '../../../temporal/workflows/news/news.activities';
 import { NewsService } from '../news.service';
 
 @Injectable()
@@ -69,7 +69,7 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
         namespace: this.namespace,
         taskQueue: this.taskQueue,
         // 主工作流文件路径
-        workflowsPath: require.resolve('./news-crawling.workflow'),
+        workflowsPath: require.resolve('../../../temporal/workflows/news/news-crawling.workflow'),
         activities: {
           // 原有活动（向后兼容）
           getSupportedSources: newsActivities.getSupportedSources.bind(newsActivities),

@@ -5,19 +5,19 @@
 
 import {Worker} from '@temporalio/worker';
 import {ConfigService} from '@nestjs/config';
-import {LLMService} from '../../agents/services/llm.service';
-import {MCPClientSDKService} from '../../agents/services/mcp-client-sdk.service';
-import {AgentExecutionRecordService} from '../../agents/services/agent-execution-record.service';
-import type {MCPActivities} from '../activities/mcp.activities';
-import {createMCPActivities} from '../activities/mcp.activities';
-import type {PolicyAnalysisActivities} from '../activities/policy-analysis.activities';
-import {createPolicyAnalysisActivities} from '../activities/policy-analysis.activities';
-import type {AgentAnalysisActivities} from '../activities/agent-analysis.activities';
-import {createAgentAnalysisActivities} from '../activities/agent-analysis.activities';
-import type {AnalysisRecordActivities} from '../activities/analysis-record.activities';
-import {createAnalysisRecordActivities} from '../activities/analysis-record.activities';
-import {NewsSummaryService} from '../../modules/news/services/news-summary.service';
-import {AnalysisService} from '../../modules/analysis/analysis.service';
+import {LLMService} from '../../../agents/services/llm.service';
+import {MCPClientSDKService} from '../../../agents/services/mcp-client-sdk.service';
+import {AgentExecutionRecordService} from '../../../agents/services/agent-execution-record.service';
+import type {MCPActivities} from '../../workflows/agents/mcp.activities';
+import {createMCPActivities} from '../../workflows/agents/mcp.activities';
+import type {PolicyAnalysisActivities} from '../../workflows/agents/policy-analysis.activities';
+import {createPolicyAnalysisActivities} from '../../workflows/agents/policy-analysis.activities';
+import type {AgentAnalysisActivities} from '../../workflows/agents/agent-analysis.activities';
+import {createAgentAnalysisActivities} from '../../workflows/agents/agent-analysis.activities';
+import type {AnalysisRecordActivities} from '../../workflows/agents/analysis-record.activities';
+import {createAnalysisRecordActivities} from '../../workflows/agents/analysis-record.activities';
+import {NewsSummaryService} from '../../../modules/news/services/news-summary.service';
+import {AnalysisService} from '../../../modules/analysis/analysis.service';
 
 /**
  * 创建所有活动实现
@@ -141,7 +141,7 @@ export async function createTemporalWorker(
   
   // 创建Worker - 使用目录路径包含两种工作流
   const worker = await Worker.create({
-    workflowsPath: require.resolve('../orchestrators'),
+    workflowsPath: require.resolve('../../workflows'),
     activities,
     taskQueue,
   });

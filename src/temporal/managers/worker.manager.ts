@@ -5,7 +5,7 @@
 
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Worker } from '@temporalio/worker';
-import { BusinessLogger, LogCategory } from '../../utils/business-logger.util';
+import { BusinessLogger, LogCategory } from '../../common/utils/business-logger.util';
 import { 
   WorkerCreateOptions, 
   WorkerHealthStatus, 
