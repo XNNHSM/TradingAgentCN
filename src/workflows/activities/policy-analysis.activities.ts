@@ -6,7 +6,9 @@
 import { ConfigService } from '@nestjs/config';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { NewsSummaryService, PolicyRelevantNews } from '../../modules/news/services/news-summary.service';
-import { PolicyAnalystAgent, PolicyAnalysisInput, PolicyAnalysisResult } from '../../agents/policy/policy-analyst.agent';
+import { NewsAnalystAgent, NewsAnalysisInput, NewsAnalysisResult } from '../../agents/unified/news-analyst.agent';
+import { MarketNewsDataService } from '../../agents/services/market-news-data.service';
+import { NewsAnalysisCacheService } from '../../agents/services/news-analysis-cache.service';
 import { LLMService } from '../../agents/services/llm.service';
 import { DashScopeAdapter } from '../../agents/services/llm-adapters/dashscope-adapter';
 
@@ -31,7 +33,7 @@ export interface PolicyAnalysisActivities {
   }) => Promise<PolicyRelevantNews[]>;
 
   // 执行政策分析
-  performPolicyAnalysis: (input: PolicyAnalysisActivitiesInput) => Promise<PolicyAnalysisResult>;
+  performPolicyAnalysis: (input: PolicyAnalysisActivitiesInput) => Promise<NewsAnalysisResult>;
 }
 
 /**
@@ -39,7 +41,9 @@ export interface PolicyAnalysisActivities {
  */
 export function createPolicyAnalysisActivities(
   configService: ConfigService,
-  newsSummaryService: NewsSummaryService
+  newsSummaryService: NewsSummaryService,
+  marketNewsDataService?: MarketNewsDataService,
+  newsAnalysisCacheService?: NewsAnalysisCacheService
 ): PolicyAnalysisActivities {
   const logger = new BusinessLogger('PolicyAnalysisActivities');
 
@@ -115,7 +119,7 @@ export function createPolicyAnalysisActivities(
     /**
      * 执行政策分析
      */
-    performPolicyAnalysis: async (input: PolicyAnalysisActivitiesInput): Promise<PolicyAnalysisResult> => {
+    performPolicyAnalysis: async (input: PolicyAnalysisActivitiesInput): Promise<NewsAnalysisResult> => {
       try {
         const { stockCode, stockName, stockIndustry, analysisDate, sessionId, lookbackDays = 15 } = input;
         
@@ -136,30 +140,33 @@ export function createPolicyAnalysisActivities(
 
         logger.serviceInfo('获取到政策新闻数量', { count: policyNews.length });
 
-        // 2. 创建政策分析智能体
+        // 2. 创建新闻分析智能体
         const dashScopeAdapter = new DashScopeAdapter(configService);
         await dashScopeAdapter.initialize();
         const llmService = new LLMService(configService, dashScopeAdapter);
-        const policyAnalyst = new PolicyAnalystAgent(llmService);
+        const newsAnalyst = new NewsAnalystAgent(llmService, marketNewsDataService, newsAnalysisCacheService);
 
-        // 3. 构建分析输入
-        const analysisInput: PolicyAnalysisInput = {
-          stockCode,
-          stockName,
-          stockIndustry,
+        // 3. 构建分析输入 - 使用新的市场新闻分析接口
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - lookbackDays);
+
+        const analysisInput: NewsAnalysisInput = {
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
           newsSummaries: policyNews,
           analysisDate,
           sessionId
         };
 
-        // 4. 执行政策分析
-        const analysisResult = await policyAnalyst.analyzePolicy(analysisInput);
+        // 4. 执行新闻分析
+        const analysisResult = await newsAnalyst.analyzeMarketNews(analysisInput);
         
         logger.serviceInfo('政策分析完成', {
           stockCode,
           overallSentiment: analysisResult.overallSentiment,
-          policySupport: analysisResult.policySupport,
-          policyRisk: analysisResult.policyRisk,
+          marketSupport: analysisResult.marketSupport,
+          marketRisk: analysisResult.marketRisk,
           newsProcessed: analysisResult.newsCount,
           confidenceLevel: analysisResult.confidenceLevel
         });
@@ -172,32 +179,38 @@ export function createPolicyAnalysisActivities(
         });
         
         // 返回默认结果而不是抛出异常
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 15);
+
         return {
           sessionId: input.sessionId,
           analysisDate: input.analysisDate,
-          stockCode: input.stockCode,
-          stockName: input.stockName,
+          dateRange: {
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+          },
           
           positiveImpacts: [],
           negativeImpacts: [],
           neutralImpacts: [],
           
           overallSentiment: 'neutral',
-          policyRisk: 50,
-          policySupport: 50,
+          marketRisk: 50,
+          marketSupport: 50,
           
           favorableSectors: [],
           unfavorableSectors: [],
           hotConcepts: [],
           
-          policyRecommendation: '由于分析过程中出现异常，暂无政策建议。建议关注最新政策动向。',
+          marketOutlook: '由于分析过程中出现异常，暂无市场展望。建议关注最新新闻动向。',
           keyRisks: ['数据获取异常', '分析过程异常'],
           keyOpportunities: [],
           
           analysisSource: '分析异常，使用默认结果',
           newsCount: 0,
           confidenceLevel: 0.1,
-          processingTime: Date.now() - Date.now()
+          processingTime: 0
         };
       }
     }

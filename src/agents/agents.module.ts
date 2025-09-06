@@ -31,7 +31,10 @@ import {SocialMediaAnalystAgent} from './unified/social-media-analyst.agent';
 import {QuantitativeTraderAgent} from './unified/quantitative-trader.agent';
 import {MacroEconomistAgent} from './unified/macro-economist.agent';
 import {UnifiedOrchestratorAgent} from './unified/unified-orchestrator.agent';
-import {PolicyAnalystAgent} from './policy/policy-analyst.agent';
+
+// 新闻分析相关服务
+import {MarketNewsDataService} from './services/market-news-data.service';
+import {NewsAnalysisCacheService} from './services/news-analysis-cache.service';
 
 // 执行记录相关（保持兼容）
 import {AgentExecutionRecord} from './entities/agent-execution-record.entity';
@@ -77,8 +80,11 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     SocialMediaAnalystAgent,
     QuantitativeTraderAgent,
     MacroEconomistAgent,
-    PolicyAnalystAgent,
     UnifiedOrchestratorAgent,
+
+    // 新闻分析相关服务
+    MarketNewsDataService,
+    NewsAnalysisCacheService,
 
     // 执行记录服务
     AgentExecutionRecordService,
@@ -103,8 +109,11 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     SocialMediaAnalystAgent,
     QuantitativeTraderAgent,
     MacroEconomistAgent,
-    PolicyAnalystAgent,
     UnifiedOrchestratorAgent,
+    
+    // 新闻分析相关服务
+    MarketNewsDataService,
+    NewsAnalysisCacheService,
     
     // Temporal服务导出
     AgentsTemporalClientService,

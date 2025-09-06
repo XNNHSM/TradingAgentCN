@@ -253,13 +253,13 @@ async function safePolicyAnalysis(
       negativeImpacts: [],
       neutralImpacts: [],
       overallSentiment: 'neutral',
-      policyRisk: 50,
-      policySupport: 50,
+      newsRisk: 50,
+      newsSupport: 50,
       favorableSectors: [],
       unfavorableSectors: [],
       hotConcepts: [],
-      policyRecommendation: '政策分析数据获取异常，建议关注政策动向，谨慎投资。',
-      keyRisks: ['政策分析数据不足', '分析结果可能不准确'],
+      newsRecommendation: '新闻分析数据获取异常，建议关注新闻动向，谨慎投资。',
+      keyRisks: ['新闻分析数据不足', '分析结果可能不准确'],
       keyOpportunities: [],
       analysisSource: '容错机制默认结果',
       newsCount: 0,
@@ -559,10 +559,9 @@ async function executeStage1DataCollection(
       'NEWS_ANALYST',
       callNewsAnalystAgent,
       {
-        stockCode: input.stockCode,
-        stockName: input.stockName || basicInfo.stock_name || input.stockCode,
         sessionId: input.sessionId,
-        mcpData: { news },
+        days: 7, // 分析最近7天的市场新闻
+        forceRefresh: false
       }
     ),
   ]);

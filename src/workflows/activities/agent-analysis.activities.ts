@@ -8,11 +8,13 @@ import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { BasicDataAgent } from '../../agents/unified/basic-data.agent';
 import { TechnicalAnalystAgent } from '../../agents/unified/technical-analyst.agent';
 import { FundamentalAnalystAgent } from '../../agents/unified/fundamental-analyst.agent';
-import { NewsAnalystAgent } from '../../agents/unified/news-analyst.agent';
+import { NewsAnalystAgent, NewsAnalysisInput, NewsAnalysisResult } from '../../agents/unified/news-analyst.agent';
 import { UnifiedOrchestratorAgent } from '../../agents/unified/unified-orchestrator.agent';
 import { LLMService } from '../../agents/services/llm.service';
 import { MCPClientSDKService } from '../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../agents/services/agent-execution-record.service';
+import { MarketNewsDataService } from '../../agents/services/market-news-data.service';
+import { NewsAnalysisCacheService } from '../../agents/services/news-analysis-cache.service';
 import { AgentContext, AgentResult } from '../../agents/interfaces/agent.interface';
 
 /**
@@ -74,12 +76,13 @@ export interface FundamentalAnalystParams {
  * 新闻分析智能体调用参数
  */
 export interface NewsAnalystParams {
-  stockCode: string;
-  stockName: string;
   sessionId: string;
-  mcpData: {
-    news: any;
+  dateRange?: {
+    startDate: string;
+    endDate: string;
   };
+  days?: number; // 最近N天的新闻分析
+  forceRefresh?: boolean;
 }
 
 /**
@@ -179,7 +182,9 @@ export function createAgentAnalysisActivities(
   configService: ConfigService,
   llmService: LLMService,
   mcpClientService: MCPClientSDKService,
-  executionRecordService?: AgentExecutionRecordService
+  executionRecordService?: AgentExecutionRecordService,
+  marketNewsDataService?: MarketNewsDataService,
+  newsAnalysisCacheService?: NewsAnalysisCacheService
 ): AgentAnalysisActivities {
   const logger = new BusinessLogger('AgentAnalysisActivities');
 
@@ -187,7 +192,7 @@ export function createAgentAnalysisActivities(
   const basicDataAgent = new BasicDataAgent(llmService, configService, executionRecordService);
   const technicalAnalystAgent = new TechnicalAnalystAgent(llmService, configService, executionRecordService);
   const fundamentalAnalystAgent = new FundamentalAnalystAgent(llmService, configService, executionRecordService);
-  const newsAnalystAgent = new NewsAnalystAgent(llmService, configService, mcpClientService, executionRecordService);
+  const newsAnalystAgent = new NewsAnalystAgent(llmService, marketNewsDataService, newsAnalysisCacheService);
   const unifiedOrchestratorAgent = new UnifiedOrchestratorAgent(llmService, configService, executionRecordService);
 
   /**
@@ -280,16 +285,69 @@ export function createAgentAnalysisActivities(
     },
 
     callNewsAnalystAgent: async (params: NewsAnalystParams): Promise<AgentAnalysisResult> => {
-      const context: AgentContext = {
-        stockCode: params.stockCode,
-        stockName: params.stockName,
-        metadata: {
+      try {
+        let marketNewsResult: NewsAnalysisResult;
+        
+        // 根据参数选择分析方法
+        if (params.days) {
+          // 分析最近N天的新闻
+          marketNewsResult = await newsAnalystAgent.analyzeRecentMarketNews(
+            params.days,
+            params.forceRefresh || false
+          );
+        } else if (params.dateRange) {
+          // 分析指定日期范围的新闻
+          const input: NewsAnalysisInput = {
+            startDate: params.dateRange.startDate,
+            endDate: params.dateRange.endDate,
+            analysisDate: new Date().toISOString().split('T')[0],
+            sessionId: params.sessionId,
+            newsSummaries: [],
+            forceRefresh: params.forceRefresh || false
+          };
+          marketNewsResult = await newsAnalystAgent.analyzeMarketNews(input);
+        } else {
+          // 默认分析最近7天的新闻
+          marketNewsResult = await newsAnalystAgent.analyzeRecentMarketNews(7, params.forceRefresh || false);
+        }
+        
+        // 将市场新闻分析结果转换为AgentAnalysisResult格式
+        return {
+          agentName: 'MarketNewsAnalyst',
+          agentType: 'NEWS_ANALYST',
+          analysis: JSON.stringify(marketNewsResult),
+          score: Math.round((marketNewsResult.marketSupport - marketNewsResult.marketRisk) / 2 + 50),
+          confidence: marketNewsResult.confidenceLevel,
+          keyInsights: [
+            `市场情绪: ${marketNewsResult.overallSentiment}`,
+            `支持度: ${marketNewsResult.marketSupport}/100`,
+            `风险度: ${marketNewsResult.marketRisk}/100`,
+            `分析新闻数: ${marketNewsResult.newsCount}条`
+          ],
+          risks: marketNewsResult.keyRisks,
+          processingTime: marketNewsResult.processingTime,
+        };
+      } catch (error) {
+        logger.businessError('市场新闻分析失败', error, {
           sessionId: params.sessionId,
-          mcpData: params.mcpData,
-          analysisType: 'news_sentiment_analysis',
-        },
-      };
-      return await callAgent(newsAnalystAgent, context, 'NewsAnalystAgent');
+          dateRange: params.dateRange,
+          days: params.days
+        });
+        
+        // 返回错误结果
+        return {
+          agentName: 'MarketNewsAnalyst',
+          agentType: 'NEWS_ANALYST',
+          analysis: '市场新闻分析失败',
+          score: 50,
+          confidence: 0.1,
+          keyInsights: ['分析失败'],
+          risks: ['市场新闻分析异常'],
+          processingTime: 0,
+          success: false,
+          errorMessage: error instanceof Error ? error.message : '未知错误'
+        };
+      }
     },
 
     // =================

@@ -81,28 +81,36 @@ export function createActivities(
     console.warn('NewsSummaryService未提供，政策分析活动将使用默认实现');
     policyActivities = {
       getPolicyRelevantNews: async () => [],
-      performPolicyAnalysis: async (input) => ({
-        sessionId: input.sessionId,
-        analysisDate: input.analysisDate,
-        stockCode: input.stockCode,
-        stockName: input.stockName,
-        positiveImpacts: [],
-        negativeImpacts: [],
-        neutralImpacts: [],
-        overallSentiment: 'neutral',
-        policyRisk: 50,
-        policySupport: 50,
-        favorableSectors: [],
-        unfavorableSectors: [],
-        hotConcepts: [],
-        policyRecommendation: 'NewsSummaryService未配置，无法进行政策分析',
-        keyRisks: ['服务未配置'],
-        keyOpportunities: [],
-        analysisSource: '默认实现',
-        newsCount: 0,
-        confidenceLevel: 0.1,
-        processingTime: 0
-      })
+      performPolicyAnalysis: async (input) => {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 15);
+        
+        return {
+          sessionId: input.sessionId,
+          analysisDate: input.analysisDate,
+          dateRange: {
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+          },
+          positiveImpacts: [],
+          negativeImpacts: [],
+          neutralImpacts: [],
+          overallSentiment: 'neutral',
+          marketRisk: 50,
+          marketSupport: 50,
+          favorableSectors: [],
+          unfavorableSectors: [],
+          hotConcepts: [],
+          marketOutlook: 'NewsSummaryService未配置，无法进行新闻分析',
+          keyRisks: ['服务未配置'],
+          keyOpportunities: [],
+          analysisSource: '默认实现',
+          newsCount: 0,
+          confidenceLevel: 0.1,
+          processingTime: 0
+        };
+      }
     };
   }
 

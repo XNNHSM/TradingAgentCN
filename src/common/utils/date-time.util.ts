@@ -180,4 +180,21 @@ export class DateTimeUtil {
       return new Date();
     }
   }
+
+  /**
+   * 验证日期字符串是否有效（兼容 isValidDateFormat）
+   */
+  static isValidDate(dateString: string): boolean {
+    return this.isValidDateFormat(dateString);
+  }
+
+  /**
+   * 计算两个日期之间的天数差
+   */
+  static getDaysDifference(startDate: string, endDate: string): number {
+    const start = this.parseDate(startDate);
+    const end = this.parseDate(endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  }
 }
