@@ -5,6 +5,7 @@
 
 import { proxyActivities, defineSignal, setHandler, condition } from '@temporalio/workflow';
 import type { NewsActivities, NewsLink, NewsContent, NewsSummaryResult } from './news.activities';
+import { ContentType } from '../../../common/interfaces/summary-generation.interface';
 
 // 子工作流输入参数
 export interface NewsContentProcessingInput {
@@ -35,6 +36,7 @@ const {
   persistNewsData,
   generateNewsSummary,
   persistSummaryData,
+  generateFallbackSummary,
 } = proxyActivities<NewsActivities>({
   startToCloseTimeout: '3m',    // 单个活动最多3分钟超时
   retry: {
@@ -117,7 +119,7 @@ export async function newsContentProcessingWorkflow(
 
     // 步骤3: 生成新闻摘要
     if (cancelled) {
-      return createPartialSuccessResult(newsLink, source, crawledContent, savedNewsId, '工作流被取消', errors);
+      return await createPartialSuccessResult(newsLink, source, crawledContent, savedNewsId, '工作流被取消', errors);
     }
 
     let generatedSummary: NewsSummaryResult | undefined;
@@ -126,13 +128,13 @@ export async function newsContentProcessingWorkflow(
     } catch (error) {
       const message = `摘要生成失败: ${error instanceof Error ? error.message : String(error)}`;
       errors.push(message);
-      // 摘要生成失败不算整体失败，因为新闻内容已经成功保存
-      return createPartialSuccessResult(newsLink, source, crawledContent, savedNewsId, message, errors);
+      // 摘要生成失败不算整体失败，因为新闻内容已经成功保存，调用fallback生成摘要
+      return await createPartialSuccessResult(newsLink, source, crawledContent, savedNewsId, message, errors);
     }
 
     // 步骤4: 保存新闻摘要
     if (cancelled || !generatedSummary) {
-      return createPartialSuccessResult(newsLink, source, crawledContent, savedNewsId, '工作流被取消或摘要为空', errors);
+      return await createPartialSuccessResult(newsLink, source, crawledContent, savedNewsId, '工作流被取消或摘要为空', errors);
     }
 
     let savedSummaryId: number | undefined;
@@ -189,22 +191,63 @@ function createFailureResult(
 
 /**
  * 创建部分成功结果的辅助函数（新闻保存成功但摘要处理失败）
+ * 此时会调用LLM生成摘要数据
  */
-function createPartialSuccessResult(
+async function createPartialSuccessResult(
   newsLink: NewsLink,
   source: string,
   crawledContent: NewsContent,
   savedNewsId: number | undefined,
   message: string,
   errors: string[]
-): NewsContentProcessingResult {
+): Promise<NewsContentProcessingResult> {
+  let generatedSummary: NewsSummaryResult | undefined;
+  
+  try {
+    // 调用LLM生成fallback摘要
+    generatedSummary = await generateFallbackSummary({
+      content: crawledContent.content,
+      title: crawledContent.title,
+      contentType: ContentType.NEWS,
+      source: source,
+      publishTime: crawledContent.publishTime,
+      maxTokens: 300, // 使用较短的摘要
+      language: 'zh'
+    });
+    
+    // 如果生成成功，尝试保存摘要
+    if (generatedSummary) {
+      try {
+        const summaryPersistResult = await persistSummaryData([generatedSummary]);
+        if (summaryPersistResult.success) {
+          return {
+            success: true,
+            newsLink,
+            source,
+            crawledContent,
+            savedNewsId,
+            generatedSummary,
+            savedSummaryId: generatedSummary.newsId,
+            message: `部分成功: ${message}，但已生成fallback摘要`,
+            errors,
+          };
+        }
+      } catch (saveError) {
+        errors.push(`fallback摘要保存失败: ${saveError instanceof Error ? saveError.message : String(saveError)}`);
+      }
+    }
+  } catch (summaryError) {
+    errors.push(`fallback摘要生成失败: ${summaryError instanceof Error ? summaryError.message : String(summaryError)}`);
+  }
+
+  // 如果摘要生成或保存失败，仍然返回部分成功
   return {
     success: true, // 新闻内容已保存，视为成功
     newsLink,
     source,
     crawledContent,
     savedNewsId,
-    message: `部分成功: ${message}`,
+    message: `部分成功: ${message}，fallback摘要处理失败`,
     errors,
   };
 }

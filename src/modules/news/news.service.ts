@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Raw, In } from 'typeorm';
 import { RawNews, NewsRegion } from './entities/raw-news.entity';
 import { NewsSummary } from './entities/news-summary.entity';
 import { CreateNewsDto, UpdateNewsDto, QueryNewsDto } from './dto/news.dto';
@@ -10,6 +11,8 @@ import { NewsSource } from './interfaces/news-crawler-factory.interface';
 import { Result } from '../../common/dto/result.dto';
 import { BusinessLogger } from '../../common/utils/business-logger.util';
 import { NewsLink, NewsContent, NewsSummaryResult } from '../../temporal/workflows/news/news.activities';
+import { SummaryGenerationService } from '../../common/services/summary-generation.service';
+import { ContentType } from '../../common/interfaces/summary-generation.interface';
 
 @Injectable()
 export class NewsService {
@@ -21,6 +24,7 @@ export class NewsService {
     @InjectRepository(NewsSummary)
     private readonly newsSummaryRepository: Repository<NewsSummary>,
     private readonly newsCrawlerFactory: NewsCrawlerFactory,
+    private readonly summaryGenerationService: SummaryGenerationService,
   ) {}
 
   /**
@@ -674,5 +678,114 @@ export class NewsService {
     }
 
     return summary;
+  }
+
+  /**
+   * 检查是否存在重复的爬取任务
+   * 基于 source 和 date 作为唯一约束
+   */
+  async checkDuplicateCrawling(workflowId: string, source: string, date: string): Promise<Result<boolean>> {
+    try {
+      this.businessLogger.serviceInfo('检查重复爬取任务', { workflowId, source, date });
+
+      // 检查数据库中是否已存在该 source 和 date 的新闻记录
+      const existingNewsCount = await this.rawNewsRepository.count({
+        where: {
+          sourceCode: source,
+          newsDate: date,
+          deletedAt: null, // 确保只检查未删除的记录
+        },
+      });
+
+      // 进一步检查日期匹配（在应用层处理）
+      const allNews = await this.rawNewsRepository.find({
+        where: {
+          sourceCode: source,
+          deletedAt: null,
+        },
+      });
+
+      const sameDateNews = allNews.filter(news => {
+        return news.newsDate === date;
+      });
+
+      const isDuplicate = sameDateNews.length > 0;
+
+      this.businessLogger.serviceInfo('重复检查完成', {
+        workflowId,
+        source,
+        date,
+        existingNewsCount,
+        isDuplicate,
+      });
+
+      return Result.success(isDuplicate);
+    } catch (error) {
+      this.businessLogger.serviceError('检查重复爬取任务失败', error, {
+        workflowId,
+        source,
+        date,
+      });
+      return Result.error('检查重复爬取任务失败');
+    }
+  }
+
+  /**
+   * 生成fallback摘要（使用通用摘要生成服务）
+   */
+  async generateFallbackSummary(input: any): Promise<Result<NewsSummaryResult>> {
+    try {
+      this.businessLogger.serviceInfo('生成fallback摘要', {
+        title: input.title,
+        contentType: input.contentType,
+        source: input.source,
+        contentLength: input.content?.length || 0,
+      });
+
+      // 验证输入参数
+      if (!input.content || input.content.trim().length === 0) {
+        throw new Error('内容不能为空');
+      }
+
+      // 调用通用摘要生成服务
+      const summaryResult = await this.summaryGenerationService.generate({
+        content: input.content,
+        title: input.title,
+        contentType: input.contentType || ContentType.NEWS,
+        source: input.source,
+        publishTime: input.publishTime,
+        maxTokens: input.maxTokens || 300,
+        language: input.language || 'zh',
+        customPrompt: input.customPrompt,
+      });
+
+      if (summaryResult.success) {
+        // 构造NewsSummaryResult格式的返回结果
+        const newsSummaryResult: NewsSummaryResult = {
+          newsId: input.newsId || 0, // 如果没有提供newsId，使用0
+          title: input.title || '无标题',
+          summary: summaryResult.summary,
+          newsDate: input.publishTime || new Date().toISOString().split('T')[0],
+        };
+
+        this.businessLogger.serviceInfo('Fallback摘要生成成功', {
+          title: input.title,
+          summaryLength: summaryResult.summary.length,
+          processingTime: summaryResult.processingTime,
+          keyPointsCount: summaryResult.keyPoints?.length || 0,
+        });
+
+        return Result.success(newsSummaryResult);
+      } else {
+        throw new Error(summaryResult.error || '摘要生成失败');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.businessLogger.serviceError('生成fallback摘要失败', error, {
+        title: input.title,
+        contentType: input.contentType,
+      });
+      return Result.error(`生成fallback摘要失败: ${errorMessage}`);
+    }
   }
 }

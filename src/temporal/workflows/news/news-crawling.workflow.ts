@@ -9,7 +9,8 @@ import {
   setHandler, 
   workflowInfo,
   startChild,
-  ChildWorkflowHandle
+  ChildWorkflowHandle,
+  condition
 } from '@temporalio/workflow';
 import type { NewsActivities } from './news.activities';
 import type { 
@@ -24,6 +25,7 @@ export { newsContentProcessingWorkflow } from './news-content-processing.workflo
 export interface NewsCrawlingWorkflowInput {
   date: string; // 爬取日期 YYYY-MM-dd 格式
   sources?: string[]; // 可选的数据源列表，为空则爬取所有支持的源
+  skipDuplicateCheck?: boolean; // 是否跳过重复检查，默认为false
 }
 
 // 工作流输出结果（增强版，包含更详细的子工作流信息）
@@ -51,6 +53,7 @@ export const cancelCrawlingSignal = defineSignal<[]>('cancelCrawling');
 const {
   getSupportedSources,
   validateDate,
+  checkDuplicateCrawling,
 } = proxyActivities<NewsActivities>({
   startToCloseTimeout: '3m',    // 简化活动，缩短超时时间
   retry: {
@@ -62,12 +65,26 @@ const {
 });
 
 /**
+ * 生成基于 source 和 date 的确定性工作流ID
+ */
+function generateWorkflowId(source: string, date: string): string {
+  return `news-crawling-${source}-${date}`;
+}
+
+/**
+ * 生成基于 source 和 date 的确定性子工作流ID
+ */
+function generateChildWorkflowId(source: string, date: string): string {
+  return `single-source-${source}-${date}`;
+}
+
+/**
  * 新闻爬取工作流主函数（重构版本，使用子工作流模式）
  */
 export async function newsCrawlingWorkflow(
   input: NewsCrawlingWorkflowInput
 ): Promise<NewsCrawlingWorkflowResult> {
-  const { date, sources } = input;
+  const { date, sources, skipDuplicateCheck = false } = input;
   const startTime = Date.now();
   const allErrors: string[] = [];
   
@@ -89,7 +106,34 @@ export async function newsCrawlingWorkflow(
       throw new Error('没有可用的新闻数据源');
     }
 
-    // 3. 为每个数据源启动子工作流（并行执行）
+    // 3. 检查重复爬取（如果未跳过）
+    if (!skipDuplicateCheck) {
+      for (const source of targetSources) {
+        const workflowId = generateWorkflowId(source, date);
+        const isDuplicate = await checkDuplicateCrawling(workflowId, source, date);
+        
+        if (isDuplicate) {
+          return {
+            success: false,
+            date,
+            totalSources: targetSources.length,
+            successfulSources: 0,
+            failedSources: targetSources.length,
+            totalLinks: 0,
+            totalCrawledNews: 0,
+            totalSavedNews: 0,
+            totalGeneratedSummaries: 0,
+            totalSavedSummaries: 0,
+            sourceResults: {},
+            duration: `${Math.round((Date.now() - startTime) / 1000)}s`,
+            message: `检测到重复爬取任务: ${source} ${date}`,
+            errors: [`检测到重复爬取任务: ${source} ${date}`],
+          };
+        }
+      }
+    }
+
+    // 4. 为每个数据源启动子工作流（并行执行）
     const childWorkflowHandles: ChildWorkflowHandle<any>[] = [];
     const sourceResults: Record<string, SingleSourceCrawlingResult> = {};
 
@@ -105,7 +149,7 @@ export async function newsCrawlingWorkflow(
         };
 
         const childHandle = await startChild('singleSourceCrawlingWorkflow', {
-          workflowId: `single-source-${source}-${date}-${Date.now()}`,
+          workflowId: generateChildWorkflowId(source, date),
           args: [childInput],
           // 子工作流超时时间：30分钟（给足够时间处理大量新闻）
           workflowExecutionTimeout: '30m',
@@ -118,12 +162,12 @@ export async function newsCrawlingWorkflow(
       }
     }
 
-    // 4. 等待所有子工作流完成
+    // 5. 等待所有子工作流完成
     const childResults = await Promise.allSettled(
       childWorkflowHandles.map(handle => handle.result())
     );
 
-    // 5. 收集和统计结果
+    // 6. 收集和统计结果
     let successfulSources = 0;
     let failedSources = 0;
     let totalLinks = 0;
@@ -176,7 +220,7 @@ export async function newsCrawlingWorkflow(
       }
     }
 
-    // 6. 构建最终结果
+    // 7. 构建最终结果
     const duration = `${Math.round((Date.now() - startTime) / 1000)}s`;
     const totalSources = targetSources.length;
     const overallSuccess = !cancelled && successfulSources > 0 && totalSavedNews > 0;

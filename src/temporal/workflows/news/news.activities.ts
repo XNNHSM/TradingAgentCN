@@ -50,6 +50,7 @@ export interface NewsSummaryResult {
   title: string;
   summary: string;
   newsDate: string;
+  processingTime?: number; // 处理时间（毫秒）
 }
 
 // 数据持久化结果
@@ -73,6 +74,12 @@ export interface NewsActivities {
   persistNewsData(newsContent: NewsContent[]): Promise<PersistenceResult>;
   generateNewsSummary(newsContent: NewsContent): Promise<NewsSummaryResult>;
   persistSummaryData(summaries: NewsSummaryResult[]): Promise<PersistenceResult>;
+  
+  // 重复检查活动
+  checkDuplicateCrawling(workflowId: string, source: string, date: string): Promise<boolean>;
+  
+  // Fallback摘要生成活动
+  generateFallbackSummary(input: any): Promise<NewsSummaryResult>;
 }
 
 /**
@@ -453,6 +460,91 @@ export class NewsActivitiesImpl implements NewsActivities {
         count: 0,
         message: error instanceof Error ? error.message : String(error),
       };
+    }
+  }
+
+  /**
+   * 检查是否存在重复的爬取任务
+   */
+  async checkDuplicateCrawling(workflowId: string, source: string, date: string): Promise<boolean> {
+    try {
+      this.businessLogger.serviceInfo(
+        `检查重复爬取任务`,
+        { workflowId, source, date }
+      );
+      
+      // 调用新闻服务检查重复
+      const result = await this.newsService.checkDuplicateCrawling(workflowId, source, date);
+      
+      if (result.code === 0) {
+        const isDuplicate = result.data as boolean;
+        this.businessLogger.serviceInfo(
+          `重复检查完成: ${isDuplicate ? '存在重复' : '无重复'}`,
+          { workflowId, source, date, isDuplicate }
+        );
+        return isDuplicate;
+      } else {
+        this.businessLogger.serviceError(
+          `重复检查失败: ${result.message}`,
+          new Error(result.message),
+          { workflowId, source, date }
+        );
+        return false; // 检查失败时默认允许执行
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        `重复检查异常`,
+        error,
+        { workflowId, source, date }
+      );
+      return false; // 检查异常时默认允许执行
+    }
+  }
+
+  /**
+   * 生成fallback摘要（使用通用摘要生成服务）
+   */
+  async generateFallbackSummary(input: any): Promise<NewsSummaryResult> {
+    try {
+      this.businessLogger.serviceInfo(
+        `生成fallback摘要`,
+        { 
+          title: input.title,
+          contentType: input.contentType,
+          source: input.source,
+          contentLength: input.content?.length || 0
+        }
+      );
+      
+      // 调用新闻服务的通用摘要生成方法
+      const result = await this.newsService.generateFallbackSummary(input);
+      
+      if (result.code === 0) {
+        const summaryResult = result.data as NewsSummaryResult;
+        this.businessLogger.serviceInfo(
+          `Fallback摘要生成成功`,
+          { 
+            title: input.title,
+            summaryLength: summaryResult.summary?.length || 0,
+            processingTime: summaryResult.processingTime
+          }
+        );
+        return summaryResult;
+      } else {
+        this.businessLogger.serviceError(
+          `Fallback摘要生成失败: ${result.message}`,
+          new Error(result.message),
+          { title: input.title, contentType: input.contentType }
+        );
+        throw new Error(`Fallback摘要生成失败: ${result.message}`);
+      }
+    } catch (error) {
+      this.businessLogger.serviceError(
+        `Fallback摘要生成异常`,
+        error,
+        { title: input.title, contentType: input.contentType }
+      );
+      throw error;
     }
   }
 }

@@ -29,6 +29,7 @@ import {SocialMediaAnalystAgent} from './unified/social-media-analyst.agent';
 import {QuantitativeTraderAgent} from './unified/quantitative-trader.agent';
 import {MacroEconomistAgent} from './unified/macro-economist.agent';
 import {UnifiedOrchestratorAgent} from './unified/unified-orchestrator.agent';
+import {SummaryGenerationAgent} from './unified/summary-generation.agent';
 
 // 新闻分析相关服务
 import {MarketNewsDataService} from './services/market-news-data.service';
@@ -54,7 +55,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     ConfigModule,
     TypeOrmModule.forFeature([AgentExecutionRecord]),
     TemporalModule, // 导入Temporal统一封装模块
-    NewsModule, // 导入新闻模块，提供政策分析数据支持
+    forwardRef(() => NewsModule), // 导入新闻模块，提供政策分析数据支持
     forwardRef(() => AnalysisModule), // 导入分析模块，提供分析记录功能
   ],
   providers: [
@@ -77,6 +78,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     QuantitativeTraderAgent,
     MacroEconomistAgent,
     UnifiedOrchestratorAgent,
+    SummaryGenerationAgent,
 
     // 新闻分析相关服务
     MarketNewsDataService,
@@ -106,6 +108,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     QuantitativeTraderAgent,
     MacroEconomistAgent,
     UnifiedOrchestratorAgent,
+    SummaryGenerationAgent,
     
     // 新闻分析相关服务
     MarketNewsDataService,

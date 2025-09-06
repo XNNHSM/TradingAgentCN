@@ -86,12 +86,23 @@ export class NewsTemporalClientService implements OnModuleDestroy {
     try {
       const client = await this.getClient();
       
-      const finalWorkflowId = workflowId || `news-crawling-${input.date}-${Date.now()}`;
+      // 如果没有提供 workflowId，基于 source 和 date 生成确定性ID
+      let finalWorkflowId: string;
+      if (workflowId) {
+        finalWorkflowId = workflowId;
+      } else if (input.sources && input.sources.length === 1) {
+        // 单个数据源时，使用 source 和 date 作为唯一约束
+        finalWorkflowId = `news-crawling-${input.sources[0]}-${input.date}`;
+      } else {
+        // 多个数据源时，使用日期作为主要约束
+        finalWorkflowId = `news-crawling-multiple-${input.date}`;
+      }
       
       this.businessLogger.serviceInfo('启动新闻爬取工作流', {
         workflowId: finalWorkflowId,
         date: input.date,
         sources: input.sources,
+        skipDuplicateCheck: input.skipDuplicateCheck,
       });
 
       const handle = await client.workflow.start(newsCrawlingWorkflow, {
@@ -290,7 +301,7 @@ export class NewsTemporalClientService implements OnModuleDestroy {
   /**
    * 手动触发昨日新闻爬取
    */
-  async triggerYesterdayNewsCrawl(): Promise<{
+  async triggerYesterdayNewsCrawl(sources?: string[], skipDuplicateCheck = false): Promise<{
     success: boolean;
     workflowId: string;
     message: string;
@@ -301,10 +312,16 @@ export class NewsTemporalClientService implements OnModuleDestroy {
       yesterday.setDate(yesterday.getDate() - 1);
       const date = yesterday.toISOString().split('T')[0];
 
-      const workflowId = `manual-news-crawling-${date}-${Date.now()}`;
+      // 使用新的唯一约束生成 workflowId
+      let workflowId: string;
+      if (sources && sources.length === 1) {
+        workflowId = `manual-news-crawling-${sources[0]}-${date}`;
+      } else {
+        workflowId = `manual-news-crawling-multiple-${date}`;
+      }
       
       const handle = await this.startNewsCrawlingWorkflow(
-        { date },
+        { date, sources, skipDuplicateCheck },
         workflowId
       );
 
