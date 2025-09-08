@@ -15,6 +15,8 @@ import { SummaryGenerationService } from '../../common/services/summary-generati
 import { TemporalModule } from '../../temporal/temporal.module';
 // Agents模块 - 提供SummaryGenerationAgent
 import { AgentsModule } from '../../agents/agents.module';
+// Watchlist模块 - 提供自选股服务
+import { WatchlistModule } from '../watchlist/watchlist.module';
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { AgentsModule } from '../../agents/agents.module';
     ConfigModule,
     TemporalModule,
     forwardRef(() => AgentsModule),
+    forwardRef(() => WatchlistModule),
   ],
   controllers: [NewsController],
   providers: [

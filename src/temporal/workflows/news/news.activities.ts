@@ -8,6 +8,7 @@ import { NewsService } from '../../../modules/news/news.service';
 import { NewsSource } from '../../../modules/news/interfaces/news-crawler-factory.interface';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
 import { DateTimeUtil } from '../../../common/utils/date-time.util';
+import { WatchlistService } from '../../../modules/watchlist/watchlist.service';
 
 // 单个数据源爬取结果
 export interface SourceCrawlResult {
@@ -80,6 +81,9 @@ export interface NewsActivities {
   
   // Fallback摘要生成活动
   generateFallbackSummary(input: any): Promise<NewsSummaryResult>;
+  
+  // 自选股相关活动
+  getWatchlistStocks(): Promise<Array<{stockCode: string; stockName: string}>>;
 }
 
 /**
@@ -89,7 +93,10 @@ export interface NewsActivities {
 export class NewsActivitiesImpl implements NewsActivities {
   private readonly businessLogger = new BusinessLogger(NewsActivitiesImpl.name);
 
-  constructor(private readonly newsService: NewsService) {}
+  constructor(
+    private readonly newsService: NewsService,
+    private readonly watchlistService: WatchlistService,
+  ) {}
 
   /**
    * 获取支持的新闻源列表
@@ -544,6 +551,38 @@ export class NewsActivitiesImpl implements NewsActivities {
         error,
         { title: input.title, contentType: input.contentType }
       );
+      throw error;
+    }
+  }
+
+  /**
+   * 获取自选股列表
+   */
+  async getWatchlistStocks(): Promise<Array<{stockCode: string; stockName: string}>> {
+    try {
+      this.businessLogger.serviceInfo('获取自选股列表');
+      
+      // 调用自选股服务获取所有自选股
+      const watchlistResult = await this.watchlistService.findAll({ page: 1, limit: 1000 });
+      
+      if (watchlistResult.items && watchlistResult.items.length > 0) {
+        const stocks = watchlistResult.items.map(item => ({
+          stockCode: item.stockCode,
+          stockName: item.stockName || item.stockCode, // 如果没有stockName，使用stockCode
+        }));
+        
+        this.businessLogger.serviceInfo(
+          `自选股列表获取成功: ${stocks.length} 只股票`,
+          { stocks: stocks.map(s => s.stockCode) }
+        );
+        
+        return stocks;
+      } else {
+        this.businessLogger.serviceInfo('没有找到自选股');
+        return [];
+      }
+    } catch (error) {
+      this.businessLogger.serviceError('获取自选股列表失败', error);
       throw error;
     }
   }

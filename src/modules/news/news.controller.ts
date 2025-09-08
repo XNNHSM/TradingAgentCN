@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { NewsService } from './news.service';
 import { CrawlNewsDto } from './dto/crawl-news.dto';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
-import { NewsTemporalSchedulerService } from '../../temporal/schedulers/news/news-temporal-scheduler.service';
+import { IntelligentAnalysisSchedulerService } from '../../temporal/schedulers/news/intelligent-analysis-scheduler.service';
 import { Result } from '../../common/dto/result.dto';
 
 @ApiTags('news')
@@ -11,7 +11,7 @@ import { Result } from '../../common/dto/result.dto';
 export class NewsController {
   constructor(
     private readonly newsService: NewsService,
-    private readonly newsTemporalScheduler: NewsTemporalSchedulerService,
+    private readonly intelligentAnalysisScheduler: IntelligentAnalysisSchedulerService,
   ) {}
 
   @Post('crawl')
@@ -26,7 +26,7 @@ export class NewsController {
     message: string;
   }>> {
     // 使用 Temporal 工作流启动爬取任务
-    const result = await this.newsTemporalScheduler.startNewsRangeCrawlWorkflow(
+    const result = await this.intelligentAnalysisScheduler.startNewsRangeCrawlWorkflow(
       crawlDto.startDate,
       crawlDto.endDate,
       crawlDto.sources
@@ -52,7 +52,7 @@ export class NewsController {
     workflowId: string;
     message: string;
   }>> {
-    const result = await this.newsTemporalScheduler.triggerYesterdayNewsCrawl();
+    const result = await this.intelligentAnalysisScheduler.triggerYesterdayIntelligentAnalysis();
     return Result.success(result);
   }
 
@@ -71,7 +71,7 @@ export class NewsController {
     nextRunTime?: Date;
     recentActions?: Array<{ result: string; startTime: Date; endTime?: Date }>;
   }>> {
-    const status = await this.newsTemporalScheduler.getScheduleStatus();
+    const status = await this.intelligentAnalysisScheduler.getScheduleStatus();
     return Result.success(status);
   }
 
@@ -91,7 +91,7 @@ export class NewsController {
     duration: string;
     message: string;
   }>> {
-    const result = await this.newsTemporalScheduler.getWorkflowResult(body.workflowId);
+    const result = await this.intelligentAnalysisScheduler.getWorkflowResult(body.workflowId);
     return Result.success(result);
   }
 
@@ -107,7 +107,7 @@ export class NewsController {
     startTime?: Date;
     endTime?: Date;
   }>> {
-    const status = await this.newsTemporalScheduler.getWorkflowStatus(body.workflowId);
+    const status = await this.intelligentAnalysisScheduler.getWorkflowStatus(body.workflowId);
     return Result.success(status);
   }
 
@@ -133,7 +133,7 @@ export class NewsController {
     }>;
     summary: string;
   }>> {
-    const progress = await this.newsTemporalScheduler.getRangeCrawlProgress(body.mainWorkflowId);
+    const progress = await this.intelligentAnalysisScheduler.getRangeCrawlProgress(body.mainWorkflowId);
     return Result.success(progress);
   }
 }

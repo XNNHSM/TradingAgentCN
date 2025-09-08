@@ -20,12 +20,14 @@ import type {
 // 导入子工作流以确保它被包含
 export { singleSourceCrawlingWorkflow } from './single-source-crawling.workflow';
 export { newsContentProcessingWorkflow } from './news-content-processing.workflow';
+import { stockAnalysisWorkflow, StockAnalysisInput } from '../stock-analysis.workflow';
 
 // 工作流输入参数
 export interface NewsCrawlingWorkflowInput {
   date: string; // 爬取日期 YYYY-MM-dd 格式
   sources?: string[]; // 可选的数据源列表，为空则爬取所有支持的源
   skipDuplicateCheck?: boolean; // 是否跳过重复检查，默认为false
+  enableStockAnalysis?: boolean; // 是否启用股票分析子工作流，默认为true
 }
 
 // 工作流输出结果（增强版，包含更详细的子工作流信息）
@@ -41,9 +43,23 @@ export interface NewsCrawlingWorkflowResult {
   totalGeneratedSummaries: number; // 成功生成的总摘要数
   totalSavedSummaries: number;     // 成功保存的总摘要数
   sourceResults: Record<string, SingleSourceCrawlingResult>; // 每个数据源的详细结果
+  stockAnalysisResults?: StockAnalysisSubWorkflowResult[]; // 股票分析子工作流结果
   duration: string;
   message: string;
   errors: string[];                // 收集所有子工作流的错误
+}
+
+// 股票分析子工作流结果
+export interface StockAnalysisSubWorkflowResult {
+  stockCode: string;
+  stockName?: string;
+  workflowId: string;
+  success: boolean;
+  overallScore?: number;
+  recommendation?: string;
+  confidence?: number;
+  processingTime?: number;
+  error?: string;
 }
 
 // 工作流控制信号
@@ -54,12 +70,11 @@ const {
   getSupportedSources,
   validateDate,
   checkDuplicateCrawling,
+  getWatchlistStocks,
 } = proxyActivities<NewsActivities>({
   startToCloseTimeout: '3m',    // 简化活动，缩短超时时间
   retry: {
     initialInterval: '5s',
-    maximumInterval: '30s',
-    backoffCoefficient: 2,
     maximumAttempts: 2,
   },
 });
@@ -84,7 +99,7 @@ function generateChildWorkflowId(source: string, date: string): string {
 export async function newsCrawlingWorkflow(
   input: NewsCrawlingWorkflowInput
 ): Promise<NewsCrawlingWorkflowResult> {
-  const { date, sources, skipDuplicateCheck = false } = input;
+  const { date, sources, skipDuplicateCheck = false, enableStockAnalysis = true } = input;
   const startTime = Date.now();
   const allErrors: string[] = [];
   
@@ -225,11 +240,33 @@ export async function newsCrawlingWorkflow(
     const totalSources = targetSources.length;
     const overallSuccess = !cancelled && successfulSources > 0 && totalSavedNews > 0;
 
+    // 8. 如果启用了股票分析，启动股票分析子工作流
+    let stockAnalysisResults: StockAnalysisSubWorkflowResult[] = [];
+    if (enableStockAnalysis && overallSuccess && !cancelled) {
+      try {
+        console.log('开始启动股票分析子工作流');
+        stockAnalysisResults = await startStockAnalysisSubWorkflows(date);
+        console.log('股票分析子工作流完成', {
+          totalStocks: stockAnalysisResults.length,
+          successfulStocks: stockAnalysisResults.filter(r => r.success).length,
+        });
+      } catch (error) {
+        const errorMessage = `股票分析子工作流失败: ${error instanceof Error ? error.message : String(error)}`;
+        allErrors.push(errorMessage);
+        console.error(errorMessage);
+      }
+    }
+
+    // 9. 构建最终消息
     let message: string;
     if (cancelled) {
       message = '工作流被取消';
     } else if (overallSuccess) {
       message = `新闻爬取完成: ${successfulSources}/${totalSources} 数据源成功, 保存 ${totalSavedNews} 条新闻, ${totalSavedSummaries} 条摘要`;
+      if (enableStockAnalysis && stockAnalysisResults.length > 0) {
+        const successfulStocks = stockAnalysisResults.filter(r => r.success).length;
+        message += `, 股票分析完成: ${successfulStocks}/${stockAnalysisResults.length} 只股票`;
+      }
     } else {
       message = `新闻爬取失败: ${failedSources}/${totalSources} 数据源失败`;
     }
@@ -246,6 +283,7 @@ export async function newsCrawlingWorkflow(
       totalGeneratedSummaries,
       totalSavedSummaries,
       sourceResults,
+      stockAnalysisResults: stockAnalysisResults.length > 0 ? stockAnalysisResults : undefined,
       duration,
       message,
       errors: allErrors,
@@ -272,5 +310,98 @@ export async function newsCrawlingWorkflow(
       message: `工作流执行失败: ${errorMessage}`,
       errors: allErrors,
     };
+  }
+}
+
+/**
+ * 启动股票分析子工作流
+ */
+async function startStockAnalysisSubWorkflows(
+  date: string
+): Promise<StockAnalysisSubWorkflowResult[]> {
+  console.log('获取自选股列表以启动股票分析子工作流');
+  
+  try {
+    // 获取自选股列表
+    const watchlistStocks = await getWatchlistStocks();
+    
+    if (!watchlistStocks || watchlistStocks.length === 0) {
+      console.log('没有找到自选股，跳过股票分析子工作流');
+      return [];
+    }
+
+    console.log(`找到 ${watchlistStocks.length} 只自选股，开始启动股票分析子工作流`);
+
+    // 为每只自选股启动股票分析子工作流
+    const stockAnalysisPromises = watchlistStocks.map(async (stock) => {
+      const stockWorkflowId = `stock-analysis-${stock.stockCode}-${date}-${Date.now()}`;
+      
+      try {
+        const stockInput: StockAnalysisInput = {
+          stockCode: stock.stockCode,
+          stockName: stock.stockName,
+          sessionId: `news-crawling-${date}`,
+          workflowId: stockWorkflowId,
+          metadata: {
+            triggerSource: 'news-crawling-workflow',
+            newsDate: date,
+          },
+        };
+
+        // 启动子工作流
+        const childHandle = await startChild(stockAnalysisWorkflow, {
+          workflowId: stockWorkflowId,
+          args: [stockInput],
+          workflowExecutionTimeout: '15m', // 股票分析可能需要较长时间
+          retry: {
+            maximumAttempts: 2,
+            initialInterval: '1s',
+          },
+        });
+
+        // 等待子工作流完成
+        const result = await childHandle.result();
+
+        return {
+          stockCode: stock.stockCode,
+          stockName: stock.stockName,
+          workflowId: stockWorkflowId,
+          success: true,
+          overallScore: result.finalDecision.overallScore,
+          recommendation: result.finalDecision.recommendation,
+          confidence: result.finalDecision.confidence,
+          processingTime: result.totalProcessingTime,
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`股票分析子工作流失败: ${stock.stockCode}`, { error: errorMessage });
+        
+        return {
+          stockCode: stock.stockCode,
+          stockName: stock.stockName,
+          workflowId: stockWorkflowId,
+          success: false,
+          error: errorMessage,
+        };
+      }
+    });
+
+    // 并行执行所有股票分析子工作流
+    const results = await Promise.all(stockAnalysisPromises);
+    
+    const successfulStocks = results.filter(r => r.success).length;
+    const failedStocks = results.filter(r => !r.success).length;
+    
+    console.log('股票分析子工作流执行完成', {
+      totalStocks: results.length,
+      successfulStocks,
+      failedStocks,
+    });
+
+    return results;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('获取自选股列表失败', { error: errorMessage });
+    throw new Error(`无法获取自选股列表: ${errorMessage}`);
   }
 }

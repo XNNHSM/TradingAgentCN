@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NewsController } from './news.controller';
 import { NewsService } from './news.service';
-import { NewsTemporalSchedulerService } from '../../temporal/schedulers/news/news-temporal-scheduler.service';
+import { IntelligentAnalysisSchedulerService } from '../../temporal/schedulers/news/intelligent-analysis-scheduler.service';
 import { CrawlNewsDto } from './dto/crawl-news.dto';
 import { NewsSource } from './interfaces/news-crawler-factory.interface';
 
 describe('NewsController', () => {
   let controller: NewsController;
   let newsService: NewsService;
-  let temporalScheduler: NewsTemporalSchedulerService;
+  let temporalScheduler: IntelligentAnalysisSchedulerService;
 
   const mockNewsService = {
     startCrawlingTask: jest.fn(),
@@ -16,7 +16,7 @@ describe('NewsController', () => {
   };
 
   const mockTemporalScheduler = {
-    triggerYesterdayNewsCrawl: jest.fn(),
+    triggerYesterdayIntelligentAnalysis: jest.fn(),
     getScheduleStatus: jest.fn(),
     getWorkflowResult: jest.fn(),
     getWorkflowStatus: jest.fn(),
@@ -33,7 +33,7 @@ describe('NewsController', () => {
           useValue: mockNewsService,
         },
         {
-          provide: NewsTemporalSchedulerService,
+          provide: IntelligentAnalysisSchedulerService,
           useValue: mockTemporalScheduler,
         },
       ],
@@ -41,7 +41,7 @@ describe('NewsController', () => {
 
     controller = module.get<NewsController>(NewsController);
     newsService = module.get<NewsService>(NewsService);
-    temporalScheduler = module.get<NewsTemporalSchedulerService>(NewsTemporalSchedulerService);
+    temporalScheduler = module.get<IntelligentAnalysisSchedulerService>(IntelligentAnalysisSchedulerService);
   });
 
   it('should be defined', () => {
@@ -129,13 +129,13 @@ describe('NewsController', () => {
           message: '手动触发昨日(2025-08-20)新闻爬取任务成功',
         };
 
-        mockTemporalScheduler.triggerYesterdayNewsCrawl.mockResolvedValue(expectedResult);
+        mockTemporalScheduler.triggerYesterdayIntelligentAnalysis.mockResolvedValue(expectedResult);
 
         const result = await controller.triggerYesterdayNewsCrawl();
 
         expect(result.code).toBe(0);
         expect(result.data).toEqual(expectedResult);
-        expect(temporalScheduler.triggerYesterdayNewsCrawl).toHaveBeenCalled();
+        expect(temporalScheduler.triggerYesterdayIntelligentAnalysis).toHaveBeenCalled();
       });
     });
 

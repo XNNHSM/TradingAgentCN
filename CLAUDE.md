@@ -108,7 +108,7 @@ NestJS启动 → AgentsModule初始化 → startWorkers() → worker.run() → �
 | 工作流 | TaskQueue | 功能描述 |
 |--------|-----------|----------|
 | 股票分析 | `stock-analysis` | MCP数据获取→智能分析→决策生成 |
-| 新闻爬取 | `news-crawling` | 定时爬取→实时落盘→摘要生成 |
+| 智能分析 | `news-crawling` | 新闻爬取→摘要生成→股票分析子工作流 |
 
 ### 统一调度架构规范 ⭐
 - 🏗️ **模块解耦**: 各业务模块只提供基础能力和方法，不包含调度逻辑
@@ -126,7 +126,7 @@ src/common/temporal/
 ├── schedulers/              # 统一调度器服务
 │   ├── news-temporal-client.service.ts      # 新闻Temporal客户端
 │   ├── news-worker.service.ts              # 新闻Worker服务
-│   └── news-temporal-scheduler.service.ts   # 新闻调度服务
+│   └── intelligent-analysis-scheduler.service.ts   # 智能分析调度服务
 ├── workflows/              # 工作流定义
 │   └── news/                 # 新闻相关工作流
 │       ├── news-crawling.workflow.ts
@@ -200,7 +200,7 @@ src/temporal/                           # Temporal统一模块
 **示例用法**:
 ```typescript
 // 新闻模块导入调度器服务
-import { NewsTemporalSchedulerService } from '../../temporal/schedulers/news/news-temporal-scheduler.service';
+import { IntelligentAnalysisSchedulerService } from '../../temporal/schedulers/news/intelligent-analysis-scheduler.service';
 
 @Module({
   imports: [
@@ -404,6 +404,7 @@ TEMPORAL_WORKER_ENABLED=true
 
 # 功能开关
 ENABLE_CACHE=false  # 开发阶段禁用缓存
+INTELLIGENT_ANALYSIS_SCHEDULER_ENABLED=true  # 智能分析调度器开关
 NODE_ENV=development
 ```
 
@@ -417,7 +418,8 @@ NODE_ENV=development
 业务逻辑：
 - src/modules/analysis/analysis.controller.ts    # 股票分析API
 - src/agents/unified/unified-orchestrator.agent.ts # 统一协调器
-- src/common/temporal/workflows/news/news-crawling.workflow.ts # 新闻爬取工作流
+- src/common/temporal/workflows/news/news-crawling.workflow.ts # 智能分析工作流
+- src/temporal/schedulers/news/intelligent-analysis-scheduler.service.ts # 智能分析调度器
 
 工具组件：
 - src/common/utils/business-logger.util.ts    # 业务日志

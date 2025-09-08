@@ -16,7 +16,7 @@ import { TemporalManager } from './temporal.manager';
 
 // 新闻调度器服务
 import { NewsTemporalClientService } from './schedulers/news/news-temporal-client.service';
-import { NewsTemporalSchedulerService } from './schedulers/news/news-temporal-scheduler.service';
+import { IntelligentAnalysisSchedulerService } from './schedulers/news/intelligent-analysis-scheduler.service';
 
 // 智能体调度器服务
 import { AgentsTemporalClientService } from './workers/agents/agents-temporal-client.service';
@@ -41,7 +41,7 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
     
     // 新闻调度器服务
     NewsTemporalClientService,
-    NewsTemporalSchedulerService,
+    IntelligentAnalysisSchedulerService,
     
     // 智能体调度器服务
     AgentsTemporalClientService,
@@ -57,7 +57,7 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
     
     // 导出新闻调度器服务
     NewsTemporalClientService,
-    NewsTemporalSchedulerService,
+    IntelligentAnalysisSchedulerService,
     
     // 导出智能体调度器服务
     AgentsTemporalClientService,

@@ -9,6 +9,7 @@ import { Worker, Runtime, NativeConnection } from '@temporalio/worker';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
 import { NewsActivitiesImpl } from '../../../temporal/workflows/news/news.activities';
 import { NewsService } from '../news.service';
+import { WatchlistService } from '../../watchlist/watchlist.service';
 
 @Injectable()
 export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -23,6 +24,7 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly newsService: NewsService,
+    private readonly watchlistService: WatchlistService,
   ) {
     const environment = this.configService.get('NODE_ENV', 'dev');
     this.namespace = 'default'; // 统一使用 default namespace
@@ -61,7 +63,7 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
       });
 
       // 创建活动实例
-      const newsActivities = new NewsActivitiesImpl(this.newsService);
+      const newsActivities = new NewsActivitiesImpl(this.newsService, this.watchlistService);
 
       // 创建 Worker
       this.worker = await Worker.create({

@@ -1,6 +1,7 @@
 /**
- * 新闻 Temporal 调度服务
+ * 智能分析 Temporal 调度服务
  * 替代原有的 Cron 调度器，使用 Temporal Schedule 进行定时任务管理
+ * 负责新闻爬取、摘要生成和股票分析的定时调度
  */
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
@@ -9,8 +10,8 @@ import { NewsTemporalClientService } from './news-temporal-client.service';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
 
 @Injectable()
-export class NewsTemporalSchedulerService implements OnModuleInit {
-  private readonly businessLogger = new BusinessLogger(NewsTemporalSchedulerService.name);
+export class IntelligentAnalysisSchedulerService implements OnModuleInit {
+  private readonly businessLogger = new BusinessLogger(IntelligentAnalysisSchedulerService.name);
 
   constructor(
     private readonly newsTemporalClient: NewsTemporalClientService,
@@ -23,49 +24,49 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     try {
       // 检查是否启用定时调度
-      const schedulerEnabled = this.configService.get('NEWS_SCHEDULER_ENABLED', 'true') === 'true';
+      const schedulerEnabled = this.configService.get('INTELLIGENT_ANALYSIS_SCHEDULER_ENABLED', 'true') === 'true';
       
       if (!schedulerEnabled) {
-        this.businessLogger.serviceInfo('新闻定时调度被禁用，跳过启动');
+        this.businessLogger.serviceInfo('智能分析定时调度被禁用，跳过启动');
         return;
       }
 
-      // 创建每日新闻爬取定时调度
-      await this.createDailyNewsSchedule();
+      // 创建每日智能分析定时调度
+      await this.createDailyIntelligentAnalysisSchedule();
       
     } catch (error) {
-      this.businessLogger.serviceError('启动新闻定时调度失败', error);
+      this.businessLogger.serviceError('启动智能分析定时调度失败', error);
       // 不抛出错误，避免影响整个应用启动
     }
   }
 
   /**
-   * 创建每日新闻爬取定时调度
+   * 创建每日智能分析定时调度
    */
-  async createDailyNewsSchedule(): Promise<void> {
+  async createDailyIntelligentAnalysisSchedule(): Promise<void> {
     try {
-      this.businessLogger.serviceInfo('创建每日新闻爬取定时调度');
+      this.businessLogger.serviceInfo('创建每日智能分析定时调度');
 
       await this.newsTemporalClient.createDailyNewsSchedule({
-        scheduleId: `daily-news-crawling-${this.configService.get('NODE_ENV', 'dev')}`,
+        scheduleId: `daily-intelligent-analysis-${this.configService.get('NODE_ENV', 'dev')}`,
         cronExpression: '0 1 * * *', // 每天凌晨1点
         timeZone: 'Asia/Shanghai',
-        memo: '每日新闻爬取定时任务 - 由 Temporal Schedule 管理',
+        memo: '每日智能分析定时任务 - 由 Temporal Schedule 管理',
       });
 
-      this.businessLogger.serviceInfo('每日新闻爬取定时调度创建成功');
+      this.businessLogger.serviceInfo('每日智能分析定时调度创建成功');
     } catch (error) {
       // 如果调度已存在，记录信息但不抛出错误
       if (error instanceof Error && (
         error.message.includes('already exists') || 
         error.message.includes('Schedule already exists and is running')
       )) {
-        this.businessLogger.serviceInfo('每日新闻爬取定时调度已存在，跳过创建', {
-          scheduleId: `daily-news-crawling-${this.configService.get('NODE_ENV', 'dev')}`,
+        this.businessLogger.serviceInfo('每日智能分析定时调度已存在，跳过创建', {
+          scheduleId: `daily-intelligent-analysis-${this.configService.get('NODE_ENV', 'dev')}`,
           errorMessage: error.message
         });
       } else {
-        this.businessLogger.serviceError('创建每日新闻爬取定时调度失败', error);
+        this.businessLogger.serviceError('创建每日智能分析定时调度失败', error);
         throw error;
       }
     }
@@ -137,25 +138,25 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
   }
 
   /**
-   * 手动触发昨日新闻爬取
+   * 手动触发昨日智能分析任务
    */
-  async triggerYesterdayNewsCrawl(): Promise<{
+  async triggerYesterdayIntelligentAnalysis(): Promise<{
     success: boolean;
     workflowId: string;
     message: string;
   }> {
     try {
-      this.businessLogger.serviceInfo('手动触发昨日新闻爬取任务');
+      this.businessLogger.serviceInfo('手动触发昨日智能分析任务');
 
       const result = await this.newsTemporalClient.triggerYesterdayNewsCrawl();
 
       if (result.success) {
-        this.businessLogger.serviceInfo('手动触发昨日新闻爬取任务成功', {
+        this.businessLogger.serviceInfo('手动触发昨日智能分析任务成功', {
           workflowId: result.workflowId,
         });
       } else {
         this.businessLogger.serviceError(
-          '手动触发昨日新闻爬取任务失败',
+          '手动触发昨日智能分析任务失败',
           new Error(result.message),
           { workflowId: result.workflowId }
         );
@@ -163,7 +164,7 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
 
       return result;
     } catch (error) {
-      this.businessLogger.serviceError('手动触发昨日新闻爬取任务异常', error);
+      this.businessLogger.serviceError('手动触发昨日智能分析任务异常', error);
       return {
         success: false,
         workflowId: '',
@@ -189,11 +190,11 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
       const scheduleStatus = await this.newsTemporalClient.getScheduleStatus();
 
       return {
-        taskName: 'daily-news-crawling',
-        namespace: `news-${environment}`,
+        taskName: 'daily-intelligent-analysis',
+        namespace: `intelligent-analysis-${environment}`,
         taskQueue: `news-crawling-${environment}`,
         scheduleId: scheduleStatus.scheduleId,
-        description: '每天凌晨1点执行新闻爬取任务 - 由 Temporal Schedule 管理',
+        description: '每天凌晨1点执行智能分析任务 - 由 Temporal Schedule 管理',
         nextRunTime: scheduleStatus.nextRunTime,
         recentActions: scheduleStatus.recentActions,
       };
@@ -203,11 +204,11 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
       // 返回默认状态信息
       const environment = this.configService.get('NODE_ENV', 'dev');
       return {
-        taskName: 'daily-news-crawling',
-        namespace: `news-${environment}`,
+        taskName: 'daily-intelligent-analysis',
+        namespace: `intelligent-analysis-${environment}`,
         taskQueue: `news-crawling-${environment}`,
-        scheduleId: `daily-news-crawling-${environment}`,
-        description: '每天凌晨1点执行新闻爬取任务 - 由 Temporal Schedule 管理',
+        scheduleId: `daily-intelligent-analysis-${environment}`,
+        description: '每天凌晨1点执行智能分析任务 - 由 Temporal Schedule 管理',
       };
     }
   }
@@ -217,7 +218,7 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
    */
   async recreateSchedule(): Promise<void> {
     try {
-      this.businessLogger.serviceInfo('重新创建新闻定时调度');
+      this.businessLogger.serviceInfo('重新创建智能分析定时调度');
 
       // 先删除现有调度
       await this.newsTemporalClient.deleteSchedule();
@@ -226,11 +227,11 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // 重新创建调度
-      await this.createDailyNewsSchedule();
+      await this.createDailyIntelligentAnalysisSchedule();
 
-      this.businessLogger.serviceInfo('重新创建新闻定时调度成功');
+      this.businessLogger.serviceInfo('重新创建智能分析定时调度成功');
     } catch (error) {
-      this.businessLogger.serviceError('重新创建新闻定时调度失败', error);
+      this.businessLogger.serviceError('重新创建智能分析定时调度失败', error);
       throw error;
     }
   }
@@ -240,13 +241,13 @@ export class NewsTemporalSchedulerService implements OnModuleInit {
    */
   async deleteSchedule(): Promise<void> {
     try {
-      this.businessLogger.serviceInfo('删除新闻定时调度');
+      this.businessLogger.serviceInfo('删除智能分析定时调度');
 
       await this.newsTemporalClient.deleteSchedule();
 
-      this.businessLogger.serviceInfo('删除新闻定时调度成功');
+      this.businessLogger.serviceInfo('删除智能分析定时调度成功');
     } catch (error) {
-      this.businessLogger.serviceError('删除新闻定时调度失败', error);
+      this.businessLogger.serviceError('删除智能分析定时调度失败', error);
       throw error;
     }
   }
