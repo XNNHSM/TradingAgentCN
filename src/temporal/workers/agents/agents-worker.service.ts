@@ -3,7 +3,7 @@
  * 基于新的Temporal统一封装架构重构
  */
 
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Worker } from '@temporalio/worker';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
@@ -17,7 +17,7 @@ import { AgentExecutionRecordService } from '../../../agents/services/agent-exec
 import { AnalysisService } from '../../../modules/analysis/analysis.service';
 
 @Injectable()
-export class AgentsWorkerService implements OnModuleDestroy {
+export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new BusinessLogger(AgentsWorkerService.name);
   private workers: Worker[] = [];
   private readonly environment: string;
@@ -32,6 +32,24 @@ export class AgentsWorkerService implements OnModuleDestroy {
     private readonly analysisService?: AnalysisService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
+  }
+
+  /**
+   * 模块初始化时启动 Worker
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      // 在开发环境或测试环境中可以选择不启动 Worker
+      if (this.configService.get('TEMPORAL_WORKER_ENABLED', 'true') === 'false') {
+        this.logger.serviceInfo('Temporal Worker 被禁用，跳过启动');
+        return;
+      }
+
+      await this.startWorkers();
+    } catch (error) {
+      this.logger.serviceError('启动 Agents Worker 失败', error);
+      // 不抛出错误，避免影响整个应用启动
+    }
   }
 
   /**
@@ -53,7 +71,7 @@ export class AgentsWorkerService implements OnModuleDestroy {
       // 定义Worker配置 - 直接指向股票分析工作流
       const workerOptions: WorkerCreateOptions = {
         taskQueue: 'stock-analysis',
-        workflowsPath: require.resolve(__dirname + '/../../../workflows/stock-analysis.workflow'),
+        workflowsPath: require.resolve('../../workflows/stock-analysis.workflow'),
         activities,
         options: {
           maxConcurrentActivities: 10,

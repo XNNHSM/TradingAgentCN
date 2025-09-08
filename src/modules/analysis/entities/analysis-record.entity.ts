@@ -108,6 +108,13 @@ export class AnalysisRecord extends BaseEntity {
   startTime?: Date;
 
   @Column({
+    type: "timestamp",
+    nullable: true,
+    comment: "结束时间",
+  })
+  endTime?: Date;
+
+  @Column({
     type: "int",
     comment: "执行时长(毫秒)",
   })

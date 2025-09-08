@@ -12,6 +12,9 @@ import {NewsModule} from '../modules/news/news.module';
 // 分析模块（为分析记录提供支持）- 使用forwardRef避免循环依赖
 import {AnalysisModule} from '../modules/analysis/analysis.module';
 
+// Agents模块专属Temporal Worker服务
+import {AgentsWorkerService} from '../temporal/workers/agents/agents-worker.service';
+
 // MCP相关服务
 import {MCPClientSDKService} from './services/mcp-client-sdk.service';
 import {MCPClientFallbackService} from './services/mcp-client-fallback.service';
@@ -67,8 +70,9 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     MCPClientFallbackService,
     LLMService,
     
-    // 智能体模块专属Temporal服务 - 现在从TemporalModule统一管理
-
+    // 智能体模块专属Temporal Worker服务
+    AgentsWorkerService,
+    
     // 按需调用智能体架构
     BasicDataAgent,
     TechnicalAnalystAgent,

@@ -17,6 +17,7 @@ import * as workflow from '@temporalio/workflow';
 import type { MCPActivities } from './agents/mcp.activities';
 import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from './agents/policy-analysis.activities';
 import type { AgentAnalysisActivities, AgentAnalysisResult } from './agents/agent-analysis.activities';
+import { TradingRecommendation } from '../../agents/interfaces/agent.interface';
 
 // 工作流输入类型
 export interface StockAnalysisInput {
@@ -64,7 +65,7 @@ export interface StockAnalysisResult {
   // 最终决策
   finalDecision: {
     overallScore: number;
-    recommendation: string;
+    recommendation: TradingRecommendation;
     confidence: number;
     keyDecisionFactors: string[];
     riskAssessment: string[];
@@ -146,7 +147,7 @@ const {
     status?: 'running' | 'success' | 'partial' | 'failed';
     results?: Record<string, any>;
     averageScore?: number;
-    finalRecommendation?: string;
+    finalRecommendation?: TradingRecommendation;
     confidence?: number;
     keyInsights?: string[];
     majorRisks?: string[];
@@ -199,7 +200,7 @@ async function safeCallAgent<T extends any[]>(
       agentType,
       analysis: `${agentName}调用失败，数据获取异常。建议：关注相关数据变化，谨慎决策。`,
       score: 50, // 中性分数
-      recommendation: 'HOLD', // 保守建议
+      recommendation: TradingRecommendation.HOLD, // 保守建议
       confidence: 0.1, // 低置信度
       keyInsights: ['数据获取异常', '建议人工核实'],
       risks: ['数据不完整', '分析可能不准确'],
@@ -736,7 +737,7 @@ async function generateFinalDecision(
   stage3Result: StageAnalysisResult
 ): Promise<{
   overallScore: number;
-  recommendation: string;
+  recommendation: TradingRecommendation;
   confidence: number;
   keyDecisionFactors: string[];
   riskAssessment: string[];
@@ -771,7 +772,7 @@ async function generateFinalDecision(
     
     return {
       overallScore: orchestratorResult.score || 50,
-      recommendation: orchestratorResult.recommendation || 'HOLD',
+      recommendation: orchestratorResult.recommendation as TradingRecommendation || TradingRecommendation.HOLD,
       confidence: adjustedConfidence,
       keyDecisionFactors: [
         ...(orchestratorResult.keyInsights || ['综合分析结果']),
@@ -801,7 +802,7 @@ async function generateFinalDecision(
 
   return {
     overallScore: Math.round(avgScore),
-    recommendation: avgScore >= 70 ? 'BUY' : avgScore >= 40 ? 'HOLD' : 'SELL',
+    recommendation: avgScore >= 70 ? TradingRecommendation.BUY : avgScore >= 40 ? TradingRecommendation.HOLD : TradingRecommendation.SELL,
     confidence: baseConfidence,
     keyDecisionFactors: [
       `基于${successfulResults.length}个成功智能体的分析`,

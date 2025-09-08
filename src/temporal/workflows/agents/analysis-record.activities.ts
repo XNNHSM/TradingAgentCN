@@ -5,6 +5,7 @@
 
 import {BusinessLogger} from '../../../common/utils/business-logger.util';
 import {AnalysisService} from '../../../modules/analysis/analysis.service';
+import {TradingRecommendation} from '../../../agents/interfaces/agent.interface';
 
 /**
  * 分析记录Activities接口定义
@@ -24,7 +25,7 @@ export interface AnalysisRecordActivities {
     status?: 'running' | 'success' | 'partial' | 'failed';
     results?: Record<string, any>;
     averageScore?: number;
-    finalRecommendation?: string;
+    finalRecommendation?: TradingRecommendation;
     confidence?: number;
     keyInsights?: string[];
     majorRisks?: string[];

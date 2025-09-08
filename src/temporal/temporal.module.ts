@@ -18,6 +18,9 @@ import { TemporalManager } from './temporal.manager';
 import { NewsTemporalClientService } from './schedulers/news/news-temporal-client.service';
 import { NewsTemporalSchedulerService } from './schedulers/news/news-temporal-scheduler.service';
 
+// 智能体调度器服务
+import { AgentsTemporalClientService } from './workers/agents/agents-temporal-client.service';
+
 /**
  * Temporal统一封装模块
  * 标记为全局模块，整个应用都可以使用
@@ -39,6 +42,9 @@ import { NewsTemporalSchedulerService } from './schedulers/news/news-temporal-sc
     // 新闻调度器服务
     NewsTemporalClientService,
     NewsTemporalSchedulerService,
+    
+    // 智能体调度器服务
+    AgentsTemporalClientService,
   ],
   exports: [
     // 主要导出统一管理器
@@ -52,6 +58,9 @@ import { NewsTemporalSchedulerService } from './schedulers/news/news-temporal-sc
     // 导出新闻调度器服务
     NewsTemporalClientService,
     NewsTemporalSchedulerService,
+    
+    // 导出智能体调度器服务
+    AgentsTemporalClientService,
   ],
 })
 export class TemporalModule {

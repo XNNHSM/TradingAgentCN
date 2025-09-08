@@ -38,15 +38,46 @@ export class MCPClientFallbackService extends MCPClientService {
         // 如果SDK失败，尝试原始实现
         return await super.callTool(toolName, parameters);
       } catch (originalError) {
-        // 如果都失败，且是401错误（API密钥问题），使用模拟数据
-        if (originalError.message.includes('401') || originalError.message.includes('Unauthorized') || 
-            sdkError.message.includes('401') || sdkError.message.includes('Unauthorized')) {
-          this.fallbackLogger.serviceInfo(`API密钥无效，使用模拟数据: ${toolName}`, {
+        // 检查是否需要使用回退数据的情况
+        const shouldUseFallback = 
+          // 401认证错误
+          originalError.message.includes('401') || 
+          originalError.message.includes('Unauthorized') ||
+          sdkError.message.includes('401') || 
+          sdkError.message.includes('Unauthorized') ||
+          // 空响应错误
+          originalError.message.includes('空响应') ||
+          originalError.message.includes('empty response') ||
+          sdkError.message.includes('空响应') ||
+          sdkError.message.includes('empty response') ||
+          // 网络连接错误
+          originalError.message.includes('ECONNREFUSED') ||
+          originalError.message.includes('ENOTFOUND') ||
+          originalError.message.includes('timeout') ||
+          // API服务错误
+          originalError.message.includes('API调用失败') ||
+          originalError.message.includes('MCP工具调用失败');
+        
+        if (shouldUseFallback) {
+          let fallbackReason = '未知错误';
+          if (originalError.message.includes('401') || originalError.message.includes('Unauthorized')) {
+            fallbackReason = 'API认证失败';
+          } else if (originalError.message.includes('空响应') || originalError.message.includes('empty response')) {
+            fallbackReason = 'API返回空响应';
+          } else if (originalError.message.includes('ECONNREFUSED') || originalError.message.includes('ENOTFOUND')) {
+            fallbackReason = '网络连接失败';
+          } else if (originalError.message.includes('timeout')) {
+            fallbackReason = '请求超时';
+          } else if (originalError.message.includes('API调用失败')) {
+            fallbackReason = 'API服务异常';
+          }
+          
+          this.fallbackLogger.serviceInfo(`MCP API异常，使用模拟数据: ${toolName}`, {
             toolName,
             parameters,
             sdkError: sdkError.message,
             originalError: originalError.message,
-            reason: 'API认证失败，使用回退机制'
+            reason: fallbackReason + '，使用回退机制'
           });
         
           return this.generateFallbackResponse(toolName, parameters);

@@ -22,7 +22,9 @@ export class AnalysisService {
     @InjectRepository(AnalysisRecord)
     private readonly analysisRepository: Repository<AnalysisRecord>,
     @Optional() private readonly agentsTemporalClient?: AgentsTemporalClientService,
-  ) {}
+  ) {
+    this.logger.log(`AnalysisService initialized - agentsTemporalClient: ${this.agentsTemporalClient ? 'available' : 'NOT available'}`);
+  }
 
   /**
    * 创建股票分析任务 - 基于三阶段智能体工作流
