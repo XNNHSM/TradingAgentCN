@@ -30,6 +30,7 @@ export interface AnalysisRecordActivities {
     majorRisks?: string[];
     executionTime?: number;
     errorMessage?: string;
+    summary?: string; // 新增摘要字段
     metadata?: Record<string, any>;
   }) => Promise<void>;
 }
@@ -109,6 +110,7 @@ export function createAnalysisRecordActivities(
         if (params.majorRisks !== undefined) updateData.majorRisks = params.majorRisks;
         if (params.executionTime !== undefined) updateData.executionTime = params.executionTime;
         if (params.errorMessage !== undefined) updateData.errorMessage = params.errorMessage;
+        if (params.summary !== undefined) updateData.summary = params.summary; // 新增摘要字段
         if (params.metadata) {
           updateData.metadata = {
             ...updateData.metadata,

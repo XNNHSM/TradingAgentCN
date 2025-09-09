@@ -136,6 +136,13 @@ export class AnalysisRecord extends BaseEntity {
   errorMessage?: string;
 
   @Column({
+    type: "text",
+    nullable: true,
+    comment: "分析摘要：高度概括分析结果，简要说明为什么是持有/买/卖",
+  })
+  summary?: string;
+
+  @Column({
     type: "json",
     nullable: true,
     comment: "扩展元数据",

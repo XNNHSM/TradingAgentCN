@@ -17,14 +17,6 @@ import * as workflow from '@temporalio/workflow';
 import type { MCPActivities } from './agents/mcp.activities';
 import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from './agents/policy-analysis.activities';
 import type { AgentAnalysisActivities, AgentAnalysisResult } from './agents/agent-analysis.activities';
-// 消息发送参数接口
-interface MessageSendInput {
-  messageType: 'stock-analysis' | 'news-summary' | 'system-notification' | 'custom';
-  title: string;
-  content: string;
-  targets?: string[];
-  metadata?: Record<string, any>;
-}
 import { TradingRecommendation } from '../../agents/interfaces/agent.interface';
 
 // 工作流输入类型
@@ -161,6 +153,7 @@ const {
     majorRisks?: string[];
     executionTime?: number;
     errorMessage?: string;
+    summary?: string; // 新增摘要字段
     metadata?: Record<string, any>;
   }) => Promise<void>;
 }>({
@@ -197,18 +190,30 @@ function formatAnalysisReport(params: {
   stockName: string;
   finalDecision: any;
   totalProcessingTime: number;
-  mcpDataSummary: any;
-  policyAnalysis: any;
+  summary?: string; // 新增摘要参数
 }): string {
-  const { stockCode, stockName, finalDecision, totalProcessingTime, mcpDataSummary, policyAnalysis } = params;
+  const { stockCode, stockName, finalDecision, totalProcessingTime, summary } = params;
   
-  let content = `## ${stockName} (${stockCode}) 分析报告\n\n`;
+  let content = `## ${stockName}（${stockCode}）分析报告\n\n`;
   
-  // 添加摘要
-  content += `### 分析摘要\n\n`;
+  // 添加分析摘要（新增的重要部分）
+  if (summary) {
+    content += `### 📋 分析摘要\n\n`;
+    content += `${summary}\n\n`;
+  }
+  
+  // 添加详细分析摘要
+  content += `### 详细分析\n\n`;
   content += `**综合评分**: ${finalDecision.overallScore}/100\n`;
-  content += `**投资建议**: ${finalDecision.recommendation}\n`;
-  content += `**分析用时**: ${totalProcessingTime}ms\n\n`;
+  
+  // 投资建议中文映射
+  const recommendationMap = {
+    [TradingRecommendation.BUY]: '买入',
+    [TradingRecommendation.HOLD]: '持有',
+    [TradingRecommendation.SELL]: '卖出'
+  };
+  const recommendationText = recommendationMap[finalDecision.recommendation] || finalDecision.recommendation;
+  content += `**投资建议**: ${recommendationText}\n\n`;
   
   // 添加关键洞察
   if (finalDecision.keyInsights && finalDecision.keyInsights.length > 0) {
@@ -228,12 +233,7 @@ function formatAnalysisReport(params: {
     content += '\n';
   }
   
-  // 添加置信度
-  if (finalDecision.confidence) {
-    content += `### 分析置信度\n\n`;
-    content += `**置信度**: ${(finalDecision.confidence * 100).toFixed(1)}%\n\n`;
-  }
-  
+    
   content += `---\n`;
   content += `*本报告由智能交易代理系统自动生成*\n`;
   content += `*生成时间: ${new Date().toLocaleString()}*`;
@@ -409,7 +409,10 @@ export async function stockAnalysisWorkflow(
     const mcpDataFromStage1 = (stage1Result.results[0] as any)?.mcpData || {};
     const policyDataFromStage1 = (stage1Result.results[0] as any)?.policyData;
 
-    // 更新分析记录为完成状态
+    // 生成分析摘要
+  const summary = generateAnalysisSummary(finalDecision, input.stockName);
+
+  // 更新分析记录为完成状态
   await updateAnalysisRecord({
     recordId: analysisRecordId,
     status: 'success',
@@ -432,6 +435,7 @@ export async function stockAnalysisWorkflow(
     keyInsights: finalDecision.keyDecisionFactors,
     majorRisks: finalDecision.riskAssessment,
     executionTime: totalProcessingTime,
+    summary, // 添加分析摘要
     metadata: {
       completedAt: new Date().toISOString(),
       workflowCompleted: true,
@@ -453,14 +457,13 @@ export async function stockAnalysisWorkflow(
       
       const messageParams = {
         messageType: 'stock-analysis',
-        title: `📈 ${input.stockName || input.stockCode} (${input.stockCode}) 分析报告`,
+        title: `📈 ${input.stockName || input.stockCode}（${input.stockCode}）分析报告`,
         content: formatAnalysisReport({
           stockCode: input.stockCode,
           stockName: input.stockName || input.stockCode,
           finalDecision,
           totalProcessingTime,
-          mcpDataSummary: mcpDataFromStage1,
-          policyAnalysis: policyDataFromStage1,
+          summary, // 传递分析摘要
         }),
         metadata: {
           sessionId: input.sessionId,
@@ -472,6 +475,7 @@ export async function stockAnalysisWorkflow(
           totalAgentsCount: stage3Result.results.length,
           finalScore: finalDecision.overallScore,
           recommendation: finalDecision.recommendation,
+          summary, // 在元数据中也包含摘要
         },
       };
       
@@ -956,4 +960,93 @@ function extractActionPlan(analysis: string): string {
   }
 
   return '请根据分析结果制定具体投资策略';
+}
+
+/**
+ * 生成分析摘要
+ * 高度概括分析结果，简要说明为什么是持有/买/卖
+ */
+function generateAnalysisSummary(
+  finalDecision: {
+    overallScore: number;
+    recommendation: TradingRecommendation;
+    confidence: number;
+    keyDecisionFactors: string[];
+    riskAssessment: string[];
+    actionPlan: string;
+    // 新增字段，用于存储更详细的分析结果
+    enhancedAnalysis?: {
+      scoreRange?: string;
+      supportFactors?: string[];
+      riskFactors?: string[];
+      marketBalance?: string;
+      waitReasons?: string[];
+      futureSignals?: string[];
+    };
+  },
+  stockName?: string
+): string {
+  const { overallScore, recommendation, confidence, keyDecisionFactors, riskAssessment, enhancedAnalysis } = finalDecision;
+  
+  // 投资建议中文映射
+  const recommendationMap = {
+    [TradingRecommendation.BUY]: '买入',
+    [TradingRecommendation.HOLD]: '持有',
+    [TradingRecommendation.SELL]: '卖出'
+  };
+  
+  const confidencePercent = Math.round(confidence * 100);
+  
+  // 根据建议类型生成不同的摘要模板
+  let summary = '';
+  
+  if (recommendation === TradingRecommendation.BUY) {
+    summary = `建议买入${stockName ? `（${stockName}）` : ''}。综合评分${overallScore}分，主要考虑因素：${keyDecisionFactors.slice(0, 2).join('、')}。预期收益前景较好，但需注意${riskAssessment.slice(0, 1).join('、')}等风险。`;
+  } else if (recommendation === TradingRecommendation.HOLD) {
+    // 优化持有建议的摘要，使用增强分析结果
+    const positiveFactors = enhancedAnalysis?.supportFactors || keyDecisionFactors.slice(0, 2);
+    const riskFactors = enhancedAnalysis?.riskFactors || riskAssessment.slice(0, 2);
+    
+    let holdReason = '';
+    
+    // 如果有增强分析结果，优先使用
+    if (enhancedAnalysis?.scoreRange) {
+      // 使用智能体提供的详细分析
+      const supportText = positiveFactors.length > 0 ? `支撑因素包括：${positiveFactors.join('、')}` : '';
+      const riskText = riskFactors.length > 0 ? `风险因素包括：${riskFactors.join('、')}` : '';
+      const balanceText = enhancedAnalysis.marketBalance || '多空力量相对平衡';
+      const waitText = enhancedAnalysis.waitReasons ? `建议观望原因：${enhancedAnalysis.waitReasons.join('、')}` : '建议观望等待更明确的信号';
+      
+      holdReason = `评分处于${enhancedAnalysis.scoreRange}（${overallScore}分)。${supportText ? supportText + '，' : ''}${riskText ? riskText + '，' : ''}${balanceText}。${waitText}。`;
+    } else {
+      // 回退到原有逻辑
+      if (overallScore >= 50 && overallScore < 70) {
+        holdReason = `评分处于中性区间（${overallScore}分），既有支撑因素：${positiveFactors.join('、')}，也存在风险：${riskFactors.join('、')}，多空力量相对平衡。`;
+      } else if (overallScore < 50) {
+        holdReason = `虽然评分偏低（${overallScore}分），但${positiveFactors.join('、')}等因素提供一定支撑，建议暂时持有观察，避免盲目抛售。`;
+      } else {
+        holdReason = `虽有积极因素${positiveFactors.join('、')}，但${riskFactors.join('、')}等风险制约了上涨空间，建议谨慎持有等待更明确的信号。`;
+      }
+    }
+    
+    // 添加后续信号提示
+    if (enhancedAnalysis?.futureSignals && enhancedAnalysis.futureSignals.length > 0) {
+      holdReason += ` 关注以下信号：${enhancedAnalysis.futureSignals.join('、')}。`;
+    }
+    
+    summary = `建议持有${stockName ? `（${stockName}）` : ''}。${holdReason}`;
+  } else if (recommendation === TradingRecommendation.SELL) {
+    summary = `建议卖出${stockName ? `（${stockName}）` : ''}。综合评分${overallScore}分，主要风险因素：${riskAssessment.slice(0, 2).join('、')}。建议规避风险，及时止损。`;
+  }
+  
+  // 添加置信度说明
+  if (confidencePercent >= 80) {
+    summary += `分析置信度较高（${confidencePercent}%）。`;
+  } else if (confidencePercent >= 60) {
+    summary += `分析置信度中等（${confidencePercent}%），建议结合其他信息综合判断。`;
+  } else {
+    summary += `分析置信度较低（${confidencePercent}%），建议谨慎决策并关注更多信息。`;
+  }
+  
+  return summary;
 }
