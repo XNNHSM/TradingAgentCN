@@ -307,8 +307,8 @@ export class IntelligentAnalysisSchedulerService implements OnModuleInit {
     }
 
     const daysDiff = Math.ceil((end.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysDiff > 30) {
-      throw new Error('日期范围不能超过30天');
+    if (daysDiff > 180) {
+      throw new Error('日期范围不能超过180天');
     }
 
     while (current <= end) {

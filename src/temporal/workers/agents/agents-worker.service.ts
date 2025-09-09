@@ -21,6 +21,7 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new BusinessLogger(AgentsWorkerService.name);
   private workers: Worker[] = [];
   private readonly environment: string;
+  private readonly taskQueue: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -32,6 +33,7 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly analysisService?: AnalysisService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
+    this.taskQueue = `stock-analysis-${this.environment}`;
   }
 
   /**
@@ -70,7 +72,7 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
 
       // 定义Worker配置 - 直接指向股票分析工作流
       const workerOptions: WorkerCreateOptions = {
-        taskQueue: 'stock-analysis',
+        taskQueue: this.taskQueue,
         workflowsPath: require.resolve('../../workflows/stock-analysis.workflow'),
         activities,
         options: {
@@ -115,7 +117,7 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
       totalWorkers: this.workers.length,
       workers: [
         {
-          taskQueue: 'stock-analysis',
+          taskQueue: this.taskQueue,
           maxConcurrentActivities: 10,
           maxConcurrentWorkflows: 3,
         },

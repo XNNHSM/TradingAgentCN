@@ -85,6 +85,11 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
           persistNewsData: newsActivities.persistNewsData.bind(newsActivities),
           generateNewsSummary: newsActivities.generateNewsSummary.bind(newsActivities),
           persistSummaryData: newsActivities.persistSummaryData.bind(newsActivities),
+          
+          // 重复检查和fallback活动
+          checkDuplicateCrawling: newsActivities.checkDuplicateCrawling.bind(newsActivities),
+          generateFallbackSummary: newsActivities.generateFallbackSummary.bind(newsActivities),
+          getWatchlistStocks: newsActivities.getWatchlistStocks.bind(newsActivities),
         },
         // Worker 配置（提高并发能力以支持子工作流）
         maxConcurrentActivityTaskExecutions: 10, // 增加活动并发数以支持粒度化活动
@@ -161,6 +166,10 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
         'persistNewsData',
         'generateNewsSummary',
         'persistSummaryData',
+        // 重复检查和fallback活动
+        'checkDuplicateCrawling',
+        'generateFallbackSummary',
+        'getWatchlistStocks',
       ],
     };
   }

@@ -108,8 +108,14 @@ export async function singleSourceCrawlingWorkflow(
             maxRetries,
           };
 
+          // 创建确定性的工作流ID，确保同一新闻URL不会重复执行
+          const urlId = newsLink.url.split('/').pop() || 'unknown';
+          // 移除特殊字符，确保ID符合Temporal要求
+          const cleanUrlId = urlId.replace(/[^a-zA-Z0-9\-._]/g, '_');
+          const workflowId = `news-content-${source}-${cleanUrlId}`;
+
           const childHandle = await startChild('newsContentProcessingWorkflow', {
-            workflowId: `news-content-${source}-${newsLink.url.split('/').pop()}-${Date.now()}`,
+            workflowId,
             args: [childInput],
             // 子工作流超时时间：10分钟（给足够时间处理单个新闻）
             workflowExecutionTimeout: '10m',

@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { AbstractNewsCrawlerService, CrawlerHeaders } from '../interfaces/news-crawler.interface';
 import { NewsRegion } from '../entities/raw-news.entity';
+import { NewsLink, NewsContent } from '../../../temporal/workflows/news/news.activities';
 
 /**
  * 新闻联播爬虫服务
@@ -115,5 +116,50 @@ export class XWLBCrawlerService extends AbstractNewsCrawlerService {
     }
     
     return content || null;
+  }
+
+  /**
+   * 爬取单个新闻的详细内容
+   * 实现粒度化爬取功能，支持Temporal子工作流
+   */
+  async crawlSingleNews(newsLink: NewsLink): Promise<NewsContent> {
+    try {
+      this.businessLogger.serviceInfo(`爬取单个新闻: ${newsLink.title || newsLink.url}`, {
+        source: this.getSourceCode(),
+        url: newsLink.url
+      });
+
+      const document = await this.getDocument(newsLink.url);
+      const title = this.extractTitle(document);
+      const content = this.extractContent(document);
+
+      if (!title || !content) {
+        throw new Error(`无法从页面提取标题或内容: ${newsLink.url}`);
+      }
+
+      const newsContent: NewsContent = {
+        title,
+        content,
+        url: newsLink.url,
+        publishTime: newsLink.publishTime,
+        source: this.getSourceCode()
+      };
+
+      this.businessLogger.serviceInfo(`单个新闻爬取成功: ${title}`, {
+        source: this.getSourceCode(),
+        url: newsLink.url,
+        titleLength: title.length,
+        contentLength: content.length
+      });
+
+      return newsContent;
+    } catch (error) {
+      this.businessLogger.serviceError(`单个新闻爬取失败: ${newsLink.url}`, error, {
+        source: this.getSourceCode(),
+        url: newsLink.url,
+        title: newsLink.title
+      });
+      throw error;
+    }
   }
 }

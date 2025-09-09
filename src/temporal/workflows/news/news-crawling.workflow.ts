@@ -334,7 +334,7 @@ async function startStockAnalysisSubWorkflows(
 
     // 为每只自选股启动股票分析子工作流
     const stockAnalysisPromises = watchlistStocks.map(async (stock) => {
-      const stockWorkflowId = `stock-analysis-${stock.stockCode}-${date}-${Date.now()}`;
+      const stockWorkflowId = `stock-analysis-${stock.stockCode}-${date}`;
       
       try {
         const stockInput: StockAnalysisInput = {
@@ -348,10 +348,13 @@ async function startStockAnalysisSubWorkflows(
           },
         };
 
-        // 启动子工作流
+        // 启动子工作流 - 指定正确的taskQueue
+        const currentTaskQueue = workflowInfo().taskQueue;
+        const environment = currentTaskQueue.split('-').pop(); // 获取环境后缀 (如 'development')
         const childHandle = await startChild(stockAnalysisWorkflow, {
           workflowId: stockWorkflowId,
           args: [stockInput],
+          taskQueue: `stock-analysis-${environment}`, // 使用与news worker相同的环境后缀
           workflowExecutionTimeout: '15m', // 股票分析可能需要较长时间
           retry: {
             maximumAttempts: 2,
