@@ -1,0 +1,12 @@
+//{
+//  "env": {
+//    "ANTHROPIC_API_KEY": "7ce1878a8b50483590c8392bcddccfef.WDnDZh97rk3DIsth",
+//    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+//    "ANTHROPIC_MODEL": "GLM-4.5-Flash"
+//  },
+//  "permissions": {
+//    "allow": [],
+//    "deny": []
+//  },
+//  "apiKeyHelper": "echo '7ce1878a8b50483590c8392bcddccfef.WDnDZh97rk3DIsth'"
+//}
