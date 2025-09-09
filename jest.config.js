@@ -20,6 +20,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/src/$1',
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   testPathIgnorePatterns: [
     '/node_modules/',

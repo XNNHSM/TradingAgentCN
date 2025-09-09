@@ -24,6 +24,7 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 统一智能体
 - **MCP统一智能体**: 按需调用专业化智能体避免重复
 - **Temporal工作流**: 分布式任务调度和状态管理
 - **新闻爬虫**: 基于Temporal的定时新闻采集
+- **消息通知**: 统一的消息发送和通知管理
 
 ## 🚀 开发命令
 
@@ -76,7 +77,14 @@ src/
 ├── modules/                  # 业务模块
 │   ├── news/                 # 新闻爬虫模块
 │   ├── watchlist/            # 自选股管理
-│   └── analysis/             # 股票分析接口
+│   ├── analysis/             # 股票分析接口
+│   └── message/              # 消息通知模块
+│       ├── adapters/         # 消息适配器
+│       │   └── webhook/      # Webhook消息适配器
+│       ├── interfaces/       # 接口定义
+│       ├── providers/        # 消息提供者
+│       ├── entities/         # 实体定义
+│       └── dtos/             # 数据传输对象
 └── temporal/                 # Temporal统一模块
     ├── core/                 # 核心组件
     ├── schedulers/           # 调度器服务
@@ -406,6 +414,10 @@ TEMPORAL_WORKER_ENABLED=true
 ENABLE_CACHE=false  # 开发阶段禁用缓存
 INTELLIGENT_ANALYSIS_SCHEDULER_ENABLED=true  # 智能分析调度器开关
 NODE_ENV=development
+
+# 消息模块配置
+MESSAGE_DINGTALK_ENABLED=false
+MESSAGE_WECHAT_ENABLED=false
 ```
 
 ### 重要文件路径
@@ -425,12 +437,20 @@ NODE_ENV=development
 - src/common/utils/business-logger.util.ts    # 业务日志
 - src/common/utils/date-time.util.ts          # 日期工具
 - src/common/dto/result.dto.ts                # 响应格式
+
+消息模块：
+- src/temporal/workflows/message/message-send.activities.ts  # 消息发送Activity实现
+- src/temporal/workflows/message/message-send-activities.registration.ts  # Activity注册服务
+- src/temporal/workers/message/message-send-worker.service.ts  # 消息发送Worker服务
+- src/modules/message/message.service.ts       # 消息服务
+- src/modules/message/adapters/webhook/        # 消息提供者适配器
 ```
 
 ### 常见TaskQueue
 ```bash
 stock-analysis      # 股票分析
 news-crawling       # 新闻爬取
+message-send        # 消息发送
 portfolio-monitoring # 投资组合监控
 daily-report        # 日报生成
 ```
@@ -467,6 +487,115 @@ LogCategory.AGENT_INFO      # 智能体信息
    - 测试接口: `POST /api/v1/analysis/analyze`
 
 4. **运行测试**: `npm test`
+
+## 📨 消息模块架构
+
+### 设计原则 ⭐
+- **无Controller设计**: 移除HTTP控制器，专注于工作流集成和Activity调用
+- **Temporal最佳实践**: 消息发送作为Temporal Activity，利用Temporal的重试机制
+- **配置驱动**: 根据环境变量自动配置消息通道（钉钉、企业微信等）
+- **工作流解耦**: 工作流不关心具体消息发送方式，由消息模块统一管理
+- **多通道支持**: 支持并发发送到多个已配置的消息通道
+- **可靠性**: 利用Temporal的Activity重试机制，无需自行实现重试逻辑
+
+### 架构设计
+```
+股票分析工作流 → MessageSendActivities → MessageService → 消息提供者 → 外部消息渠道
+```
+
+### 核心组件
+- **MessageSendActivities**: 消息发送Activity实现，提供具体的发送操作
+- **MessageSendActivitiesRegistration**: Activity注册服务，管理Activity的Temporal Worker注册
+- **MessageSendWorkerService**: 消息发送Worker服务，负责Worker的创建和管理
+- **MessageService**: 消息服务，支持多通道并发发送和配置管理
+- **消息提供者**: 钉钉机器人、企业微信机器人等具体实现
+
+### 消息提供者架构 ⭐
+```
+IMessageProvider (接口)
+├── AbstractMessageProvider (抽象基类)
+    ├── AbstractWebhookProvider (Webhook抽象基类)
+        ├── DingTalkProvider (钉钉机器人)
+        └── WeChatProvider (企业微信机器人)
+```
+
+### 支持的消息类型
+| 消息类型 | 描述 | 支持的提供者 |
+|----------|------|-------------|
+| 文本消息 | 纯文本内容 | 钉钉、企业微信 |
+| Markdown消息 | Markdown格式内容 | 钉钉、企业微信 |
+| 图文消息 | 带图片的消息 | 企业微信 |
+| 卡片消息 | 卡片式消息 | 钉钉、企业微信 |
+
+### 消息发送流程
+1. **配置提供者**: 通过API配置消息提供者的参数
+2. **发送消息**: 调用统一的发送接口，支持指定提供者或使用默认
+3. **重试机制**: 内置指数退避重试策略，确保消息送达
+4. **记录跟踪**: 自动记录发送结果和状态，便于监控和排查
+
+### Activity接口
+```typescript
+// 工作流可调用的消息发送Activity
+sendToAllProviders(params) - 发送消息到所有配置的提供者
+sendToProvider(params) - 发送消息到指定提供者
+```
+
+### Activity重试机制
+消息发送Activity利用Temporal的内置重试机制：
+- **最大重试次数**: 3次
+- **初始间隔**: 1秒
+- **退避系数**: 2
+- **最大间隔**: 30秒
+- **超时时间**: 2分钟
+
+### 环境变量配置
+```bash
+# 钉钉配置
+MESSAGE_DINGTALK_ENABLED=true
+MESSAGE_DINGTALK_ACCESS_TOKEN=your_token
+MESSAGE_DINGTALK_WEBHOOK_URL=your_webhook_url
+MESSAGE_DINGTALK_SECRET=your_secret
+MESSAGE_DINGTALK_RETRY_TIMES=3
+MESSAGE_DINGTALK_TIMEOUT=5000
+
+# 企业微信配置
+MESSAGE_WECHAT_ENABLED=true
+MESSAGE_WECHAT_WEBHOOK_URL=your_webhook_url
+MESSAGE_WECHAT_RETRY_TIMES=3
+MESSAGE_WECHAT_TIMEOUT=5000
+```
+
+### 工作流集成示例
+股票分析工作流完成后自动调用消息Activity发送分析结果：
+```typescript
+// 配置消息发送Activity
+const { sendToAllProviders } = workflow.proxyActivities({
+  taskQueue: 'message-send',
+  startToCloseTimeout: '2m',
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: '1s',
+    backoffCoefficient: 2,
+    maximumInterval: '30s',
+  },
+});
+
+// 发送消息
+const messageParams = {
+  messageType: 'stock-analysis',
+  title: `📈 ${stockName} (${stockCode}) 分析报告`,
+  content: formatAnalysisReport({...}),
+  metadata: {...}
+};
+
+const sendResult = await sendToAllProviders(messageParams);
+```
+
+### 扩展新的消息提供者
+1. 继承 `AbstractMessageProvider` 或 `AbstractWebhookProvider`
+2. 实现 `formatWebhookMessage()` 方法
+3. 实现 `validateConfig()` 方法
+4. 在 `MessageService` 中注册新的提供者
 
 ---
 

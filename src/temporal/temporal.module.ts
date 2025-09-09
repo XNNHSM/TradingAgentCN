@@ -5,6 +5,7 @@
 
 import { Module, Global } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { MessageModule } from '../modules/message/message.module';
 
 // 管理器
 import { TemporalConnectionManager } from './managers/connection.manager';
@@ -21,6 +22,10 @@ import { IntelligentAnalysisSchedulerService } from './schedulers/news/intellige
 // 智能体调度器服务
 import { AgentsTemporalClientService } from './workers/agents/agents-temporal-client.service';
 
+// 消息发送Worker服务
+import { MessageSendWorkerService } from './workers/message/message-send-worker.service';
+import { MessageSendActivitiesRegistration } from './workflows/message/message-send-activities.registration';
+
 /**
  * Temporal统一封装模块
  * 标记为全局模块，整个应用都可以使用
@@ -29,6 +34,7 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
 @Module({
   imports: [
     ConfigModule, // 需要配置服务
+    MessageModule, // 需要消息模块
   ],
   providers: [
     // 基础管理器
@@ -45,6 +51,10 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
     
     // 智能体调度器服务
     AgentsTemporalClientService,
+    
+    // 消息发送Worker服务
+    MessageSendWorkerService,
+    MessageSendActivitiesRegistration,
   ],
   exports: [
     // 主要导出统一管理器
@@ -61,6 +71,10 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
     
     // 导出智能体调度器服务
     AgentsTemporalClientService,
+    
+    // 导出消息发送Worker服务
+    MessageSendWorkerService,
+    MessageSendActivitiesRegistration,
   ],
 })
 export class TemporalModule {

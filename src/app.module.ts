@@ -11,6 +11,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { WatchlistModule } from "./modules/watchlist/watchlist.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
 import { NewsModule } from "./modules/news/news.module";
+import { MessageModule } from "./modules/message/message.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { NewsModule } from "./modules/news/news.module";
     WatchlistModule,
     AnalysisModule,
     NewsModule,
+    MessageModule,
   ],
   controllers: [],
   providers: [],

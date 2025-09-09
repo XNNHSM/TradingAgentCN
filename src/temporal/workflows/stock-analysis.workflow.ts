@@ -17,6 +17,14 @@ import * as workflow from '@temporalio/workflow';
 import type { MCPActivities } from './agents/mcp.activities';
 import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from './agents/policy-analysis.activities';
 import type { AgentAnalysisActivities, AgentAnalysisResult } from './agents/agent-analysis.activities';
+// 消息发送参数接口
+interface MessageSendInput {
+  messageType: 'stock-analysis' | 'news-summary' | 'system-notification' | 'custom';
+  title: string;
+  content: string;
+  targets?: string[];
+  metadata?: Record<string, any>;
+}
 import { TradingRecommendation } from '../../agents/interfaces/agent.interface';
 
 // 工作流输入类型
@@ -164,6 +172,74 @@ const {
     maximumInterval: '10s',
   },
 });
+
+// 配置消息发送Activity
+const { sendToAllProviders } = workflow.proxyActivities({
+  taskQueue: 'message-send',
+  startToCloseTimeout: '2m',
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: '1s',
+    backoffCoefficient: 2,
+    maximumInterval: '30s',
+  },
+});
+
+// ===============================
+// 消息格式化函数
+// ===============================
+
+/**
+ * 格式化分析报告内容
+ */
+function formatAnalysisReport(params: {
+  stockCode: string;
+  stockName: string;
+  finalDecision: any;
+  totalProcessingTime: number;
+  mcpDataSummary: any;
+  policyAnalysis: any;
+}): string {
+  const { stockCode, stockName, finalDecision, totalProcessingTime, mcpDataSummary, policyAnalysis } = params;
+  
+  let content = `## ${stockName} (${stockCode}) 分析报告\n\n`;
+  
+  // 添加摘要
+  content += `### 分析摘要\n\n`;
+  content += `**综合评分**: ${finalDecision.overallScore}/100\n`;
+  content += `**投资建议**: ${finalDecision.recommendation}\n`;
+  content += `**分析用时**: ${totalProcessingTime}ms\n\n`;
+  
+  // 添加关键洞察
+  if (finalDecision.keyInsights && finalDecision.keyInsights.length > 0) {
+    content += `### 关键洞察\n\n`;
+    finalDecision.keyInsights.forEach((insight: string, index: number) => {
+      content += `${index + 1}. ${insight}\n`;
+    });
+    content += '\n';
+  }
+  
+  // 添加风险提示
+  if (finalDecision.majorRisks && finalDecision.majorRisks.length > 0) {
+    content += `### 风险提示\n\n`;
+    finalDecision.majorRisks.forEach((risk: string, index: number) => {
+      content += `${index + 1}. ${risk}\n`;
+    });
+    content += '\n';
+  }
+  
+  // 添加置信度
+  if (finalDecision.confidence) {
+    content += `### 分析置信度\n\n`;
+    content += `**置信度**: ${(finalDecision.confidence * 100).toFixed(1)}%\n\n`;
+  }
+  
+  content += `---\n`;
+  content += `*本报告由智能交易代理系统自动生成*\n`;
+  content += `*生成时间: ${new Date().toLocaleString()}*`;
+  
+  return content;
+}
 
 // ===============================
 // 容错辅助函数
@@ -370,6 +446,50 @@ export async function stockAnalysisWorkflow(
       finalScore: finalDecision.overallScore,
       recommendation: finalDecision.recommendation,
     });
+
+    // 发送分析结果到配置的消息通道（使用Activity）
+    try {
+      workflow.log.info('开始发送股票分析结果消息');
+      
+      const messageParams = {
+        messageType: 'stock-analysis',
+        title: `📈 ${input.stockName || input.stockCode} (${input.stockCode}) 分析报告`,
+        content: formatAnalysisReport({
+          stockCode: input.stockCode,
+          stockName: input.stockName || input.stockCode,
+          finalDecision,
+          totalProcessingTime,
+          mcpDataSummary: mcpDataFromStage1,
+          policyAnalysis: policyDataFromStage1,
+        }),
+        metadata: {
+          sessionId: input.sessionId,
+          workflowId: input.workflowId,
+          stockCode: input.stockCode,
+          stockName: input.stockName,
+          analysisCompletedAt: new Date().toISOString(),
+          successfulAgentsCount: stage3Result.results.filter(r => r.success).length,
+          totalAgentsCount: stage3Result.results.length,
+          finalScore: finalDecision.overallScore,
+          recommendation: finalDecision.recommendation,
+        },
+      };
+      
+      // 使用Activity发送消息，利用Temporal的重试机制
+      const sendResult = await sendToAllProviders(messageParams);
+      
+      workflow.log.info('股票分析结果消息发送完成', { 
+        stockCode: input.stockCode,
+        successCount: sendResult.filter(r => r.success).length,
+        totalCount: sendResult.length
+      });
+    } catch (messageError) {
+      workflow.log.warn('发送股票分析结果消息失败', {
+        stockCode: input.stockCode,
+        error: messageError.message,
+      });
+      // 消息发送失败不影响工作流结果
+    }
 
     return {
       sessionId: input.sessionId,
