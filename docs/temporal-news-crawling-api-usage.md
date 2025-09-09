@@ -213,7 +213,7 @@ curl -X POST http://localhost:3000/api/v1/news/temporal/range-crawl-progress \
 
 - **主工作流ID**: `range-news-crawling-{startDate}-to-{endDate}-{timestamp}`
 - **日期工作流ID**: `{mainWorkflowId}-{date}`
-- **TaskQueue**: `news-crawling-{environment}` (如: news-crawling-development)
+- **TaskQueue**: `news-crawling` (统一命名，不做环境区分)
 
 ## 注意事项
 

@@ -26,9 +26,8 @@ export class NewsWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly newsService: NewsService,
     private readonly watchlistService: WatchlistService,
   ) {
-    const environment = this.configService.get('NODE_ENV', 'dev');
     this.namespace = 'default'; // 统一使用 default namespace
-    this.taskQueue = `news-crawling-${environment}`;
+    this.taskQueue = 'news-crawling'; // 统一使用简单的 task queue 名称
   }
 
   /**

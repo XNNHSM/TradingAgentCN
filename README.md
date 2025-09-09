@@ -110,7 +110,7 @@ WORKFLOW_EXECUTION_TIMEOUT=30m
 ACTIVITY_EXECUTION_TIMEOUT=5m
 ACTIVITY_RETRY_ATTEMPTS=3
 
-# 环境标识 (用于 Temporal namespace 和 taskQueue 命名)
+# 环境标识
 NODE_ENV=dev  # dev | test | stg | prd
 
 # MCP智能体配置 (可选)
@@ -382,7 +382,7 @@ analysis-prd    # 分析模块生产环境
 ```
 
 ### TaskQueue 命名规范
-**格式**: `{模块名}-{业务域}-{环境}`
+**格式**: `{业务域}-{功能}`
 
 ```bash
 # 核心业务功能
@@ -390,26 +390,24 @@ stock-analysis          # 股票分析任务队列
 portfolio-monitoring    # 投资组合监控任务队列
 
 # 智能分析模块
-intelligent-analysis-dev       # 智能分析任务队列(开发环境)
-news-crawling-dev              # 新闻爬取子任务队列(开发环境)
-news-processing-dev            # 新闻处理子任务队列(开发环境)
-intelligent-analysis-prd       # 智能分析任务队列(生产环境)
+intelligent-analysis    # 智能分析任务队列
+news-crawling           # 新闻爬取任务队列
+news-processing         # 新闻处理任务队列
 
 # 自选股模块
-watchlist-monitoring-dev    # 自选股监控任务队列(开发环境)
-watchlist-alerts-prd        # 自选股提醒任务队列(生产环境)
+watchlist-monitoring    # 自选股监控任务队列
+watchlist-alerts        # 自选股提醒任务队列
 ```
 
 ### 配置方式
 - 🚫 **移除全局配置**: 不再使用 `TEMPORAL_NAMESPACE` 和 `TEMPORAL_TASK_QUEUE` 环境变量
 - ✅ **模块自定义**: 每个业务模块根据规范自行定义 namespace 和 taskQueue
-- ✅ **环境隔离**: 通过 `NODE_ENV` 环境变量区分不同环境
+- ✅ **统一命名**: 所有环境使用相同的 taskQueue 命名，不做环境区分
 
 ### 使用示例
 ```typescript
 // 客户端配置
-const environment = process.env.NODE_ENV || 'dev';
-const namespace = `agents-${environment}`;
+const namespace = 'default';  // 统一使用 default namespace
 const client = new Client({ connection, namespace });
 
 // 工作流启动

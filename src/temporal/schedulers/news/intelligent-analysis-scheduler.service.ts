@@ -186,13 +186,12 @@ export class IntelligentAnalysisSchedulerService implements OnModuleInit {
     recentActions?: Array<{ result: string; startTime: Date; endTime?: Date }>;
   }> {
     try {
-      const environment = this.configService.get('NODE_ENV', 'dev');
       const scheduleStatus = await this.newsTemporalClient.getScheduleStatus();
 
       return {
         taskName: 'daily-intelligent-analysis',
-        namespace: `intelligent-analysis-${environment}`,
-        taskQueue: `news-crawling-${environment}`,
+        namespace: 'default', // 统一使用 default namespace
+        taskQueue: 'news-crawling', // 统一使用简单的 task queue 名称
         scheduleId: scheduleStatus.scheduleId,
         description: '每天凌晨1点执行智能分析任务 - 由 Temporal Schedule 管理',
         nextRunTime: scheduleStatus.nextRunTime,
@@ -202,12 +201,11 @@ export class IntelligentAnalysisSchedulerService implements OnModuleInit {
       this.businessLogger.serviceError('获取定时任务状态失败', error);
       
       // 返回默认状态信息
-      const environment = this.configService.get('NODE_ENV', 'dev');
       return {
         taskName: 'daily-intelligent-analysis',
-        namespace: `intelligent-analysis-${environment}`,
-        taskQueue: `news-crawling-${environment}`,
-        scheduleId: `daily-intelligent-analysis-${environment}`,
+        namespace: 'default', // 统一使用 default namespace
+        taskQueue: 'news-crawling', // 统一使用简单的 task queue 名称
+        scheduleId: 'daily-intelligent-analysis', // 统一使用简单的 schedule ID
         description: '每天凌晨1点执行智能分析任务 - 由 Temporal Schedule 管理',
       };
     }

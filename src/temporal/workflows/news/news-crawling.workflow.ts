@@ -348,13 +348,11 @@ async function startStockAnalysisSubWorkflows(
           },
         };
 
-        // 启动子工作流 - 指定正确的taskQueue
-        const currentTaskQueue = workflowInfo().taskQueue;
-        const environment = currentTaskQueue.split('-').pop(); // 获取环境后缀 (如 'development')
+        // 启动子工作流 - 使用统一的taskQueue
         const childHandle = await startChild(stockAnalysisWorkflow, {
           workflowId: stockWorkflowId,
           args: [stockInput],
-          taskQueue: `stock-analysis-${environment}`, // 使用与news worker相同的环境后缀
+          taskQueue: 'stock-analysis', // 统一使用简单的 task queue 名称
           workflowExecutionTimeout: '15m', // 股票分析可能需要较长时间
           retry: {
             maximumAttempts: 2,

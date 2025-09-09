@@ -143,9 +143,9 @@ describe('NewsController', () => {
       it('should return Temporal schedule status', async () => {
         const expectedStatus = {
           taskName: 'daily-news-crawling',
-          namespace: 'news-dev',
-          taskQueue: 'news-crawling-dev',
-          scheduleId: 'daily-news-crawling-dev',
+          namespace: 'default',
+          taskQueue: 'news-crawling',
+          scheduleId: 'daily-news-crawling',
           description: '每天凌晨1点执行新闻爬取任务 - 由 Temporal Schedule 管理',
           nextRunTime: new Date('2025-08-22T01:00:00.000Z'),
           recentActions: [],

@@ -43,11 +43,11 @@
 
 ### Namespace 和 TaskQueue 规范
 
-按照 CLAUDE.md 中的规范，本项目采用以下命名：
+按照项目规范，本项目采用以下统一命名：
 
-- **Namespace**: `news-{environment}` (如 `news-dev`, `news-prd`)
-- **TaskQueue**: `news-crawling-{environment}` (如 `news-crawling-dev`, `news-crawling-prd`)
-- **ScheduleID**: `daily-news-crawling-{environment}`
+- **Namespace**: `default` (统一使用 default namespace)
+- **TaskQueue**: `news-crawling` (所有环境使用相同的 taskQueue)
+- **ScheduleID**: `daily-news-crawling`
 
 ## 实现详情
 

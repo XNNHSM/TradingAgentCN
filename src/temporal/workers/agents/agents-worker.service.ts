@@ -33,7 +33,7 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly analysisService?: AnalysisService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
-    this.taskQueue = `stock-analysis-${this.environment}`;
+    this.taskQueue = 'stock-analysis';
   }
 
   /**
