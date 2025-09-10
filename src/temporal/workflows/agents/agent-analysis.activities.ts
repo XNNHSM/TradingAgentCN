@@ -10,6 +10,9 @@ import { TechnicalAnalystAgent } from '../../../agents/unified/technical-analyst
 import { FundamentalAnalystAgent } from '../../../agents/unified/fundamental-analyst.agent';
 import { NewsAnalystAgent, NewsAnalysisInput, NewsAnalysisResult } from '../../../agents/unified/news-analyst.agent';
 import { UnifiedOrchestratorAgent } from '../../../agents/unified/unified-orchestrator.agent';
+import { IndustryAnalystAgent } from '../../../agents/unified/industry-analyst.agent';
+import { CompetitiveAnalystAgent } from '../../../agents/unified/competitive-analyst.agent';
+import { ValuationAnalystAgent } from '../../../agents/unified/valuation-analyst.agent';
 import { LLMService } from '../../../agents/services/llm.service';
 import { MCPClientSDKService } from '../../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../../agents/services/agent-execution-record.service';
@@ -32,6 +35,7 @@ export interface AgentAnalysisResult {
   processingTime: number;
   success?: boolean;  // 可选：标记调用是否成功
   errorMessage?: string;  // 可选：错误信息（如果失败）
+  stockName?: string; // 可选：股票名称
 }
 
 /**
@@ -173,6 +177,20 @@ export interface AgentAnalysisActivities {
   
   // 第三阶段：决策整合阶段智能体
   callUnifiedOrchestratorAgent: (params: UnifiedOrchestratorParams) => Promise<AgentAnalysisResult>;
+  
+  // 摘要生成方法
+  generateAnalysisSummary: (params: {
+    finalDecision: {
+      overallScore: number;
+      recommendation: string;
+      confidence: number;
+      keyDecisionFactors: string[];
+      riskAssessment: string[];
+      actionPlan: string;
+    };
+    stockName?: string;
+    previousResults: any[];
+  }) => Promise<string>;
 }
 
 /**
@@ -193,6 +211,9 @@ export function createAgentAnalysisActivities(
   const technicalAnalystAgent = new TechnicalAnalystAgent(llmService, configService, executionRecordService);
   const fundamentalAnalystAgent = new FundamentalAnalystAgent(llmService, configService, executionRecordService);
   const newsAnalystAgent = new NewsAnalystAgent(llmService, marketNewsDataService, newsAnalysisCacheService);
+  const industryAnalystAgent = new IndustryAnalystAgent(llmService, configService, executionRecordService);
+  const competitiveAnalystAgent = new CompetitiveAnalystAgent(llmService, configService, executionRecordService);
+  const valuationAnalystAgent = new ValuationAnalystAgent(llmService, configService, executionRecordService);
   const unifiedOrchestratorAgent = new UnifiedOrchestratorAgent(llmService, configService, executionRecordService);
 
   /**
@@ -230,6 +251,7 @@ export function createAgentAnalysisActivities(
         keyInsights: result.keyInsights,
         risks: result.risks,
         processingTime: result.processingTime || processingTime,
+        stockName: result.stockName,
       };
     } catch (error) {
       logger.businessError(`智能体 ${agentTypeName} 调用失败`, error, {
@@ -345,7 +367,8 @@ export function createAgentAnalysisActivities(
           risks: ['市场新闻分析异常'],
           processingTime: 0,
           success: false,
-          errorMessage: error instanceof Error ? error.message : '未知错误'
+          errorMessage: error instanceof Error ? error.message : '未知错误',
+          stockName: undefined,
         };
       }
     },
@@ -355,60 +378,72 @@ export function createAgentAnalysisActivities(
     // =================
     
     callIndustryAnalystAgent: async (params: IndustryAnalystParams): Promise<AgentAnalysisResult> => {
-      // 使用基本面分析师代理行业分析（可以后续创建专门的行业分析师）
+      // 使用专门的行业分析师
       const context: AgentContext = {
         stockCode: params.stockCode,
         stockName: params.stockName,
         metadata: {
           sessionId: params.sessionId,
-          analysisType: 'industry_analysis',
           analysisData: {
             basicInfo: params.basicInfo,
             marketOverview: params.marketOverview,
             policyAnalysis: params.policyAnalysis,
-            stage1Analysis: params.stage1Analysis,
           },
         },
+        previousResults: params.stage1Analysis ? [{
+          agentName: 'Stage1Analysis',
+          agentType: 'stage1' as any,
+          analysis: params.stage1Analysis,
+          timestamp: new Date(),
+        }] : undefined,
       };
-      return await callAgent(fundamentalAnalystAgent, context, 'IndustryAnalystAgent');
+      return await callAgent(industryAnalystAgent, context, 'IndustryAnalystAgent');
     },
 
     callCompetitiveAnalystAgent: async (params: CompetitiveAnalystParams): Promise<AgentAnalysisResult> => {
-      // 使用基本面分析师代理竞争分析
+      // 使用专门的竞争分析师
       const context: AgentContext = {
         stockCode: params.stockCode,
         stockName: params.stockName,
         metadata: {
           sessionId: params.sessionId,
-          analysisType: 'competitive_analysis',
           analysisData: {
             basicInfo: params.basicInfo,
             financialData: params.financialData,
             marketOverview: params.marketOverview,
-            stage1Analysis: params.stage1Analysis,
           },
         },
+        previousResults: params.stage1Analysis ? [{
+          agentName: 'Stage1Analysis',
+          agentType: 'stage1' as any,
+          analysis: params.stage1Analysis,
+          timestamp: new Date(),
+        }] : undefined,
       };
-      return await callAgent(fundamentalAnalystAgent, context, 'CompetitiveAnalystAgent');
+      return await callAgent(competitiveAnalystAgent, context, 'CompetitiveAnalystAgent');
     },
 
     callValuationAnalystAgent: async (params: ValuationAnalystParams): Promise<AgentAnalysisResult> => {
-      // 使用基本面分析师代理估值分析
+      // 使用专门的估值分析师
       const context: AgentContext = {
         stockCode: params.stockCode,
         stockName: params.stockName,
         metadata: {
           sessionId: params.sessionId,
-          analysisType: 'valuation_analysis',
           analysisData: {
             basicInfo: params.basicInfo,
             financialData: params.financialData,
             realtimeData: params.realtimeData,
-            stage1Analysis: params.stage1Analysis,
           },
         },
+        previousResults: params.stage1Analysis ? [{
+          agentName: 'Stage1Analysis',
+          agentType: 'stage1' as any,
+          analysis: params.stage1Analysis,
+          timestamp: new Date(),
+        }] : undefined,
       };
-      return await callAgent(fundamentalAnalystAgent, context, 'ValuationAnalystAgent');
+      return await callAgent(valuationAnalystAgent, context, 'ValuationAnalystAgent');
     },
 
     callRiskAnalystAgent: async (params: RiskAnalystParams): Promise<AgentAnalysisResult> => {
@@ -454,6 +489,52 @@ export function createAgentAnalysisActivities(
         })),
       };
       return await callAgent(unifiedOrchestratorAgent, context, 'UnifiedOrchestratorAgent');
+    },
+
+    // 生成分析摘要
+    generateAnalysisSummary: async (params: {
+      finalDecision: {
+        overallScore: number;
+        recommendation: string;
+        confidence: number;
+        keyDecisionFactors: string[];
+        riskAssessment: string[];
+        actionPlan: string;
+      };
+      stockName?: string;
+      previousResults: any[];
+    }): Promise<string> => {
+      try {
+        logger.serviceInfo('生成分析摘要', {
+          stockName: params.stockName,
+          recommendation: params.finalDecision.recommendation,
+          score: params.finalDecision.overallScore,
+        });
+
+        // 调用UnifiedOrchestratorAgent的摘要生成方法
+        const summary = await unifiedOrchestratorAgent.generateAnalysisSummary({
+          ...params.finalDecision,
+          recommendation: params.finalDecision.recommendation as any,
+          previousResults: params.previousResults,
+        }, params.stockName);
+
+        logger.serviceInfo('分析摘要生成成功', {
+          stockName: params.stockName,
+          summaryLength: summary.length,
+        });
+
+        return summary;
+      } catch (error) {
+        logger.businessError('生成分析摘要失败', error, {
+          stockName: params.stockName,
+          finalDecision: params.finalDecision,
+        });
+
+        // 返回备用摘要
+        const { finalDecision, stockName } = params;
+        const confidencePercent = Math.round(finalDecision.confidence * 100);
+        return `建议${finalDecision.recommendation}${stockName ? `（${stockName}）` : ''}。综合评分${finalDecision.overallScore}分，分析置信度${confidencePercent}%。请参考详细分析报告了解具体情况。`;
+      }
     },
   };
 }

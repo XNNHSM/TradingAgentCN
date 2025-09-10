@@ -206,6 +206,8 @@ export class WeChatProvider extends SimpleWebhookProvider {
   validateConfig(): boolean {
     return !!(this.config && 
            this.config.enabled && 
-           this.config.webhookUrl);
+           this.config.webhookUrl &&
+           this.config.webhookUrl !== 'your_wechat_webhook_url_here' &&
+           this.config.webhookUrl.startsWith('https://'));
   }
 }

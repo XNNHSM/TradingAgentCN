@@ -36,6 +36,11 @@ export enum AgentType {
   MACRO_ECONOMIST = "macro_economist", // 宏观经济分析师（政策+经济环境分析）
   POLICY_ANALYST = "policy_analyst", // 政策分析师（政策解读+影响评估）
   
+  // 🆕 专业化分析智能体
+  INDUSTRY_ANALYST = "industry_analyst", // 行业分析师（行业环境+发展趋势）
+  COMPETITIVE_ANALYST = "competitive_analyst", // 竞争分析师（竞争优势+市场地位）
+  VALUATION_ANALYST = "valuation_analyst", // 估值分析师（估值水平+投资价值）
+  
   // 🆕 第三层: 决策协调智能体
   UNIFIED_ORCHESTRATOR = "unified_orchestrator", // 统一协调器（智能体协调+决策整合）
 }
@@ -118,6 +123,9 @@ export interface AgentResult {
 
   /** 处理时长(毫秒) */
   processingTime?: number;
+
+  /** 股票名称 */
+  stockName?: string;
 }
 
 /**

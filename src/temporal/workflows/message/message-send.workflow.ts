@@ -45,10 +45,7 @@ const { sendToAllProviders } = workflow.proxyActivities<MessageSendActivities>({
   taskQueue: 'message-send',
   startToCloseTimeout: '30 seconds',
   retry: {
-    initialInterval: '1 second',
-    backoffCoefficient: 2,
-    maximumInterval: '30 seconds',
-    maximumAttempts: 3,
+    maximumAttempts: 1, // 默认不重试
   },
 });
 

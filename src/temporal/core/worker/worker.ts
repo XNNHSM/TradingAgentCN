@@ -51,6 +51,7 @@ export function createActivities(
       callValuationAnalystAgent: async () => ({ agentName: 'ValuationAnalystAgent', agentType: 'VALUATION_ANALYST', analysis: 'LLMService未配置', processingTime: 0 }),
       callRiskAnalystAgent: async () => ({ agentName: 'RiskAnalystAgent', agentType: 'RISK_ANALYST', analysis: 'LLMService未配置', processingTime: 0 }),
       callUnifiedOrchestratorAgent: async () => ({ agentName: 'UnifiedOrchestratorAgent', agentType: 'UNIFIED_ORCHESTRATOR', analysis: 'LLMService未配置', processingTime: 0 }),
+      generateAnalysisSummary: async () => 'LLMService未配置，无法生成分析摘要',
     };
   }
   

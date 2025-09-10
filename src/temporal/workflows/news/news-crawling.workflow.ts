@@ -74,8 +74,7 @@ const {
 } = proxyActivities<NewsActivities>({
   startToCloseTimeout: '3m',    // 简化活动，缩短超时时间
   retry: {
-    initialInterval: '5s',
-    maximumAttempts: 2,
+    maximumAttempts: 1, // 默认不重试
   },
 });
 

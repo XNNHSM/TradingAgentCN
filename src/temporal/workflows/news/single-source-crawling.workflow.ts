@@ -48,10 +48,7 @@ const {
 } = proxyActivities<NewsActivities>({
   startToCloseTimeout: '3m',    // 链接获取活动3分钟超时
   retry: {
-    initialInterval: '5s',
-    maximumInterval: '30s',
-    backoffCoefficient: 2,
-    maximumAttempts: 2,
+    maximumAttempts: 1, // 默认不重试
   },
 });
 

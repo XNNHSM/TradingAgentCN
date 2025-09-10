@@ -92,6 +92,29 @@ export class MCPClientSDKService {
   }
 
   /**
+   * 验证MCP工具调用参数
+   */
+  private validateToolParameters(toolName: string, parameters: Record<string, any>): void {
+    const validationRules = {
+      'get_stock_basic_info': ['stock_code'],
+      'get_stock_realtime_data': ['stock_code'],
+      'get_stock_historical_data': ['stock_code', 'start_date', 'end_date'],
+      'get_stock_technical_indicators': ['stock_code', 'indicators', 'start_date', 'end_date'],
+      'get_stock_financial_data': ['stock_code'],
+      'get_stock_news': [],
+      'get_market_overview': [],
+      'search_stocks': ['keyword']
+    };
+
+    const requiredParams = validationRules[toolName] || [];
+    const missingParams = requiredParams.filter(param => !parameters[param]);
+
+    if (missingParams.length > 0) {
+      throw new Error(`MCP工具 ${toolName} 缺少必需参数: ${missingParams.join(', ')}`);
+    }
+  }
+
+  /**
    * 调用MCP工具
    */
   async callTool(toolName: string, parameters: Record<string, any>): Promise<any> {
@@ -105,6 +128,9 @@ export class MCPClientSDKService {
 
     try {
       this.logger.serviceInfo(`调用MCP工具: ${toolName}`, { parameters });
+
+      // 验证参数
+      this.validateToolParameters(toolName, parameters);
 
       // 根据工具名称映射到MCP服务的实际工具名称
       let mcpToolName: string;
@@ -125,15 +151,44 @@ export class MCPClientSDKService {
           break;
         
         case "get_stock_historical_data":
+          mcpToolName = "medium";
+          // 对于历史数据，需要添加额外参数
+          mcpParams = { 
+            symbol: this.convertStockCode(parameters.stock_code),
+            start_date: parameters.start_date,
+            end_date: parameters.end_date,
+            period: parameters.period || 'daily'
+          };
+          break;
+        
         case "get_stock_financial_data":
           mcpToolName = "medium";
-          mcpParams = { symbol: this.convertStockCode(parameters.stock_code) };
+          mcpParams = { 
+            symbol: this.convertStockCode(parameters.stock_code),
+            report_type: parameters.report_type || 'annual',
+            period: parameters.period || '2023'
+          };
           break;
         
         case "get_stock_technical_indicators":
+          mcpToolName = "full";
+          mcpParams = { 
+            symbol: this.convertStockCode(parameters.stock_code),
+            indicators: parameters.indicators,
+            start_date: parameters.start_date,
+            end_date: parameters.end_date
+          };
+          break;
+        
         case "get_stock_news":
           mcpToolName = "full";
-          mcpParams = { symbol: this.convertStockCode(parameters.stock_code) };
+          mcpParams = { 
+            symbol: this.convertStockCode(parameters.stock_code),
+            keyword: parameters.keyword,
+            start_date: parameters.start_date,
+            end_date: parameters.end_date,
+            limit: parameters.limit || 10
+          };
           break;
         
         default:
@@ -160,15 +215,47 @@ export class MCPClientSDKService {
       });
 
       // 返回结果内容
+      this.logger.serviceInfo(`MCP响应详情`, {
+        完整响应: JSON.stringify(result, null, 2),
+        内容类型: typeof result.content,
+        是否为数组: Array.isArray(result.content),
+        数组长度: Array.isArray(result.content) ? result.content.length : 'N/A',
+        第一项内容: Array.isArray(result.content) && result.content.length > 0 ? JSON.stringify(result.content[0]) : 'N/A'
+      });
+
       if (Array.isArray(result.content) && result.content.length > 0) {
         // 取第一个内容项的文本
         const firstContent = result.content[0];
         if (firstContent.type === 'text') {
-          return firstContent.text;
+          const textContent = firstContent.text;
+          this.logger.serviceInfo(`MCP返回文本内容`, {
+            文本长度: textContent.length,
+            文本预览: textContent.substring(0, 200),
+            是否为空: !textContent || textContent.trim() === ''
+          });
+          
+          // 检查是否为空内容
+          if (!textContent || textContent.trim() === '') {
+            throw new Error('MCP API返回空文本内容');
+          }
+          
+          return textContent;
         }
       }
 
-      return JSON.stringify(result.content);
+      const jsonContent = JSON.stringify(result.content);
+      this.logger.serviceInfo(`MCP返回JSON内容`, {
+        JSON长度: jsonContent.length,
+        JSON预览: jsonContent.substring(0, 200),
+        是否为空: !jsonContent || jsonContent.trim() === '' || jsonContent === '[]'
+      });
+      
+      // 检查是否为空JSON
+      if (!jsonContent || jsonContent.trim() === '' || jsonContent === '[]' || jsonContent === '[{}]') {
+        throw new Error('MCP API返回空JSON内容');
+      }
+
+      return jsonContent;
 
     } catch (error) {
       this.logger.businessError(`MCP工具调用失败: ${toolName}`, error, { parameters });

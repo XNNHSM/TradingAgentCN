@@ -41,48 +41,34 @@ export class TechnicalAnalystAgent extends BaseAgent {
         "TECHNICAL_ANALYST_RETRY_COUNT",
         configService.get<number>("LLM_MAX_RETRIES", 3),
       ),
-      systemPrompt: `您是一位资深的技术分析师，专门负责股票的技术面分析。您具备深厚的图表分析和技术指标解读能力。
+      systemPrompt: `您是资深技术分析师，专注于股票技术面深度分析，特别擅长精确的趋势预测和可操作的交易策略制定。
 
 🎯 **核心职责**:
-1. **价格趋势分析**: 分析股价的历史走势和趋势方向
-2. **技术指标解读**: 深度分析各类技术指标的信号含义
-3. **关键位分析**: 识别支撑位、阻力位等关键价格水平
-4. **交易信号判断**: 基于技术分析给出明确的交易建议
+- **深度趋势预测**: 基于技术指标综合分析，提供未来3-5个交易日的具体走势预测
+- **精确交易策略**: 制定包含具体价格点位、仓位管理、止损止盈的完整交易方案
+- **关键位识别**: 精确计算支撑位、阻力位、止损位、止盈位等关键价格水平
+- **风险评估**: 量化分析技术面风险，提供具体的风险控制措施
 
-📊 **分析工具箱**:
-- **趋势指标**: 均线系统、MACD、趋势线分析
-- **震荡指标**: RSI、KDJ、CCI等超买超卖指标  
-- **成交量指标**: 量价关系、成交量变化分析
-- **形态分析**: K线形态、图表形态识别
+📊 **专业分析框架**:
+- **多时间维度分析**: 结合日线、周线技术形态
+- **指标相互验证**: MACD、RSI、KDJ、均线系统、布林带综合分析
+- **量价关系分析**: 成交量验证价格趋势的有效性
+- **形态识别**: K线形态、图表模式的技术意义解读
 
-🔍 **技术分析框架**:
-1. **趋势判断**: 
-   - 主要趋势方向 (上升/下降/横盘)
-   - 趋势强度和持续性分析
-   - 趋势转换信号识别
+📋 **输出标准格式**:
+**技术面评分**: 0-100分，基于综合技术指标分析
+**明确交易建议**: 强买入/买入/持有/卖出/强卖出
+**未来3-5个交易日趋势预测**: 
+- 具体的趋势方向（上升/下降/震荡）
+- 预期的目标价位区间
+- 关键的时间节点和转折点预期
+**具体交易策略表**:
+| 操作类型 | 价格区间 | 仓位比例 | 止损位 | 止盈位 | 操作理由 |
+|---------|---------|---------|--------|--------|----------|
+**风险控制措施**: 具体的止损策略和仓位管理方案
+**技术面置信度**: 70-90%区间，基于指标一致性评估
 
-2. **关键位识别**:
-   - 重要支撑位和阻力位
-   - 突破和回调的关键价格
-   - 止损和止盈位建议
-
-3. **技术指标综合**:
-   - 各指标的当前状态和信号
-   - 指标之间的相互验证
-   - 背离现象的识别和含义
-
-4. **交易策略建议**:
-   - 具体的买入/卖出时机
-   - 风险控制和仓位管理
-   - 短期和中期操作建议
-
-📋 **输出要求**:
-- 提供0-100分的技术面评分
-- 给出明确的交易建议 (强买入/买入/持有/卖出/强卖出)
-- 标注关键技术位和操作策略
-- 评估技术分析的可靠性和风险
-
-请用中文提供专业、深入的技术分析报告。`,
+请提供专业、具体、可操作的技术分析报告。`,
     };
 
     super(
@@ -178,6 +164,9 @@ export class TechnicalAnalystAgent extends BaseAgent {
         technicalIndicators: this.extractIndicatorSummary(technicalIndicators),
         keyLevels: this.extractKeyLevels(analysis),
         trendAnalysis: this.extractTrendAnalysis(analysis),
+        tradingStrategy: this.extractTradingStrategy(analysis),
+        futurePrediction: this.extractFuturePrediction(analysis),
+        riskManagement: this.extractRiskManagement(analysis),
         timeRange: context.timeRange,
       },
       timestamp: new Date(),
@@ -202,62 +191,67 @@ export class TechnicalAnalystAgent extends BaseAgent {
     if (stockName) {
       prompt += ` (${stockName})`;
     }
-    prompt += ` 进行专业的技术分析。\n\n`;
+    prompt += ` 进行技术分析，重点提供趋势预测和交易策略。\n\n`;
 
     // 从context中获取分析数据
     const analysisData = context.metadata?.analysisData;
     const historicalData = analysisData?.historicalData;
     const technicalIndicators = analysisData?.technicalIndicators;
 
-    // 添加历史数据
+    // 添加历史数据（简化格式）
     if (historicalData) {
-      prompt += `**历史价格数据**:\n${JSON.stringify(historicalData, null, 2)}\n\n`;
+      prompt += `**历史价格数据**:\n${JSON.stringify(historicalData.slice(-10), null, 2)}\n\n`;
     }
 
-    // 添加技术指标
+    // 添加技术指标（简化格式）
     if (technicalIndicators) {
-      prompt += `**技术指标数据**:\n${JSON.stringify(technicalIndicators, null, 2)}\n\n`;
+      prompt += `**技术指标**:\n${JSON.stringify(technicalIndicators, null, 2)}\n\n`;
     }
 
     // 添加其他智能体的分析结果作为参考
     if (context.previousResults && context.previousResults.length > 0) {
-      prompt += `**参考信息** (其他分析师观点):\n`;
+      prompt += `**参考信息**:\n`;
       context.previousResults.forEach((result, index) => {
-        prompt += `${index + 1}. ${result.agentName}: ${result.analysis}\n`;
+        prompt += `${index + 1}. ${result.agentName}: ${result.analysis.substring(0, 200)}...\n`;
       });
       prompt += `\n`;
     }
 
-    prompt += `请基于以上数据进行深度的技术分析，包括：
+    prompt += `请基于以上数据进行深度技术分析，严格按照以下格式输出：
 
-1. **趋势分析** (30分权重):
-   - 主要趋势方向判断 (上升/下降/震荡)
-   - 趋势强度评估和持续性预判
-   - 关键趋势线和通道分析
+## 🔍 技术面深度分析
 
-2. **技术指标分析** (40分权重):
-   - MACD指标状态和信号 (金叉死叉、背离等)
-   - RSI等震荡指标的超买超卖状况
-   - 均线系统排列和价格与均线关系
-   - KDJ、布林带等其他指标综合判断
+### 📊 技术指标综合分析
+**MACD分析**: 详细分析DIF、DEA线位置，MACD柱状线强度，金叉死叉信号，背离现象
+**RSI/KDJ分析**: 当前超买超卖区间，指标交叉信号，背离情况
+**均线系统**: 5日、10日、20日、60日均线排列，价格与均线关系
+**布林带分析**: 布林带开口收口状态，价格在轨道中的位置
+**成交量分析**: 量价配合情况，资金流向判断
 
-3. **关键位分析** (20分权重):
-   - 重要支撑位和阻力位识别
-   - 突破或回调的关键价格水平
-   - 历史成交密集区分析
+### 📈 未来3-5个交易日趋势预测
+**趋势方向**: 明确预测上升/下降/震荡趋势
+**目标价位**: 具体的预期目标价格区间
+**时间节点**: 关键的转折点预期时间
+**突破/回调**: 预期的突破或回调价格点位
+**市场情绪**: 基于技术形态的情绪判断
 
-4. **量价关系分析** (10分权重):
-   - 成交量与价格变化的配合情况
-   - 放量突破或缩量调整的意义
-   - 异常成交量的技术含义
+### 🎯 具体交易策略表
+| 操作类型 | 价格区间 | 仓位比例 | 止损位 | 止盈位 | 操作理由 |
+|---------|---------|---------|--------|--------|----------|
+| 买入/卖出/观望 | 具体价格 | XX% | 具体价格 | 具体价格 | 详细理由 |
 
-**输出要求**:
-- 提供技术面综合评分 (0-100分)
-- 给出明确的技术面交易建议
-- 标注关键技术位 (支撑位、阻力位、止损位)
-- 评估分析的置信度和主要风险
+### 🛡️ 风险控制措施
+**止损策略**: 具体的止损位设置和调整方案
+**仓位管理**: 总仓位控制建议，分批建仓/减仓策略
+**应对预案**: 不同市场情况的应对措施
 
-请提供专业、详细的技术分析报告。`;
+### 📋 技术面总结
+**技术面评分**: XX/100分
+**交易建议**: 强买入/买入/持有/卖出/强卖出
+**置信度**: XX%（基于技术指标一致性）
+**主要风险**: 具体的技术面风险点
+
+请提供专业、具体、可操作的技术分析报告。`;
 
     return prompt;
   }
@@ -489,5 +483,142 @@ export class TechnicalAnalystAgent extends BaseAgent {
     }
     
     return "趋势判断不明确";
+  }
+
+  /**
+   * 提取交易策略信息
+   */
+  private extractTradingStrategy(analysis: string): any {
+    const strategyInfo: any = {
+      shortTerm: { strategy: "未明确", timeframe: "1-5个交易日" },
+      mediumTerm: { strategy: "未明确", timeframe: "1-3周" },
+      entryPoints: [],
+      exitPoints: [],
+      positionSize: "未明确"
+    };
+
+    // 提取短期策略
+    if (analysis.includes("短期") || analysis.includes("1-5")) {
+      const shortTermMatch = analysis.match(/短期[：:]*\s*([^。]+)/);
+      if (shortTermMatch) {
+        strategyInfo.shortTerm.strategy = shortTermMatch[1].trim();
+      }
+    }
+
+    // 提取中期策略
+    if (analysis.includes("中期") || analysis.includes("1-3周")) {
+      const mediumTermMatch = analysis.match(/中期[：:]*\s*([^。]+)/);
+      if (mediumTermMatch) {
+        strategyInfo.mediumTerm.strategy = mediumTermMatch[1].trim();
+      }
+    }
+
+    // 提取买入点位
+    const buyPatterns = [/买入点位[：:]*\s*([0-9.]+)/, /买入[：:]*\s*([0-9.]+)/];
+    buyPatterns.forEach(pattern => {
+      const match = analysis.match(pattern);
+      if (match) strategyInfo.entryPoints.push({ type: "买入", price: match[1] });
+    });
+
+    // 提取卖出点位
+    const sellPatterns = [/卖出点位[：:]*\s*([0-9.]+)/, /卖出[：:]*\s*([0-9.]+)/];
+    sellPatterns.forEach(pattern => {
+      const match = analysis.match(pattern);
+      if (match) strategyInfo.exitPoints.push({ type: "卖出", price: match[1] });
+    });
+
+    // 提取仓位建议
+    const positionPatterns = [/仓位[：:]*\s*([^。]+)/, /轻仓|半仓|重仓|全仓/];
+    positionPatterns.forEach(pattern => {
+      const match = analysis.match(pattern);
+      if (match) strategyInfo.positionSize = match[0].trim();
+    });
+
+    return strategyInfo;
+  }
+
+  /**
+   * 提取未来预测信息
+   */
+  private extractFuturePrediction(analysis: string): any {
+    const prediction: any = {
+      timeframe: "3-5个交易日",
+      trend: "未明确",
+      keyEvents: [],
+      confidence: "中等"
+    };
+
+    // 提取趋势预测
+    const predictionKeywords = ["预计", "预期", "预测", "可能", "有望"];
+    const sentences = analysis.split(/[。！？]/);
+    
+    for (const sentence of sentences) {
+      if (predictionKeywords.some(keyword => sentence.includes(keyword)) && 
+          (sentence.includes("上涨") || sentence.includes("下跌") || sentence.includes("震荡"))) {
+        prediction.trend = sentence.trim();
+        break;
+      }
+    }
+
+    // 提取关键事件
+    const eventPatterns = [/突破[：:]*\s*([^。]+)/, /回调[：:]*\s*([^。]+)/, /反转[：:]*\s*([^。]+)/];
+    eventPatterns.forEach(pattern => {
+      const match = analysis.match(pattern);
+      if (match) prediction.keyEvents.push(match[0].trim());
+    });
+
+    // 提取置信度
+    if (analysis.includes("高置信度") || analysis.includes("高度确定")) {
+      prediction.confidence = "高";
+    } else if (analysis.includes("低置信度") || analysis.includes("不确定性")) {
+      prediction.confidence = "低";
+    }
+
+    return prediction;
+  }
+
+  /**
+   * 提取风险管理信息
+   */
+  private extractRiskManagement(analysis: string): any {
+    const riskManagement: any = {
+      stopLoss: "未设定",
+      takeProfit: "未设定",
+      riskLevel: "中等",
+      riskMeasures: []
+    };
+
+    // 提取止损位
+    const stopLossPatterns = [/止损位[：:]*\s*([0-9.]+)/, /止损[：:]*\s*([0-9.]+)/];
+    stopLossPatterns.forEach(pattern => {
+      const match = analysis.match(pattern);
+      if (match) riskManagement.stopLoss = match[1];
+    });
+
+    // 提取止盈位
+    const takeProfitPatterns = [/止盈位[：:]*\s*([0-9.]+)/, /止盈[：:]*\s*([0-9.]+)/];
+    takeProfitPatterns.forEach(pattern => {
+      const match = analysis.match(pattern);
+      if (match) riskManagement.takeProfit = match[1];
+    });
+
+    // 提取风险等级
+    if (analysis.includes("高风险")) {
+      riskManagement.riskLevel = "高";
+    } else if (analysis.includes("低风险")) {
+      riskManagement.riskLevel = "低";
+    }
+
+    // 提取风险控制措施
+    const riskKeywords = ["风险控制", "资金管理", "仓位控制", "分散投资"];
+    const sentences = analysis.split(/[。！？]/);
+    
+    sentences.forEach(sentence => {
+      if (riskKeywords.some(keyword => sentence.includes(keyword)) && sentence.trim().length > 10) {
+        riskManagement.riskMeasures.push(sentence.trim());
+      }
+    });
+
+    return riskManagement;
   }
 }

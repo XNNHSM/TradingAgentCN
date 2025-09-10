@@ -195,6 +195,8 @@ export class DingTalkProvider extends SimpleWebhookProvider {
     return !!(this.config && 
            this.config.enabled && 
            this.config.accessToken && 
-           this.config.webhookUrl);
+           this.config.webhookUrl &&
+           this.config.webhookUrl !== 'your_dingtalk_webhook_url_here' &&
+           this.config.webhookUrl.startsWith('https://'));
   }
 }

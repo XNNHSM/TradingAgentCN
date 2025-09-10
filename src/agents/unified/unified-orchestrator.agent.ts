@@ -88,11 +88,17 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
 📝 **特别重要 - 持有建议的详细说明**:
 当给出"持有"建议时，必须详细解释以下内容：
 1. **评分区间分析**: 明确说明当前评分处于哪个区间（50-70分为中性区间，<50分为偏弱区间，>70分为偏强区间）
-2. **支撑因素分析**: 列出具体的积极因素和支撑力量
-3. **风险因素分析**: 列出具体的制约因素和风险点
+2. **支撑因素分析**: 列出具体的积极因素和支撑力量（如：新能源汽车销量增长、海外市场拓展顺利）
+3. **风险因素分析**: 列出具体的制约因素和风险点（如：行业竞争加剧、原材料价格波动）
 4. **多空力量对比**: 说明当前多空力量的相对平衡状况
 5. **观望理由**: 清晰解释为什么建议观望而不是买入或卖出
 6. **后续策略**: 明确等待什么样的信号或时机
+
+**针对9个智能体分析结果的整合要求**:
+- 当9个智能体中有较多建议持有时，必须详细说明每个智能体的具体理由
+- 要解释为什么这些智能体都倾向于持有，而不是买入或卖出
+- 说明这些智能体分析的角度和侧重点有何不同
+- 解释这些智能体分析的共同点和分歧点
 
 ⚠️ **重要提醒**:
 - 必须整合所有提供的分析结果
@@ -155,6 +161,17 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
     // 从协调结果中提取评分和建议
     const score = this.extractFinalScore(analysis);
     const recommendation = this.extractFinalRecommendation(analysis);
+    
+    // 提取股票名称 - 优先从上下文获取，如果没有则从MCP数据中获取
+    let stockName = context.stockName;
+    if (!stockName && context.metadata?.mcpData?.basicInfo?.stock_name) {
+      stockName = context.metadata.mcpData.basicInfo.stock_name;
+    }
+    
+    // 如果仍然没有股票名称，尝试从分析结果中提取
+    if (!stockName) {
+      stockName = this.extractStockName(analysis);
+    }
 
     return {
       agentName: this.name,
@@ -179,9 +196,34 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
           "风险评估", "决策生成", "执行策略"
         ],
         timeRange: context.timeRange,
+        stockName, // 在supportingData中保存股票名称
       },
       timestamp: new Date(),
+      // 在AgentResult中添加stockName字段
+      stockName,
     };
+  }
+
+  /**
+   * 从分析结果中提取股票名称
+   */
+  private extractStockName(analysis: string): string | null {
+    // 尝试从分析结果中提取股票名称
+    const patterns = [
+      /股票\s*([^\s，。、]+)\s*\(/,
+      /([^\s，。、]+)\s*\([^)]*\)\s*分析/,
+      /对\s*([^\s，。、]+)\s*股票/,
+      /([^\s，。、]+)\s*的\s*投资/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = analysis.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -189,6 +231,113 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
    */
   protected async buildPrompt(context: AgentContext): Promise<string> {
     return this.buildOrchestrationPrompt(context);
+  }
+
+  /**
+   * 生成分析摘要 - 使用LLM智能生成
+   */
+  async generateAnalysisSummary(finalDecision: {
+    overallScore: number;
+    recommendation: TradingRecommendation;
+    confidence: number;
+    keyDecisionFactors: string[];
+    riskAssessment: string[];
+    actionPlan: string;
+    previousResults?: any[];
+  }, stockName?: string): Promise<string> {
+    const { overallScore, recommendation, confidence, keyDecisionFactors, riskAssessment, previousResults } = finalDecision;
+    
+    // 投资建议中文映射
+    const recommendationMap = {
+      [TradingRecommendation.BUY]: '买入',
+      [TradingRecommendation.HOLD]: '持有',
+      [TradingRecommendation.SELL]: '卖出'
+    };
+    
+    const recommendationText = recommendationMap[recommendation];
+    const confidencePercent = Math.round(confidence * 100);
+    
+    // 构建摘要生成提示词
+    const summaryPrompt = `请作为专业的投资分析师，基于以下分析结果生成一个简洁、专业的投资摘要。
+
+**股票信息**:
+- 股票名称: ${stockName || '未知'}
+- 综合评分: ${overallScore}分
+- 投资建议: ${recommendationText}
+- 置信度: ${confidencePercent}%
+
+**关键决策因素**:
+${keyDecisionFactors.map((factor, index) => `${index + 1}. ${factor}`).join('\n')}
+
+**主要风险**:
+${riskAssessment.map((risk, index) => `${index + 1}. ${risk}`).join('\n')}
+
+**各智能体分析结果**:
+${previousResults ? previousResults.map((result, index) => 
+  `${index + 1}. ${result.agentName}: ${result.recommendation} (${result.score}分) - ${result.analysis.substring(0, 100)}...`
+).join('\n') : '无详细智能体分析结果'}
+
+**摘要生成要求**:
+1. 长度控制在150-200字之间
+2. 重点说明为什么得出${recommendationText}建议
+3. 突出核心支撑因素和主要风险
+4. 提及置信度水平并给出投资建议
+5. 语言简洁专业，避免过于技术性的表述
+6. 当建议"持有"时，要解释为什么不是买入或卖出
+
+请生成投资摘要:`;
+
+    // 调用LLM生成摘要
+    try {
+      const summary = await this.callLLM(summaryPrompt);
+      return summary.trim();
+    } catch (error) {
+      // 如果LLM调用失败，回退到原有逻辑
+      console.warn('LLM摘要生成失败，使用备用逻辑:', error);
+      return this.generateFallbackSummary(finalDecision, stockName);
+    }
+  }
+
+  /**
+   * 备用摘要生成方法（当LLM调用失败时使用）
+   */
+  private generateFallbackSummary(finalDecision: {
+    overallScore: number;
+    recommendation: TradingRecommendation;
+    confidence: number;
+    keyDecisionFactors: string[];
+    riskAssessment: string[];
+  }, stockName?: string): string {
+    const { overallScore, recommendation, confidence, keyDecisionFactors, riskAssessment } = finalDecision;
+    
+    const recommendationMap = {
+      [TradingRecommendation.BUY]: '买入',
+      [TradingRecommendation.HOLD]: '持有',
+      [TradingRecommendation.SELL]: '卖出'
+    };
+    
+    const recommendationText = recommendationMap[recommendation];
+    const confidencePercent = Math.round(confidence * 100);
+    
+    if (recommendation === TradingRecommendation.HOLD) {
+      const positiveFactors = keyDecisionFactors.slice(0, 2);
+      const riskFactors = riskAssessment.slice(0, 2);
+      
+      let holdReason = '';
+      if (overallScore >= 50 && overallScore < 70) {
+        holdReason = `评分处于中性区间（${overallScore}分），既有支撑因素：${positiveFactors.join('、')}，也存在风险：${riskFactors.join('、')}，多空力量相对平衡。`;
+      } else if (overallScore < 50) {
+        holdReason = `虽然评分偏低（${overallScore}分），但基于9个智能体的综合分析，${positiveFactors.join('、')}等因素提供一定支撑，技术面、基本面、行业环境等多个维度显示暂时持有观察更为稳妥，避免盲目抛售。`;
+      } else {
+        holdReason = `虽有积极因素${positiveFactors.join('、')}，但${riskFactors.join('、')}等风险制约了上涨空间，9个智能体从不同角度分析后建议谨慎持有等待更明确的信号。`;
+      }
+      
+      return `建议持有${stockName ? `（${stockName}）` : ''}。${holdReason}分析置信度中等（${confidencePercent}%），建议结合其他信息综合判断。`;
+    } else if (recommendation === TradingRecommendation.BUY) {
+      return `建议买入${stockName ? `（${stockName}）` : ''}。综合评分${overallScore}分，主要考虑因素：${keyDecisionFactors.slice(0, 2).join('、')}。预期收益前景较好，但需注意${riskAssessment.slice(0, 1).join('、')}等风险。分析置信度${confidencePercent >= 80 ? '较高' : confidencePercent >= 60 ? '中等' : '较低'}（${confidencePercent}%）。`;
+    } else {
+      return `建议卖出${stockName ? `（${stockName}）` : ''}。综合评分${overallScore}分，主要风险因素：${riskAssessment.slice(0, 2).join('、')}。建议规避风险，及时止损。分析置信度${confidencePercent >= 80 ? '较高' : confidencePercent >= 60 ? '中等' : '较低'}（${confidencePercent}%）。`;
+    }
   }
 
   /**
@@ -266,6 +415,12 @@ export class UnifiedOrchestratorAgent extends BaseAgent {
 - **多空对比**: 分析当前多空力量是否相对平衡
 - **观望理由**: 详细说明为什么建议观望而不是买入或卖出
 - **后续信号**: 明确等待什么样的信号才能改变当前判断
+
+**针对9个智能体持有建议的整合要求**:
+- 必须详细说明每个智能体建议持有的具体理由
+- 解释这些智能体从不同分析角度（技术、基本面、行业、竞争等）为何都得出持有结论
+- 分析这些智能体分析的共同点和差异点
+- 说明为什么综合9个智能体的分析后，持有是最合适的建议
 
 请确保决策逻辑清晰、依据充分，并提供可执行的投资指导。`;
 

@@ -20,7 +20,7 @@ export class MCPClientFallbackService extends MCPClientService {
   }
 
   /**
-   * 重写callTool方法，添加回退机制
+   * 重写callTool方法，严格错误处理，MCP调用失败时抛出异常
    */
   async callTool(toolName: string, parameters: Record<string, any>): Promise<any> {
     try {
@@ -38,53 +38,54 @@ export class MCPClientFallbackService extends MCPClientService {
         // 如果SDK失败，尝试原始实现
         return await super.callTool(toolName, parameters);
       } catch (originalError) {
-        // 检查是否需要使用回退数据的情况
-        const shouldUseFallback = 
-          // 401认证错误
+        // 记录详细的错误信息
+        this.fallbackLogger.businessError(`MCP工具调用失败: ${toolName}`, originalError, {
+          toolName,
+          parameters,
+          sdkError: sdkError.message,
+          originalError: originalError.message
+        });
+        
+        // 对于参数错误、认证错误等严重错误，直接抛出异常，不使用回退数据
+        const isSevereError = 
+          // 参数错误
+          originalError.message.includes('Invalid request parameters') ||
+          originalError.message.includes('Invalid parameters') ||
+          sdkError.message.includes('Invalid request parameters') ||
+          sdkError.message.includes('Invalid parameters') ||
+          // 认证错误
           originalError.message.includes('401') || 
           originalError.message.includes('Unauthorized') ||
           sdkError.message.includes('401') || 
           sdkError.message.includes('Unauthorized') ||
-          // 空响应错误
-          originalError.message.includes('空响应') ||
-          originalError.message.includes('empty response') ||
-          sdkError.message.includes('空响应') ||
-          sdkError.message.includes('empty response') ||
-          // 网络连接错误
+          // API服务不可用
+          originalError.message.includes('API调用失败') ||
+          originalError.message.includes('MCP工具调用失败') ||
+          originalError.message.includes('service unavailable');
+        
+        if (isSevereError) {
+          throw new Error(`MCP工具调用失败: ${toolName} - ${originalError.message || sdkError.message}。分析流程终止。`);
+        }
+        
+        // 对于网络错误等临时性错误，可以使用回退数据
+        const isTemporaryError = 
           originalError.message.includes('ECONNREFUSED') ||
           originalError.message.includes('ENOTFOUND') ||
           originalError.message.includes('timeout') ||
-          // API服务错误
-          originalError.message.includes('API调用失败') ||
-          originalError.message.includes('MCP工具调用失败');
+          originalError.message.includes('空响应') ||
+          originalError.message.includes('empty response');
         
-        if (shouldUseFallback) {
-          let fallbackReason = '未知错误';
-          if (originalError.message.includes('401') || originalError.message.includes('Unauthorized')) {
-            fallbackReason = 'API认证失败';
-          } else if (originalError.message.includes('空响应') || originalError.message.includes('empty response')) {
-            fallbackReason = 'API返回空响应';
-          } else if (originalError.message.includes('ECONNREFUSED') || originalError.message.includes('ENOTFOUND')) {
-            fallbackReason = '网络连接失败';
-          } else if (originalError.message.includes('timeout')) {
-            fallbackReason = '请求超时';
-          } else if (originalError.message.includes('API调用失败')) {
-            fallbackReason = 'API服务异常';
-          }
-          
-          this.fallbackLogger.serviceInfo(`MCP API异常，使用模拟数据: ${toolName}`, {
+        if (isTemporaryError) {
+          this.fallbackLogger.serviceInfo(`MCP API临时性错误，使用模拟数据: ${toolName}`, {
             toolName,
             parameters,
-            sdkError: sdkError.message,
-            originalError: originalError.message,
-            reason: fallbackReason + '，使用回退机制'
+            reason: '网络或服务临时异常，使用回退机制'
           });
-        
           return this.generateFallbackResponse(toolName, parameters);
         }
         
-        // 其他错误直接抛出原始错误
-        throw originalError;
+        // 其他未知错误直接抛出
+        throw new Error(`MCP工具调用失败: ${toolName} - ${originalError.message}`);
       }
     }
   }
