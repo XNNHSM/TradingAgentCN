@@ -92,6 +92,291 @@ export class MCPClientSDKService {
   }
 
   /**
+   * 解析Markdown格式的响应
+   */
+  private parseMarkdownResponse(textContent: string, toolName: string): any {
+    if (!textContent || typeof textContent !== 'string') {
+      return null;
+    }
+
+    // 根据工具名称使用不同的解析策略
+    switch (toolName) {
+      case 'get_stock_basic_info':
+      case 'get_stock_realtime_data':
+        return this.parseStockBasicInfo(textContent);
+      
+      case 'get_stock_financial_data':
+        return this.parseStockFinancialData(textContent);
+      
+      case 'get_stock_historical_data':
+      case 'get_stock_technical_indicators':
+        return this.parseStockDataWithTable(textContent);
+      
+      case 'get_stock_news':
+        return this.parseStockNews(textContent);
+      
+      case 'get_market_overview':
+        return this.parseMarketOverview(textContent);
+      
+      default:
+        return this.parseGenericMarkdown(textContent);
+    }
+  }
+
+  /**
+   * 解析股票基本信息（Markdown格式）
+   */
+  private parseStockBasicInfo(textContent: string): any {
+    try {
+      const result: any = {};
+      
+      // 解析基本信息部分
+      const basicSection = textContent.match(/# 基本数据\s*\n([\s\S]*?)(?=\n# |\n## |\Z)/);
+      if (basicSection) {
+        const basicContent = basicSection[1];
+        
+        // 提取股票代码
+        const stockCodeMatch = basicContent.match(/- 股票代码:\s*([^\n]+)/);
+        if (stockCodeMatch) result.stock_code = stockCodeMatch[1].trim();
+        
+        // 提取股票名称
+        const stockNameMatch = basicContent.match(/- 股票名称:\s*([^\n]+)/);
+        if (stockNameMatch) result.stock_name = stockNameMatch[1].trim();
+        
+        // 提取数据日期
+        const dateMatch = basicContent.match(/- 数据日期:\s*([^\n]+)/);
+        if (dateMatch) result.date = dateMatch[1].trim();
+        
+        // 提取行业概念
+        const industryMatch = basicContent.match(/- 行业概念:\s*([^\n]+)/);
+        if (industryMatch) result.industry = industryMatch[1].trim();
+      }
+      
+      // 解析交易数据部分
+      const tradingSection = textContent.match(/# 交易数据\s*\n([\s\S]*?)(?=\n# |\n## |\Z)/);
+      if (tradingSection) {
+        const tradingContent = tradingSection[1];
+        
+        // 提取价格信息
+        const priceMatch = tradingContent.match(/- 当日:\s*([\d.]+)/);
+        if (priceMatch) result.price = parseFloat(priceMatch[1]);
+        
+        // 提取最高价
+        const highMatch = tradingContent.match(/最高:\s*([\d.]+)/);
+        if (highMatch) result.high = parseFloat(highMatch[1]);
+        
+        // 提取最低价
+        const lowMatch = tradingContent.match(/最低:\s*([\d.]+)/);
+        if (lowMatch) result.low = parseFloat(lowMatch[1]);
+        
+        // 提取成交量
+        const volumeMatch = tradingContent.match(/- 成交量:\s*([^\n]+)/);
+        if (volumeMatch) result.volume = volumeMatch[1].trim();
+        
+        // 提取成交额
+        const amountMatch = tradingContent.match(/- 成交额:\s*([^\n]+)/);
+        if (amountMatch) result.amount = amountMatch[1].trim();
+        
+        // 提取市值
+        const marketCapMatch = tradingContent.match(/- 总市值:\s*([^\n]+)/);
+        if (marketCapMatch) result.market_cap = marketCapMatch[1].trim();
+      }
+      
+      // 确保至少有基本字段
+      if (result.stock_code && result.stock_name) {
+        return result;
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.businessError('解析股票基本信息失败', error);
+      return null;
+    }
+  }
+
+  /**
+   * 解析股票财务数据（Markdown格式）
+   */
+  private parseStockFinancialData(textContent: string): any {
+    try {
+      const result: any = { data: {} };
+      
+      // 尝试解析表格数据
+      const tableMatches = textContent.match(/\|([^|]+)\|([^|]+)\|([^|]+)\|/g);
+      if (tableMatches) {
+        const financialData: any = {};
+        
+        tableMatches.forEach(match => {
+          const [, indicator, year2023, year2022] = match.split('|').map(s => s.trim());
+          if (indicator && indicator !== '指标' && indicator !== '---') {
+            financialData[indicator] = {
+              '2023': year2023 !== '-' ? year2022 : null,
+              '2022': year2022 !== '-' ? year2022 : null
+            };
+          }
+        });
+        
+        if (Object.keys(financialData).length > 0) {
+          result.data = financialData;
+          return result;
+        }
+      }
+      
+      // 如果没有表格，尝试解析列表格式
+      const listMatches = textContent.match(/- ([^:]+):\s*([^\n]+)/g);
+      if (listMatches) {
+        const financialData: any = {};
+        
+        listMatches.forEach(match => {
+          const [, key, value] = match.match(/- ([^:]+):\s*([^\n]+)/) || [];
+          if (key && value) {
+            financialData[key.trim()] = value.trim();
+          }
+        });
+        
+        if (Object.keys(financialData).length > 0) {
+          result.data = financialData;
+          return result;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.businessError('解析股票财务数据失败', error);
+      return null;
+    }
+  }
+
+  /**
+   * 解析包含表格的股票数据
+   */
+  private parseStockDataWithTable(textContent: string): any {
+    try {
+      const result: any = { data: [] };
+      
+      // 解析表格数据
+      const lines = textContent.split('\n');
+      const tableStart = lines.findIndex(line => line.includes('|'));
+      
+      if (tableStart !== -1) {
+        // 找到表头
+        const headerLine = lines[tableStart];
+        const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
+        
+        // 找到数据行
+        const dataLines = lines.slice(tableStart + 2).filter(line => line.includes('|') && !line.includes('---'));
+        
+        const tableData = dataLines.map(line => {
+          const values = line.split('|').map(v => v.trim()).filter(v => v);
+          const row: any = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index] || '';
+          });
+          return row;
+        });
+        
+        if (tableData.length > 0) {
+          result.data = tableData;
+          return result;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.businessError('解析表格数据失败', error);
+      return null;
+    }
+  }
+
+  /**
+   * 解析股票新闻
+   */
+  private parseStockNews(textContent: string): any {
+    try {
+      const result: any = { news: [] };
+      
+      // 解析新闻条目
+      const newsItems = textContent.match(/\d+\. [^\n]+\n[^\n]+/g);
+      if (newsItems) {
+        const news = newsItems.map(item => {
+          const titleMatch = item.match(/\d+\. ([^\n]+)/);
+          const dateMatch = item.match(/日期[：:]\s*([^\n]+)/);
+          
+          return {
+            title: titleMatch ? titleMatch[1].trim() : '',
+            date: dateMatch ? dateMatch[1].trim() : '',
+            content: item.trim()
+          };
+        });
+        
+        result.news = news;
+        return result;
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.businessError('解析股票新闻失败', error);
+      return null;
+    }
+  }
+
+  /**
+   * 解析市场概况
+   */
+  private parseMarketOverview(textContent: string): any {
+    try {
+      const result: any = {};
+      
+      // 解析主要指数
+      const indicesMatches = textContent.match(/- ([^:]+):\s*([^\n]+)/g);
+      if (indicesMatches) {
+        const majorIndices: any = {};
+        indicesMatches.forEach(match => {
+          const [, index, value] = match.match(/- ([^:]+):\s*([^\n]+)/) || [];
+          if (index && value) {
+            majorIndices[index.trim()] = value.trim();
+          }
+        });
+        result.major_indices = majorIndices;
+      }
+      
+      // 解析市场趋势
+      const trendMatch = textContent.match(/市场趋势[：:]\s*([^\n]+)/);
+      if (trendMatch) result.market_trend = trendMatch[1].trim();
+      
+      return result;
+    } catch (error) {
+      this.logger.businessError('解析市场概况失败', error);
+      return null;
+    }
+  }
+
+  /**
+   * 通用Markdown解析器
+   */
+  private parseGenericMarkdown(textContent: string): any {
+    try {
+      const result: any = {};
+      
+      // 解析所有键值对
+      const keyValueMatches = textContent.match(/- ([^:]+):\s*([^\n]+)/g);
+      if (keyValueMatches) {
+        keyValueMatches.forEach(match => {
+          const [, key, value] = match.match(/- ([^:]+):\s*([^\n]+)/) || [];
+          if (key && value) {
+            result[key.trim()] = value.trim();
+          }
+        });
+      }
+      
+      return Object.keys(result).length > 0 ? result : null;
+    } catch (error) {
+      this.logger.businessError('通用Markdown解析失败', error);
+      return null;
+    }
+  }
+
+  /**
    * 验证MCP工具调用参数
    */
   private validateToolParameters(toolName: string, parameters: Record<string, any>): void {
@@ -229,22 +514,46 @@ export class MCPClientSDKService {
             throw new Error('MCP API返回空文本内容');
           }
           
-          return textContent;
+          // 尝试解析JSON文本
+          try {
+            const parsedContent = JSON.parse(textContent);
+            this.logger.serviceInfo(`MCP返回JSON解析成功`, {
+              解析后类型: typeof parsedContent,
+              主要字段: Object.keys(parsedContent || {})
+            });
+            return parsedContent;
+          } catch (parseError) {
+            // 尝试解析Markdown格式
+            const parsedMarkdown = this.parseMarkdownResponse(textContent, toolName);
+            if (parsedMarkdown) {
+              this.logger.serviceInfo(`MCP返回Markdown解析成功`, {
+                解析后类型: typeof parsedMarkdown,
+                主要字段: Object.keys(parsedMarkdown || {})
+              });
+              return parsedMarkdown;
+            } else {
+              this.logger.serviceInfo(`MCP返回非JSON/Markdown内容，返回原始文本`, {
+                解析错误: parseError.message,
+                文本预览: textContent.substring(0, 200)
+              });
+              return textContent;
+            }
+          }
         }
       }
 
-      const jsonContent = JSON.stringify(result.content);
-      this.logger.serviceInfo(`MCP返回JSON内容`, {
-        JSON长度: jsonContent.length,
-        是否为空: !jsonContent || jsonContent.trim() === '' || jsonContent === '[]'
-      });
-      
-      // 检查是否为空JSON
-      if (!jsonContent || jsonContent.trim() === '' || jsonContent === '[]' || jsonContent === '[{}]') {
-        throw new Error('MCP API返回空JSON内容');
+      // 如果不是文本类型，尝试直接解析content对象
+      try {
+        const parsedContent = result.content;
+        this.logger.serviceInfo(`MCP返回内容对象`, {
+          内容类型: typeof parsedContent,
+          主要字段: Object.keys(parsedContent || {})
+        });
+        return parsedContent;
+      } catch (parseError) {
+        this.logger.businessError('MCP内容解析失败', parseError);
+        throw new Error('MCP API返回的内容无法解析');
       }
-
-      return jsonContent;
 
     } catch (error) {
       this.logger.businessError(`MCP工具调用失败: ${toolName}`, error, { parameters });
