@@ -53,7 +53,7 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作
 数据收集 (MCP+LLM) → 专业分析 (纯LLM) → 决策整合 (纯LLM) → 消息通知 (Webhook)
 
 定时任务架构：
-智能分析调度器 → 新闻爬取 → 摘要生成 → 自选股获取 → 股票分析子工作流 → 结果通知
+智能分析调度器 → 自选股获取 → 股票分析子工作流 → 结果通知
 ```
 
 ### 智能体架构
@@ -62,7 +62,6 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作
 ├── BasicDataAgent          # 基础信息+实时数据 (MCP+LLM)
 ├── TechnicalAnalystAgent   # 历史+技术指标 (MCP+LLM)
 ├── FundamentalAnalystAgent # 财务数据 (MCP+LLM)
-└── NewsAnalystAgent        # 新闻数据 (MCP+LLM)
 
 专业分析阶段 (纯LLM)
 ├── IndustryAnalystAgent    # 行业环境分析
@@ -82,7 +81,7 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作
 | 2. 基本面数据 | FundamentalAnalystAgent | get_stock_financial_data | 财务健康度、盈利能力 |
 | 3. 行业环境 | IndustryAnalystAgent | 基于已有数据 | 行业前景、政策影响 |
 | 4. 竞争优势 | CompetitiveAnalystAgent | 基于已有数据 | 护城河、市场地位 |
-| 5. 市场情绪 | TechnicalAnalystAgent + NewsAnalystAgent | get_stock_historical_data, get_stock_technical_indicators, get_stock_news | 技术走势、资金流向、新闻情绪 |
+| 5. 市场情绪 | TechnicalAnalystAgent | get_stock_historical_data, get_stock_technical_indicators | 技术走势、资金流向 |
 | 6. 估值水平 | ValuationAnalystAgent | 基于已有数据 | PE/PB分析、估值合理性 |
 | 7. 风险因素 | RiskAnalystAgent | 基于已有数据 | 风险识别、风险量化 |
 | 8. 综合判断 | UnifiedOrchestratorAgent | 基于已有数据 | 投资建议、行动计划 |
@@ -204,15 +203,11 @@ npm test -- --testPathPattern="mcp-integration.spec.ts"
 - 自选股增删改查
 - 持仓股票管理
 
-#### 新闻爬取接口
-- 新闻数据爬取
-- 新闻摘要生成
 
 #### 消息通知接口
 - 统一消息发送 (支持钉钉、企业微信)
 - 批量消息发送
 - 分析结果推送
-- 新闻摘要推送
 
 #### 健康检查接口
 - 系统健康状态
@@ -236,7 +231,6 @@ src/
 │   └── utils/       # 工具函数
 ├── config/          # 配置文件
 ├── modules/         # 业务模块
-│   ├── news/        # 新闻模块
 │   ├── watchlist/   # 自选股模块
 │   ├── health/      # 健康检查模块
 │   └── analysis/    # 分析模块
@@ -413,8 +407,6 @@ portfolio-monitoring    # 投资组合监控任务队列
 
 # 智能分析模块
 intelligent-analysis    # 智能分析任务队列
-news-crawling           # 新闻爬取任务队列
-news-processing         # 新闻处理任务队列
 
 # 自选股模块
 watchlist-monitoring    # 自选股监控任务队列
