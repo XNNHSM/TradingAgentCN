@@ -10,13 +10,10 @@ import {MCPClientSDKService} from '../../../agents/services/mcp-client-sdk.servi
 import {AgentExecutionRecordService} from '../../../agents/services/agent-execution-record.service';
 import type {MCPActivities} from '../../workflows/agents/mcp.activities';
 import {createMCPActivities} from '../../workflows/agents/mcp.activities';
-import type {PolicyAnalysisActivities} from '../../workflows/agents/policy-analysis.activities';
-import {createPolicyAnalysisActivities} from '../../workflows/agents/policy-analysis.activities';
 import type {AgentAnalysisActivities} from '../../workflows/agents/agent-analysis.activities';
 import {createAgentAnalysisActivities} from '../../workflows/agents/agent-analysis.activities';
 import type {AnalysisRecordActivities} from '../../workflows/agents/analysis-record.activities';
 import {createAnalysisRecordActivities} from '../../workflows/agents/analysis-record.activities';
-import {NewsSummaryService} from '../../../modules/news/services/news-summary.service';
 import {AnalysisService} from '../../../modules/analysis/analysis.service';
 
 /**
@@ -28,9 +25,8 @@ export function createActivities(
   llmService?: LLMService,
   mcpClientService?: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService,
-  newsSummaryService?: NewsSummaryService,
   analysisService?: AnalysisService
-): MCPActivities & PolicyAnalysisActivities & AgentAnalysisActivities & AnalysisRecordActivities {
+): MCPActivities & AgentAnalysisActivities & AnalysisRecordActivities {
   // 创建MCP Activities
   const mcpActivities = createMCPActivities(configService);
   
@@ -72,54 +68,11 @@ export function createActivities(
       },
     };
   }
-  
-  // 创建政策分析Activities
-  let policyActivities: PolicyAnalysisActivities;
-  if (newsSummaryService) {
-    policyActivities = createPolicyAnalysisActivities(configService, newsSummaryService);
-  } else {
-    // 如果没有传入newsSummaryService，创建默认的空实现
-    console.warn('NewsSummaryService未提供，政策分析活动将使用默认实现');
-    policyActivities = {
-      getPolicyRelevantNews: async () => [],
-      performPolicyAnalysis: async (input) => {
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 15);
-        
-        return {
-          sessionId: input.sessionId,
-          analysisDate: input.analysisDate,
-          dateRange: {
-            startDate: startDate.toISOString().split('T')[0],
-            endDate: endDate.toISOString().split('T')[0]
-          },
-          positiveImpacts: [],
-          negativeImpacts: [],
-          neutralImpacts: [],
-          overallSentiment: 'neutral',
-          marketRisk: 50,
-          marketSupport: 50,
-          favorableSectors: [],
-          unfavorableSectors: [],
-          hotConcepts: [],
-          marketOutlook: 'NewsSummaryService未配置，无法进行新闻分析',
-          keyRisks: ['服务未配置'],
-          keyOpportunities: [],
-          analysisSource: '默认实现',
-          newsCount: 0,
-          confidenceLevel: 0.1,
-          processingTime: 0
-        };
-      }
-    };
-  }
 
   // 合并所有活动
   return {
     ...mcpActivities,
     ...agentActivities,
-    ...policyActivities,
     ...analysisRecordActivities,
   };
 }
@@ -132,10 +85,11 @@ export async function createTemporalWorker(
   configService: ConfigService,
   llmService?: LLMService,
   mcpClientService?: MCPClientSDKService,
-  executionRecordService?: AgentExecutionRecordService
+  executionRecordService?: AgentExecutionRecordService,
+  analysisService?: AnalysisService
 ): Promise<Worker> {
   // 创建所有活动实现
-  const activities = createActivities(configService, llmService, mcpClientService, executionRecordService);
+  const activities = createActivities(configService, llmService, mcpClientService, executionRecordService, analysisService);
 
   // 使用简化的业务功能名称 taskQueue
   const taskQueue = 'stock-analysis';

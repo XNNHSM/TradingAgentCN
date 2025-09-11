@@ -10,7 +10,6 @@ import { RedisConfig } from "./config/redis.config";
 import { HealthModule } from "./modules/health/health.module";
 import { WatchlistModule } from "./modules/watchlist/watchlist.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
-import { NewsModule } from "./modules/news/news.module";
 import { MessageModule } from "./modules/message/message.module";
 
 @Module({
@@ -39,7 +38,6 @@ import { MessageModule } from "./modules/message/message.module";
     HealthModule,
     WatchlistModule,
     AnalysisModule,
-    NewsModule,
     MessageModule,
   ],
   controllers: [],

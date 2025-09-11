@@ -23,7 +23,6 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 统一智能体
 - **自选股管理**: 股票选择、持仓跟踪
 - **MCP统一智能体**: 按需调用专业化智能体避免重复
 - **Temporal工作流**: 分布式任务调度和状态管理
-- **新闻爬虫**: 基于Temporal的定时新闻采集
 - **消息通知**: 统一的消息发送和通知管理
 
 ## 🚀 开发命令
@@ -52,7 +51,6 @@ open http://localhost:8088
 
 # 重要测试
 npm test -- src/agents/temporal/agents-temporal-client.service.spec.ts
-npm test -- src/modules/news/temporal/news-temporal-scheduler.service.spec.ts
 ```
 
 ### 数据库操作
@@ -110,13 +108,12 @@ NestJS启动 → AgentsModule初始化 → startWorkers() → worker.run() → �
 
 ### 命名规范
 - **Namespace**: 统一使用 `default`
-- **TaskQueue**: 使用简洁业务名称 (`stock-analysis`, `news-crawling`)
+- **TaskQueue**: 使用简洁业务名称 (`stock-analysis`)
 
 ### 核心工作流
 | 工作流 | TaskQueue | 功能描述 |
 |--------|-----------|----------|
 | 股票分析 | `stock-analysis` | MCP数据获取→智能分析→决策生成 |
-| 智能分析 | `news-crawling` | 新闻爬取→摘要生成→股票分析子工作流 |
 
 ### 统一调度架构规范 ⭐
 - 🏗️ **模块解耦**: 各业务模块只提供基础能力和方法，不包含调度逻辑
@@ -132,15 +129,7 @@ NestJS启动 → AgentsModule初始化 → startWorkers() → worker.run() → �
 ```
 src/common/temporal/
 ├── schedulers/              # 统一调度器服务
-│   ├── news-temporal-client.service.ts      # 新闻Temporal客户端
-│   ├── news-worker.service.ts              # 新闻Worker服务
-│   └── intelligent-analysis-scheduler.service.ts   # 智能分析调度服务
 ├── workflows/              # 工作流定义
-│   └── news/                 # 新闻相关工作流
-│       ├── news-crawling.workflow.ts
-│       ├── news-content-processing.workflow.ts
-│       ├── single-source-crawling.workflow.ts
-│       └── news.activities.ts
 ├── managers/               # 基础管理器
 │   ├── connection.manager.ts
 │   ├── worker.manager.ts
@@ -161,27 +150,17 @@ src/temporal/                           # Temporal统一模块
 │   └── worker/                         # Worker核心实现
 │       └── worker.ts                  # Worker基类和工厂方法
 ├── schedulers/                        # 调度器服务
-│   ├── news/                          # 新闻调度器
-│   │   ├── news-temporal-client.service.ts     # 客户端服务
-│   │   ├── news-worker.service.ts             # Worker服务
-│   │   └── news-temporal-scheduler.service.ts  # 调度器服务
 │   └── agents/                        # 智能体调度器
 │       ├── agents-temporal-client.service.ts  # 客户端服务
 │       └── agents-worker.service.ts          # Worker服务
 ├── workers/                           # Worker实现
-│   ├── agents/                        # 智能体Worker
-│   │   ├── agents-worker.service.ts          # Worker服务
-│   │   └── agents-temporal-client.service.ts  # 客户端服务
-│   └── news/                          # 新闻Worker
-│       └── news-worker.service.ts             # Worker服务
+│   └── agents/                        # 智能体Worker
+│       ├── agents-worker.service.ts          # Worker服务
+│       └── agents-temporal-client.service.ts  # 客户端服务
 ├── workflows/                         # 工作流定义
-│   ├── news/                          # 新闻工作流
-│   │   ├── news-crawling.workflow.ts  # 新闻爬取工作流
-│   │   └── news.activities.ts         # 新闻活动接口
 │   ├── agents/                        # 智能体工作流
 │   │   ├── agent-analysis.activities.ts # 智能体分析活动
-│   │   ├── mcp.activities.ts          # MCP活动接口
-│   │   └── policy-analysis.activities.ts # 政策分析活动
+│   │   └── mcp.activities.ts          # MCP活动接口
 │   └── stock-analysis.workflow.ts     # 股票分析工作流
 ├── interfaces/                        # 接口定义
 │   ├── connection.ts                  # 连接相关接口
@@ -207,18 +186,18 @@ src/temporal/                           # Temporal统一模块
 
 **示例用法**:
 ```typescript
-// 新闻模块导入调度器服务
-import { IntelligentAnalysisSchedulerService } from '../../temporal/schedulers/news/intelligent-analysis-scheduler.service';
+// 智能体模块导入调度器服务
+import { AgentsTemporalClientService } from '../temporal/workers/agents/agents-temporal-client.service';
 
 @Module({
   imports: [
     ConfigModule,
     TemporalModule, // 导入统一Temporal模块
   ],
-  providers: [NewsService],
-  exports: [NewsService],
+  providers: [AnalysisService],
+  exports: [AnalysisService],
 })
-export class NewsModule {}
+export class AnalysisModule {}
 ```
 
 ### 架构优势
@@ -261,7 +240,6 @@ export class NewsModule {}
 | `get_stock_historical_data` | `medium` | 历史行情数据 | 中 |
 | `get_stock_financial_data` | `medium` | 财务数据 | 中 |
 | `get_stock_technical_indicators` | `full` | 技术指标 | 高 |
-| `get_stock_news` | `full` | 股票新闻 | 高 |
 
 #### 标准调用示例
 ```typescript
@@ -302,7 +280,6 @@ const result = await this.mcpClient.callTool('get_stock_basic_info', {
 | BasicDataAgent | get_stock_basic_info, get_stock_realtime_data | 基础数据获取 | 流程1：基础信息 |
 | TechnicalAnalystAgent | get_stock_historical_data, get_stock_technical_indicators | 技术分析 | 流程5：市场情绪与资金动向 |
 | FundamentalAnalystAgent | get_stock_financial_data | 基本面分析 | 流程2：基本面数据 |
-| NewsAnalystAgent | get_stock_news | 新闻情绪分析 | 流程5：市场情绪补充 |
 | IndustryAnalystAgent | 待定 | 行业环境分析 | 流程3：行业环境 |
 | CompetitiveAnalystAgent | 待定 | 竞争优势分析 | 流程4：竞争优势 |
 | ValuationAnalystAgent | 待定 | 估值分析 | 流程6：估值水平 |
@@ -314,8 +291,7 @@ const result = await this.mcpClient.callTool('get_stock_basic_info', {
 第一阶段：数据收集（并行执行）
 ├── BasicDataAgent: 基础信息 + 实时数据
 ├── FundamentalAnalystAgent: 财务数据
-├── TechnicalAnalystAgent: 历史数据 + 技术指标  
-└── NewsAnalystAgent: 新闻数据
+└── TechnicalAnalystAgent: 历史数据 + 技术指标
 
 第二阶段：专业分析（基于第一阶段数据）
 ├── IndustryAnalystAgent: 行业环境分析
@@ -430,8 +406,6 @@ MESSAGE_WECHAT_ENABLED=false
 业务逻辑：
 - src/modules/analysis/analysis.controller.ts    # 股票分析API
 - src/agents/unified/unified-orchestrator.agent.ts # 统一协调器
-- src/common/temporal/workflows/news/news-crawling.workflow.ts # 智能分析工作流
-- src/temporal/schedulers/news/intelligent-analysis-scheduler.service.ts # 智能分析调度器
 
 工具组件：
 - src/common/utils/business-logger.util.ts    # 业务日志
@@ -449,7 +423,6 @@ MESSAGE_WECHAT_ENABLED=false
 ### 常见TaskQueue
 ```bash
 stock-analysis      # 股票分析
-news-crawling       # 新闻爬取
 message-send        # 消息发送
 portfolio-monitoring # 投资组合监控
 daily-report        # 日报生成

@@ -63,6 +63,12 @@ export interface LLMConfig {
   tools?: ToolDefinition[]; // Function calling 工具定义
   toolChoice?: "auto" | "none" | { type: "function"; function: { name: string } };
   stop?: string[];
+  
+  // 内容分段处理配置
+  enableSegmentation?: boolean;
+  segmentationStrategy?: 'semantic' | 'size' | 'hybrid';
+  maxSegments?: number;
+  preserveContext?: boolean;
   sessionId?: string; // 用于token追踪
   analysisType?: string; // 分析类型
   [key: string]: any; // 允许其他自定义参数
@@ -204,6 +210,237 @@ export abstract class BaseLLMAdapter {
   ): Promise<LLMResponse>;
 
   /**
+   * 生成文本（支持分段处理）
+   * 当内容过长时自动分段处理并整合结果
+   */
+  async generateWithSegmentation(
+    prompt: string | LLMMessage[],
+    config?: LLMConfig,
+  ): Promise<LLMResponse> {
+    // 如果没有启用分段处理，直接调用原始方法
+    if (!config?.enableSegmentation) {
+      return this.generateWithDetails(prompt, config);
+    }
+
+    const promptText = typeof prompt === 'string' ? prompt : this.formatMessages(prompt);
+    const estimatedTokens = this.calculateTokenEstimate(promptText);
+    
+    // 检查是否需要分段处理
+    const maxTokens = this.getMaxInputTokens(config);
+    if (estimatedTokens <= maxTokens * 0.9) { // 留10%安全边距
+      return this.generateWithDetails(prompt, config);
+    }
+
+    this.logger.debug(`内容过长(${estimatedTokens} tokens)，启用分段处理`, {
+      maxTokens,
+      strategy: config.segmentationStrategy || 'hybrid'
+    });
+
+    // 执行分段处理
+    return this.executeSegmentedGeneration(prompt, config);
+  }
+
+  /**
+   * 执行分段生成
+   */
+  private async executeSegmentedGeneration(
+    prompt: string | LLMMessage[],
+    config: LLMConfig,
+  ): Promise<LLMResponse> {
+    // 导入内容分段服务
+    const { ContentSegmentationService } = await import('../content-segmentation.service');
+    const segmentationService = new ContentSegmentationService();
+    
+    const promptText = typeof prompt === 'string' ? prompt : this.formatMessages(prompt);
+    
+    // 执行内容分段
+    const segmentationResult = await segmentationService.segmentContent(promptText, {
+      provider: this.providerName,
+      model: config.model || this.getDefaultModel(),
+      maxInputTokens: this.getMaxInputTokens(config),
+      strategy: config.segmentationStrategy || 'hybrid',
+      maxSegments: config.maxSegments || 5,
+      preserveContext: config.preserveContext ?? true
+    });
+
+    // 逐段处理
+    const segmentResponses: LLMResponse[] = [];
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    for (let i = 0; i < segmentationResult.segments.length; i++) {
+      const segment = segmentationResult.segments[i];
+      
+      this.logger.debug(`处理分段 ${i + 1}/${segmentationResult.segments.length}`, {
+        segmentId: segment.id,
+        tokenEstimate: segment.metadata.tokenEstimate
+      });
+
+      // 构建分段提示词
+      const segmentPrompt = this.buildSegmentPrompt(
+        segment,
+        i,
+        segmentationResult.segments.length,
+        prompt,
+        config
+      );
+
+      try {
+        const segmentResponse = await this.generateWithDetails(segmentPrompt, {
+          ...config,
+          // 分段处理时禁用嵌套分段
+          enableSegmentation: false
+        });
+
+        segmentResponses.push(segmentResponse);
+        totalInputTokens += segmentResponse.usage?.inputTokens || 0;
+        totalOutputTokens += segmentResponse.usage?.outputTokens || 0;
+
+        this.logger.debug(`分段 ${i + 1} 处理完成`, {
+          inputTokens: segmentResponse.usage?.inputTokens,
+          outputTokens: segmentResponse.usage?.outputTokens
+        });
+      } catch (error) {
+        this.logger.error(`分段 ${i + 1} 处理失败`, error);
+        // 继续处理其他分段，不要因为单个分段失败而中断整个流程
+        segmentResponses.push({
+          content: `分段 ${i + 1} 处理失败: ${error.message}`,
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+        });
+      }
+    }
+
+    // 整合分段结果
+    const integratedResponse = this.integrateSegmentResponses(
+      segmentResponses,
+      segmentationResult,
+      config
+    );
+
+    // 更新token统计
+    integratedResponse.usage = {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      totalTokens: totalInputTokens + totalOutputTokens
+    };
+
+    return integratedResponse;
+  }
+
+  /**
+   * 构建分段提示词
+   */
+  private buildSegmentPrompt(
+    segment: any,
+    segmentIndex: number,
+    totalSegments: number,
+    originalPrompt: string | LLMMessage[],
+    config: LLMConfig
+  ): string | LLMMessage[] {
+    const segmentPrompt = `
+这是第 ${segmentIndex + 1}/${totalSegments} 个内容分段。
+
+【分段内容】
+${segment.content}
+
+【处理要求】
+1. 请仔细分析上述分段内容
+2. ${segmentIndex < totalSegments - 1 ? '提供初步分析结果，并为后续分段保留上下文' : '提供最终的综合分析结论'}
+3. 保持分析的一致性和连贯性
+4. ${config.sessionId ? `会话ID: ${config.sessionId}` : ''}
+
+【原始任务】
+${typeof originalPrompt === 'string' ? originalPrompt : this.formatMessages(originalPrompt)}
+`;
+
+    if (typeof originalPrompt === 'string') {
+      return segmentPrompt;
+    } else {
+      // 如果是消息数组格式，添加分段信息作为系统消息
+      return [
+        { role: 'system', content: segmentPrompt },
+        ...originalPrompt.filter(msg => msg.role !== 'system')
+      ];
+    }
+  }
+
+  /**
+   * 整合分段响应结果
+   */
+  private integrateSegmentResponses(
+    responses: LLMResponse[],
+    segmentationResult: any,
+    config: LLMConfig
+  ): LLMResponse {
+    if (responses.length === 1) {
+      return responses[0];
+    }
+
+    // 构建整合后的内容
+    let integratedContent = '';
+    
+    if (config.preserveContext !== false) {
+      integratedContent += `内容分段处理结果（共${responses.length}个分段）：\n\n`;
+    }
+
+    responses.forEach((response, index) => {
+      integratedContent += `【分段 ${index + 1} 分析】\n${response.content}\n\n`;
+    });
+
+    // 添加综合分析提示
+    integratedContent += `【综合分析】
+请基于以上${responses.length}个分段的分析结果，提供完整的综合分析结论。
+注意：确保分析的完整性和连贯性，避免重复信息。
+`;
+
+    return {
+      content: integratedContent,
+      toolCalls: responses.some(r => r.toolCalls && r.toolCalls.length > 0) ? 
+        responses.flatMap(r => r.toolCalls || []) : undefined,
+      finishReason: responses[responses.length - 1]?.finishReason,
+      model: responses[0]?.model
+    };
+  }
+
+  /**
+   * 格式化消息数组为文本
+   */
+  private formatMessages(messages: LLMMessage[]): string {
+    return messages.map(msg => `[${msg.role}]: ${msg.content}`).join('\n');
+  }
+
+  
+  /**
+   * 计算token估算（用于分段处理）
+   */
+  private calculateTokenEstimate(text: string): number {
+    // 简单估算：中文字符按1.5 token，英文按0.25 token
+    const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    const englishChars = (text.match(/[a-zA-Z]/g) || []).length;
+    const otherChars = text.length - chineseChars - englishChars;
+    
+    return Math.ceil(chineseChars * 1.5 + englishChars * 0.25 + otherChars * 0.5);
+  }
+
+  /**
+   * 获取最大输入token限制
+   */
+  private getMaxInputTokens(config?: LLMConfig): number {
+    // 根据提供商和模型返回相应的token限制
+    const modelLimits: Record<string, number> = {
+      'qwen-max': 30000,
+      'qwen-plus': 30000,
+      'qwen-turbo': 8000,
+      'gpt-4': 8000,
+      'gpt-4-turbo': 128000,
+      'gpt-3.5-turbo': 16000
+    };
+
+    const modelName = config?.model || this.getDefaultModel();
+    return modelLimits[modelName] || 30000; // 默认30K
+  }
+
+  /**
    * 生成流式文本
    */
   abstract generateStream?(
@@ -302,12 +539,12 @@ export abstract class BaseLLMAdapter {
    */
   protected estimateTokens(content: string | LLMMessage[]): number {
     if (typeof content === "string") {
-      return Math.floor(content.length / 4); // 粗略估算：中文字符约为0.25个token
+      return this.calculateTokenEstimate(content);
     }
     
     // 对于消息数组，计算所有内容的总长度
-    const totalLength = content.reduce((sum, message) => sum + message.content.length, 0);
-    return Math.floor(totalLength / 4);
+    const totalText = content.reduce((sum, message) => sum + message.content, '');
+    return this.calculateTokenEstimate(totalText);
   }
 
   /**

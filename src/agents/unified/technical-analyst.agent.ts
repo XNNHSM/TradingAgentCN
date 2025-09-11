@@ -96,15 +96,52 @@ export class TechnicalAnalystAgent extends BaseAgent {
     if (context.metadata?.analysisType === 'risk_analysis' && analysisData) {
       // 风险分析模式：使用所有MCP数据
       historicalData = analysisData.allMcpData?.historicalData;
+      if (historicalData && historicalData.data && Array.isArray(historicalData.data)) {
+        historicalData = historicalData.data;
+      }
+      
       technicalIndicators = analysisData.allMcpData?.technicalIndicators;
+      if (technicalIndicators && technicalIndicators.data && Array.isArray(technicalIndicators.data)) {
+        technicalIndicators = technicalIndicators.data;
+      }
     } else if (mcpData) {
       // 技术分析模式：使用专门的技术数据
+      // 处理MCP返回的数据格式，可能是 { data: [...] } 或直接是数组
       historicalData = mcpData.historicalData;
+      if (historicalData && historicalData.data && Array.isArray(historicalData.data)) {
+        historicalData = historicalData.data;
+      }
+      
       technicalIndicators = mcpData.technicalIndicators;
+      if (technicalIndicators && technicalIndicators.data && Array.isArray(technicalIndicators.data)) {
+        technicalIndicators = technicalIndicators.data;
+      }
     }
 
+    // 数据验证和处理
     if (!historicalData && !technicalIndicators) {
       throw new Error('历史数据和技术指标均未提供');
+    }
+    
+    // 确保数据格式正确
+    if (historicalData && !Array.isArray(historicalData)) {
+      this.logger.warn('历史数据格式异常，尝试提取data字段', { historicalData: typeof historicalData });
+      if (historicalData.data && Array.isArray(historicalData.data)) {
+        historicalData = historicalData.data;
+      } else {
+        historicalData = [];
+        this.logger.warn('历史数据格式无效，已设置为空数组');
+      }
+    }
+    
+    if (technicalIndicators && !Array.isArray(technicalIndicators)) {
+      this.logger.warn('技术指标格式异常，尝试提取data字段', { technicalIndicators: typeof technicalIndicators });
+      if (technicalIndicators.data && Array.isArray(technicalIndicators.data)) {
+        technicalIndicators = technicalIndicators.data;
+      } else {
+        technicalIndicators = [];
+        this.logger.warn('技术指标格式无效，已设置为空数组');
+      }
     }
 
     return {
@@ -200,7 +237,16 @@ export class TechnicalAnalystAgent extends BaseAgent {
 
     // 添加历史数据（简化格式）
     if (historicalData) {
-      prompt += `**历史价格数据**:\n${JSON.stringify(historicalData.slice(-10), null, 2)}\n\n`;
+      // 确保historicalData是数组类型
+      if (Array.isArray(historicalData)) {
+        prompt += `**历史价格数据**:\n${JSON.stringify(historicalData.slice(-10), null, 2)}\n\n`;
+      } else if (historicalData.data && Array.isArray(historicalData.data)) {
+        // 如果historicalData是包含data字段的对象
+        prompt += `**历史价格数据**:\n${JSON.stringify(historicalData.data.slice(-10), null, 2)}\n\n`;
+      } else {
+        // 如果数据格式不正确，添加提示信息
+        prompt += `**历史价格数据**: 数据格式异常，无法显示详细数据\n\n`;
+      }
     }
 
     // 添加技术指标（简化格式）

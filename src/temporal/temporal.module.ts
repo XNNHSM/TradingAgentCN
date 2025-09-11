@@ -15,9 +15,6 @@ import { TemporalWorkflowManager } from './managers/workflow.manager';
 // 统一管理器
 import { TemporalManager } from './temporal.manager';
 
-// 新闻调度器服务
-import { NewsTemporalClientService } from './schedulers/news/news-temporal-client.service';
-import { IntelligentAnalysisSchedulerService } from './schedulers/news/intelligent-analysis-scheduler.service';
 
 // 智能体调度器服务
 import { AgentsTemporalClientService } from './workers/agents/agents-temporal-client.service';
@@ -45,10 +42,6 @@ import { MessageSendActivitiesRegistration } from './workflows/message/message-s
     // 统一入口
     TemporalManager,
     
-    // 新闻调度器服务
-    NewsTemporalClientService,
-    IntelligentAnalysisSchedulerService,
-    
     // 智能体调度器服务
     AgentsTemporalClientService,
     
@@ -65,10 +58,7 @@ import { MessageSendActivitiesRegistration } from './workflows/message/message-s
     TemporalWorkerManager,
     TemporalWorkflowManager,
     
-    // 导出新闻调度器服务
-    NewsTemporalClientService,
-    IntelligentAnalysisSchedulerService,
-    
+        
     // 导出智能体调度器服务
     AgentsTemporalClientService,
     

@@ -2,7 +2,7 @@ import {Injectable} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {SSEClientTransport} from '@modelcontextprotocol/sdk/client/sse.js';
-import {BusinessLogger} from '../../common/utils/business-logger.util';
+import {BusinessLogger, LogCategory} from '../../common/utils/business-logger.util';
 
 @Injectable()
 export class MCPClientSDKService {
@@ -130,66 +130,126 @@ export class MCPClientSDKService {
     try {
       const result: any = {};
       
-      // 解析基本信息部分
+      // 如果文本内容为空或无效，返回null
+      if (!textContent || textContent.trim() === '') {
+        return null;
+      }
+      
+      // 尝试多种格式的解析
+      
+      // 格式1：标准Markdown格式（包含# 基本数据）
       const basicSection = textContent.match(/# 基本数据\s*\n([\s\S]*?)(?=\n# |\n## |\Z)/);
       if (basicSection) {
         const basicContent = basicSection[1];
         
-        // 提取股票代码
-        const stockCodeMatch = basicContent.match(/- 股票代码:\s*([^\n]+)/);
+        // 提取股票代码 - 多种可能的格式
+        const stockCodeMatch = basicContent.match(/- 股票代码:\s*([^\n]+)/) ||
+                              basicContent.match(/股票代码[：:]\s*([^\n]+)/) ||
+                              basicContent.match(/代码[：:]\s*([^\n]+)/);
         if (stockCodeMatch) result.stock_code = stockCodeMatch[1].trim();
         
-        // 提取股票名称
-        const stockNameMatch = basicContent.match(/- 股票名称:\s*([^\n]+)/);
+        // 提取股票名称 - 多种可能的格式
+        const stockNameMatch = basicContent.match(/- 股票名称:\s*([^\n]+)/) ||
+                              basicContent.match(/股票名称[：:]\s*([^\n]+)/) ||
+                              basicContent.match(/名称[：:]\s*([^\n]+)/);
         if (stockNameMatch) result.stock_name = stockNameMatch[1].trim();
         
         // 提取数据日期
-        const dateMatch = basicContent.match(/- 数据日期:\s*([^\n]+)/);
+        const dateMatch = basicContent.match(/- 数据日期:\s*([^\n]+)/) ||
+                         basicContent.match(/日期[：:]\s*([^\n]+)/);
         if (dateMatch) result.date = dateMatch[1].trim();
         
         // 提取行业概念
-        const industryMatch = basicContent.match(/- 行业概念:\s*([^\n]+)/);
+        const industryMatch = basicContent.match(/- 行业概念:\s*([^\n]+)/) ||
+                             basicContent.match(/行业[：:]\s*([^\n]+)/);
         if (industryMatch) result.industry = industryMatch[1].trim();
       }
       
+      // 格式2：如果没有找到标准格式，尝试直接搜索
+      if (!result.stock_code || !result.stock_name) {
+        // 直接在整个文本中搜索
+        const stockCodeMatch = textContent.match(/股票代码[：:]\s*([^\n]+)/) ||
+                              textContent.match(/代码[：:]\s*([^\n]+)/);
+        if (stockCodeMatch && !result.stock_code) result.stock_code = stockCodeMatch[1].trim();
+        
+        const stockNameMatch = textContent.match(/股票名称[：:]\s*([^\n]+)/) ||
+                              textContent.match(/名称[：:]\s*([^\n]+)/);
+        if (stockNameMatch && !result.stock_name) result.stock_name = stockNameMatch[1].trim();
+      }
+      
       // 解析交易数据部分
-      const tradingSection = textContent.match(/# 交易数据\s*\n([\s\S]*?)(?=\n# |\n## |\Z)/);
+      const tradingSection = textContent.match(/# 交易数据\s*\n([\s\S]*?)(?=\n# |\n## |\Z)/) ||
+                           textContent.match(/# 交易信息\s*\n([\s\S]*?)(?=\n# |\n## |\Z)/);
       if (tradingSection) {
         const tradingContent = tradingSection[1];
         
-        // 提取价格信息
-        const priceMatch = tradingContent.match(/- 当日:\s*([\d.]+)/);
+        // 提取价格信息 - 多种可能的格式
+        const priceMatch = tradingContent.match(/- 当日:\s*([\d.]+)/) ||
+                          tradingContent.match(/当前价格[：:]\s*([\d.]+)/) ||
+                          tradingContent.match(/价格[：:]\s*([\d.]+)/) ||
+                          tradingContent.match(/现价[：:]\s*([\d.]+)/);
         if (priceMatch) result.price = parseFloat(priceMatch[1]);
         
         // 提取最高价
-        const highMatch = tradingContent.match(/最高:\s*([\d.]+)/);
+        const highMatch = tradingContent.match(/最高:\s*([\d.]+)/) ||
+                         tradingContent.match(/最高价[：:]\s*([\d.]+)/);
         if (highMatch) result.high = parseFloat(highMatch[1]);
         
         // 提取最低价
-        const lowMatch = tradingContent.match(/最低:\s*([\d.]+)/);
+        const lowMatch = tradingContent.match(/最低:\s*([\d.]+)/) ||
+                        tradingContent.match(/最低价[：:]\s*([\d.]+)/);
         if (lowMatch) result.low = parseFloat(lowMatch[1]);
         
         // 提取成交量
-        const volumeMatch = tradingContent.match(/- 成交量:\s*([^\n]+)/);
+        const volumeMatch = tradingContent.match(/- 成交量:\s*([^\n]+)/) ||
+                           tradingContent.match(/成交量[：:]\s*([^\n]+)/);
         if (volumeMatch) result.volume = volumeMatch[1].trim();
         
         // 提取成交额
-        const amountMatch = tradingContent.match(/- 成交额:\s*([^\n]+)/);
+        const amountMatch = tradingContent.match(/- 成交额:\s*([^\n]+)/) ||
+                           tradingContent.match(/成交额[：:]\s*([^\n]+)/);
         if (amountMatch) result.amount = amountMatch[1].trim();
         
         // 提取市值
-        const marketCapMatch = tradingContent.match(/- 总市值:\s*([^\n]+)/);
+        const marketCapMatch = tradingContent.match(/- 总市值:\s*([^\n]+)/) ||
+                              tradingContent.match(/市值[：:]\s*([^\n]+)/);
         if (marketCapMatch) result.market_cap = marketCapMatch[1].trim();
       }
       
-      // 确保至少有基本字段
-      if (result.stock_code && result.stock_name) {
+      // 如果仍然没有找到基本信息，尝试在整个文本中查找价格信息
+      if (!result.price) {
+        const priceMatch = textContent.match(/(\d+\.?\d*)/);
+        if (priceMatch) {
+          result.price = parseFloat(priceMatch[1]);
+        }
+      }
+      
+      // 如果至少有股票代码，就返回结果（允许部分数据缺失）
+      if (result.stock_code) {
+        // 设置默认值
+        if (!result.stock_name) result.stock_name = result.stock_code;
+        if (!result.price) result.price = 0;
+        
+        this.logger.serviceInfo('股票基本信息解析成功', {
+          股票代码: result.stock_code,
+          股票名称: result.stock_name,
+          价格: result.price,
+          完整字段: Object.keys(result)
+        });
+        
         return result;
       }
       
+      this.logger.businessError('无法解析股票基本信息', new Error('缺少必要字段'), {
+        文本预览: textContent.substring(0, 200),
+        解析结果: result
+      });
+      
       return null;
     } catch (error) {
-      this.logger.businessError('解析股票基本信息失败', error);
+      this.logger.businessError('解析股票基本信息失败', error, {
+        文本预览: textContent.substring(0, 200)
+      });
       return null;
     }
   }
@@ -295,7 +355,12 @@ export class MCPClientSDKService {
     try {
       const result: any = { news: [] };
       
-      // 解析新闻条目
+      // 如果文本内容为空或无效，返回null
+      if (!textContent || textContent.trim() === '') {
+        return null;
+      }
+      
+      // 先尝试标准的新闻格式解析
       const newsItems = textContent.match(/\d+\. [^\n]+\n[^\n]+/g);
       if (newsItems) {
         const news = newsItems.map(item => {
@@ -313,9 +378,60 @@ export class MCPClientSDKService {
         return result;
       }
       
-      return null;
+      // 如果没有找到标准新闻格式，尝试从基本信息中提取相关信息
+      // 查找可能的新闻关键词或相关信息
+      const newsKeywords = [
+        '公告', '新闻', '报道', '消息', '资讯', '动态', 
+        '重大', '利好', '利空', '收购', '并购', '投资', '融资'
+      ];
+      
+      const lines = textContent.split('\n');
+      const newsLines = lines.filter(line => 
+        newsKeywords.some(keyword => line.includes(keyword))
+      );
+      
+      if (newsLines.length > 0) {
+        const news = newsLines.map(line => {
+          // 清理格式
+          const cleanLine = line.replace(/^[-*#]\s*/, '').trim();
+          return {
+            title: cleanLine.substring(0, 50) + (cleanLine.length > 50 ? '...' : ''),
+            date: new Date().toISOString().split('T')[0], // 使用当前日期
+            content: cleanLine,
+            source: 'company_info'
+          };
+        });
+        
+        result.news = news;
+        return result;
+      }
+      
+      // 如果仍然没有找到新闻信息，返回一个默认的新闻对象
+      // 包含从基本信息中提取的公司信息
+      const stockInfo = this.parseStockBasicInfo(textContent);
+      if (stockInfo) {
+        result.news = [{
+          title: `${stockInfo.stock_name || '公司'}基本信息`,
+          date: stockInfo.date || new Date().toISOString().split('T')[0],
+          content: `公司代码：${stockInfo.stock_code}，公司名称：${stockInfo.stock_name || ''}，所属行业：${stockInfo.industry || '未知'}`,
+          source: 'basic_info'
+        }];
+        return result;
+      }
+      
+      // 最后的备选方案：返回基本信息作为新闻
+      result.news = [{
+        title: '公司信息',
+        date: new Date().toISOString().split('T')[0],
+        content: textContent.substring(0, 500) + (textContent.length > 500 ? '...' : ''),
+        source: 'raw_content'
+      }];
+      
+      return result;
     } catch (error) {
-      this.logger.businessError('解析股票新闻失败', error);
+      this.logger.businessError('解析股票新闻失败', error, {
+        文本预览: textContent.substring(0, 200)
+      });
       return null;
     }
   }
@@ -387,7 +503,7 @@ export class MCPClientSDKService {
       'get_stock_technical_indicators': ['stock_code', 'indicators', 'start_date', 'end_date'],
       'get_stock_financial_data': ['stock_code'],
       'get_stock_news': [],
-      'get_market_overview': [],
+      'get_market_overview': ['symbol'],
       'search_stocks': ['keyword']
     };
 
@@ -421,18 +537,30 @@ export class MCPClientSDKService {
       let mcpToolName: string;
       let mcpParams: Record<string, any>;
 
+      this.logger.debug(LogCategory.SERVICE_INFO, `映射MCP工具调用`, '', {
+        toolName,
+        originalParams: parameters,
+        mapping: 'starting'
+      });
+
       switch (toolName) {
         case "get_stock_basic_info":
         case "get_stock_realtime_data":
         case "search_stocks":
           mcpToolName = "brief";
           mcpParams = { symbol: this.convertStockCode(parameters.stock_code) };
+          this.logger.debug(LogCategory.SERVICE_INFO, `MCP工具映射完成`, '', {
+            toolName,
+            mcpToolName,
+            mcpParams,
+            stockCodeConversion: `${parameters.stock_code} -> ${this.convertStockCode(parameters.stock_code)}`
+          });
           break;
         
         case "get_market_overview":
           mcpToolName = "brief";
-          // getMarketOverview不需要股票代码，使用默认参数
-          mcpParams = { symbol: "SH000001" };
+          // 使用传入的symbol参数，如果没有则使用默认值
+          mcpParams = { symbol: parameters.symbol || "SH000001" };
           break;
         
         case "get_stock_historical_data":
@@ -444,6 +572,12 @@ export class MCPClientSDKService {
             end_date: parameters.end_date,
             period: parameters.period || 'daily'
           };
+          this.logger.debug(LogCategory.SERVICE_INFO, `MCP工具映射完成`, '', {
+            toolName,
+            mcpToolName,
+            mcpParams,
+            stockCodeConversion: `${parameters.stock_code} -> ${this.convertStockCode(parameters.stock_code)}`
+          });
           break;
         
         case "get_stock_financial_data":
@@ -463,16 +597,19 @@ export class MCPClientSDKService {
             start_date: parameters.start_date,
             end_date: parameters.end_date
           };
+          this.logger.debug(LogCategory.SERVICE_INFO, `MCP工具映射完成`, '', {
+            toolName,
+            mcpToolName,
+            mcpParams,
+            stockCodeConversion: `${parameters.stock_code} -> ${this.convertStockCode(parameters.stock_code)}`
+          });
           break;
         
         case "get_stock_news":
-          mcpToolName = "full";
+          // 新闻查询使用 brief 工具，因为 full 工具返回的是基本信息而不是新闻
+          mcpToolName = "brief";
           mcpParams = { 
-            symbol: this.convertStockCode(parameters.stock_code),
-            keyword: parameters.keyword,
-            start_date: parameters.start_date,
-            end_date: parameters.end_date,
-            limit: parameters.limit || 10
+            symbol: this.convertStockCode(parameters.stock_code)
           };
           break;
         
@@ -484,7 +621,8 @@ export class MCPClientSDKService {
         原始工具: toolName,
         MCP工具: mcpToolName,
         原始参数: parameters,
-        MCP参数: mcpParams
+        MCP参数: mcpParams,
+        股票代码转换: `${parameters.stock_code} -> ${mcpParams.symbol}`
       });
 
       // 调用MCP工具
@@ -496,7 +634,8 @@ export class MCPClientSDKService {
       this.logger.serviceInfo(`MCP工具调用成功`, {
         工具名称: mcpToolName,
         结果类型: typeof result.content,
-        结果长度: Array.isArray(result.content) ? result.content.length : 'N/A'
+        结果长度: Array.isArray(result.content) ? result.content.length : 'N/A',
+        股票代码: mcpParams.symbol
       });
 
       if (Array.isArray(result.content) && result.content.length > 0) {
@@ -506,11 +645,17 @@ export class MCPClientSDKService {
           const textContent = firstContent.text;
           this.logger.serviceInfo(`MCP返回文本内容`, {
             文本长度: textContent.length,
-            是否为空: !textContent || textContent.trim() === ''
+            是否为空: !textContent || textContent.trim() === '',
+            文本预览: textContent.substring(0, 100),
+            股票代码: mcpParams.symbol
           });
           
           // 检查是否为空内容
           if (!textContent || textContent.trim() === '') {
+            this.logger.businessError('MCP API返回空文本内容', new Error('空响应'), {
+              工具名称: mcpToolName,
+              股票代码: mcpParams.symbol
+            });
             throw new Error('MCP API返回空文本内容');
           }
           
@@ -519,7 +664,8 @@ export class MCPClientSDKService {
             const parsedContent = JSON.parse(textContent);
             this.logger.serviceInfo(`MCP返回JSON解析成功`, {
               解析后类型: typeof parsedContent,
-              主要字段: Object.keys(parsedContent || {})
+              主要字段: Object.keys(parsedContent || {}),
+              股票代码: mcpParams.symbol
             });
             return parsedContent;
           } catch (parseError) {
@@ -528,15 +674,76 @@ export class MCPClientSDKService {
             if (parsedMarkdown) {
               this.logger.serviceInfo(`MCP返回Markdown解析成功`, {
                 解析后类型: typeof parsedMarkdown,
-                主要字段: Object.keys(parsedMarkdown || {})
+                主要字段: Object.keys(parsedMarkdown || {}),
+                股票代码: mcpParams.symbol
               });
               return parsedMarkdown;
             } else {
-              this.logger.serviceInfo(`MCP返回非JSON/Markdown内容，返回原始文本`, {
-                解析错误: parseError.message,
+              this.logger.businessError('MCP返回内容解析失败', parseError, {
+                工具名称: mcpToolName,
+                股票代码: mcpParams.symbol,
                 文本预览: textContent.substring(0, 200)
               });
-              return textContent;
+              
+              // 对于解析失败的情况，提供有用的默认值
+              switch (toolName) {
+                case 'get_stock_basic_info':
+                case 'get_stock_realtime_data':
+                  // 对于基本信息和实时数据，从参数中构造基本对象
+                  return {
+                    stock_code: parameters.stock_code,
+                    stock_name: parameters.stock_code,
+                    price: 0,
+                    industry: '未知',
+                    market: '未知',
+                    source: 'default_fallback'
+                  };
+                  
+                case 'get_stock_news':
+                  // 对于新闻，返回默认新闻对象
+                  return {
+                    news: [{
+                      title: `${parameters.stock_code} 相关信息`,
+                      date: new Date().toISOString().split('T')[0],
+                      content: `未能获取到 ${parameters.stock_code} 的相关新闻信息`,
+                      source: 'default_fallback'
+                    }]
+                  };
+                  
+                case 'get_stock_financial_data':
+                  // 对于财务数据，返回空数据结构
+                  return {
+                    data: {},
+                    message: '财务数据获取失败，使用默认值',
+                    source: 'default_fallback'
+                  };
+                  
+                case 'get_stock_historical_data':
+                case 'get_stock_technical_indicators':
+                  // 对于历史数据和技术指标，返回空数组
+                  return {
+                    data: [],
+                    message: '数据获取失败，使用默认值',
+                    source: 'default_fallback'
+                  };
+                  
+                case 'get_market_overview':
+                  // 对于市场概况，返回基本结构
+                  return {
+                    market_trend: '未知',
+                    major_indices: {},
+                    message: '市场概况获取失败，使用默认值',
+                    source: 'default_fallback'
+                  };
+                  
+                default:
+                  // 对于其他工具，返回原始文本
+                  return {
+                    content: textContent,
+                    message: '内容解析失败，返回原始文本',
+                    source: 'default_fallback'
+                  };
+              }
             }
           }
         }

@@ -5,7 +5,7 @@
 
 import { ConfigService } from '@nestjs/config';
 import { BusinessLogger } from '../../../common/utils/business-logger.util';
-import { MCPClientFallbackService } from '../../../agents/services/mcp-client-fallback.service';
+import { MCPClientSDKService } from '../../../agents/services/mcp-client-sdk.service';
 
 /**
  * MCP工具调用参数接口
@@ -64,14 +64,14 @@ export interface MCPActivities {
 export function createMCPActivities(configService: ConfigService): MCPActivities {
   const logger = new BusinessLogger('MCPActivities');
   
-  // 创建MCP客户端服务实例 - 使用带回退机制的版本
-  const mcpClientService = new MCPClientFallbackService(configService);
+  // 创建MCP客户端服务实例 - 直接使用SDK服务
+  const mcpClientService = new MCPClientSDKService(configService);
 
   // 初始化MCP连接的简化版本
   const testConnection = async (): Promise<void> => {
     try {
       logger.serviceInfo('测试MCP连接...');
-      // 使用MCPClientService测试连接
+      // 使用MCP SDK服务测试连接
       await mcpClientService.initialize();
       logger.serviceInfo('MCP连接测试成功');
     } catch (error) {
@@ -80,11 +80,11 @@ export function createMCPActivities(configService: ConfigService): MCPActivities
     }
   };
 
-  // 使用MCPClientService的核心工具调用方法
+  // 使用MCP SDK服务的核心工具调用方法
   const callTool = async (toolName: string, parameters: Record<string, any>): Promise<any> => {
     try {
       logger.serviceInfo(`调用MCP工具: ${toolName}`, parameters);
-      // 直接使用MCPClientService
+      // 直接使用MCP SDK服务
       return await mcpClientService.callTool(toolName, parameters);
     } catch (error) {
       logger.businessError(`MCP工具调用失败: ${toolName}`, error, parameters);
@@ -98,7 +98,7 @@ export function createMCPActivities(configService: ConfigService): MCPActivities
     initializeMCPConnection: async (): Promise<boolean> => {
       try {
         logger.serviceInfo("初始化MCP连接");
-        // 使用MCPClientService初始化
+        // 使用MCP SDK服务初始化
         await mcpClientService.initialize();
         logger.serviceInfo("MCP连接初始化成功");
         return true;
@@ -129,7 +129,7 @@ export function createMCPActivities(configService: ConfigService): MCPActivities
       return await callTool(params.toolName, params.parameters);
     },
 
-    // 股票数据获取Activities - 使用MCPClientService
+    // 股票数据获取Activities - 使用MCP SDK服务
     getStockBasicInfo: async (params: { stock_code: string }) => 
       await callTool('get_stock_basic_info', params),
     

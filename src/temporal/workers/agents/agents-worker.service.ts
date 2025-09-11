@@ -10,7 +10,6 @@ import { BusinessLogger } from '../../../common/utils/business-logger.util';
 import { TemporalManager } from '../../temporal.manager';
 import { WorkerCreateOptions } from '../../interfaces/temporal-config.interface';
 import { createActivities } from '../../core/worker/worker';
-import { NewsSummaryService } from '../../../modules/news/services/news-summary.service';
 import { LLMService } from '../../../agents/services/llm.service';
 import { MCPClientSDKService } from '../../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../../agents/services/agent-execution-record.service';
@@ -26,7 +25,6 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly temporalManager: TemporalManager,
-    private readonly newsSummaryService: NewsSummaryService,
     private readonly llmService: LLMService,
     private readonly mcpClientService: MCPClientSDKService,
     private readonly executionRecordService?: AgentExecutionRecordService,
@@ -60,13 +58,12 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
    */
   async startWorkers(): Promise<void> {
     try {
-      // 创建所有活动实现（包括MCP、政策分析、智能体分析活动和分析记录活动）
+      // 创建所有活动实现（包括MCP、智能体分析活动和分析记录活动）
       const activities = createActivities(
         this.configService, 
         this.llmService, 
         this.mcpClientService,
-        this.executionRecordService, 
-        this.newsSummaryService,
+        this.executionRecordService,
         this.analysisService
       );
 

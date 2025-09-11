@@ -13,8 +13,6 @@ import { UnifiedOrchestratorAgent } from '../../agents/unified/unified-orchestra
 import { LLMService } from '../../agents/services/llm.service';
 import { MCPClientSDKService } from '../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../agents/services/agent-execution-record.service';
-import { MarketNewsDataService } from '../../agents/services/market-news-data.service';
-import { NewsAnalysisCacheService } from '../../agents/services/news-analysis-cache.service';
 import { AgentContext, AgentResult } from '../../agents/interfaces/agent.interface';
 
 /**
@@ -182,9 +180,7 @@ export function createAgentAnalysisActivities(
   configService: ConfigService,
   llmService: LLMService,
   mcpClientService: MCPClientSDKService,
-  executionRecordService?: AgentExecutionRecordService,
-  marketNewsDataService?: MarketNewsDataService,
-  newsAnalysisCacheService?: NewsAnalysisCacheService
+  executionRecordService?: AgentExecutionRecordService
 ): AgentAnalysisActivities {
   const logger = new BusinessLogger('AgentAnalysisActivities');
 
@@ -192,7 +188,7 @@ export function createAgentAnalysisActivities(
   const basicDataAgent = new BasicDataAgent(llmService, configService, executionRecordService);
   const technicalAnalystAgent = new TechnicalAnalystAgent(llmService, configService, executionRecordService);
   const fundamentalAnalystAgent = new FundamentalAnalystAgent(llmService, configService, executionRecordService);
-  const newsAnalystAgent = new NewsAnalystAgent(llmService, marketNewsDataService, newsAnalysisCacheService);
+  const newsAnalystAgent = new NewsAnalystAgent(llmService, configService, executionRecordService);
   const unifiedOrchestratorAgent = new UnifiedOrchestratorAgent(llmService, configService, executionRecordService);
 
   /**
@@ -291,10 +287,17 @@ export function createAgentAnalysisActivities(
         // 根据参数选择分析方法
         if (params.days) {
           // 分析最近N天的新闻
-          marketNewsResult = await newsAnalystAgent.analyzeRecentMarketNews(
-            params.days,
-            params.forceRefresh || false
-          );
+          const endDate = new Date();
+          const startDate = new Date();
+          startDate.setDate(endDate.getDate() - params.days);
+          
+          marketNewsResult = await newsAnalystAgent.analyzeRecentMarketNews({
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0],
+            sessionId: params.sessionId,
+            newsCount: 21,
+            forceRefresh: params.forceRefresh || false
+          });
         } else if (params.dateRange) {
           // 分析指定日期范围的新闻
           const input: NewsAnalysisInput = {
@@ -308,7 +311,17 @@ export function createAgentAnalysisActivities(
           marketNewsResult = await newsAnalystAgent.analyzeMarketNews(input);
         } else {
           // 默认分析最近7天的新闻
-          marketNewsResult = await newsAnalystAgent.analyzeRecentMarketNews(7, params.forceRefresh || false);
+          const endDate = new Date();
+          const startDate = new Date();
+          startDate.setDate(endDate.getDate() - 7);
+          
+          marketNewsResult = await newsAnalystAgent.analyzeRecentMarketNews({
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0],
+            sessionId: params.sessionId,
+            newsCount: 21,
+            forceRefresh: params.forceRefresh || false
+          });
         }
         
         // 将市场新闻分析结果转换为AgentAnalysisResult格式

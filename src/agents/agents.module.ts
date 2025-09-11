@@ -6,8 +6,6 @@ import {TypeOrmModule} from '@nestjs/typeorm';
 // Temporal统一封装模块
 import {TemporalModule} from '../temporal/temporal.module';
 
-// 新闻模块（为政策分析提供数据支持）
-import {NewsModule} from '../modules/news/news.module';
 
 // 分析模块（为分析记录提供支持）- 使用forwardRef避免循环依赖
 import {AnalysisModule} from '../modules/analysis/analysis.module';
@@ -34,9 +32,6 @@ import {MacroEconomistAgent} from './unified/macro-economist.agent';
 import {UnifiedOrchestratorAgent} from './unified/unified-orchestrator.agent';
 import {SummaryGenerationAgent} from './unified/summary-generation.agent';
 
-// 新闻分析相关服务
-import {MarketNewsDataService} from './services/market-news-data.service';
-import {NewsAnalysisCacheService} from './services/news-analysis-cache.service';
 
 // 执行记录相关（保持兼容）
 import {AgentExecutionRecord} from './entities/agent-execution-record.entity';
@@ -58,7 +53,6 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     ConfigModule,
     TypeOrmModule.forFeature([AgentExecutionRecord]),
     TemporalModule, // 导入Temporal统一封装模块
-    forwardRef(() => NewsModule), // 导入新闻模块，提供政策分析数据支持
     forwardRef(() => AnalysisModule), // 导入分析模块，提供分析记录功能
   ],
   providers: [
@@ -84,10 +78,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     UnifiedOrchestratorAgent,
     SummaryGenerationAgent,
 
-    // 新闻分析相关服务
-    MarketNewsDataService,
-    NewsAnalysisCacheService,
-
+    
     // 执行记录服务
     AgentExecutionRecordService,
     AgentExecutionShardingService,
@@ -114,10 +105,7 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
     UnifiedOrchestratorAgent,
     SummaryGenerationAgent,
     
-    // 新闻分析相关服务
-    MarketNewsDataService,
-    NewsAnalysisCacheService,
-    
+        
     // Temporal服务导出 - 现在从TemporalModule统一管理
     
     // 兼容性导出

@@ -4,7 +4,7 @@
  */
 
 import {Injectable, OnModuleInit} from "@nestjs/common";
-import {BusinessLogger} from "../../common/utils/business-logger.util";
+import {BusinessLogger, LogCategory} from "../../common/utils/business-logger.util";
 import {ConfigService} from "@nestjs/config";
 import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo,} from "./llm-adapters/base-llm-adapter";
 import {DashScopeAdapter} from "./llm-adapters/dashscope-adapter";
@@ -197,15 +197,31 @@ export class LLMService implements OnModuleInit {
   ): Promise<LLMResponse> {
     const providers = this.getProviderOrder(config?.provider);
     
+    this.businessLogger.debug(LogCategory.SERVICE_INFO, `尝试LLM提供商: ${providers.join(', ')}`, '', {
+      availableProviders: Array.from(this.adapters.keys()),
+      primaryProvider: this.config.primaryProvider,
+      config
+    });
+    
     let lastError: Error | undefined;
 
     for (const providerName of providers) {
       const adapter = this.adapters.get(providerName);
-      if (!adapter || !adapter.isAvailable()) {
+      if (!adapter) {
+        this.businessLogger.warn(`提供商 ${providerName} 不存在于适配器列表中`);
+        continue;
+      }
+      
+      if (!adapter.isAvailable()) {
+        this.businessLogger.warn(LogCategory.SERVICE_ERROR, `提供商 ${providerName} 不可用`, '', {
+          isAvailable: adapter.isAvailable(),
+          initialized: (adapter as any).initialized
+        });
         continue;
       }
 
       try {
+        this.businessLogger.debug(`尝试使用提供商: ${providerName}`);
         const startTime = Date.now();
         const response = await this.executeWithRetry(
           adapter,
@@ -216,13 +232,16 @@ export class LLMService implements OnModuleInit {
         // 更新统计信息
         this.updateProviderStats(providerName, Date.now() - startTime, false);
         
+        this.businessLogger.debug(`提供商 ${providerName} 调用成功`);
         return response;
       } catch (error) {
         lastError = error;
         this.updateProviderStats(providerName, 0, true);
         
-        this.businessLogger.warn(
-          `提供商 ${providerName} 调用失败: ${error.message}`
+        this.businessLogger.serviceError(
+          `提供商 ${providerName} 调用失败`,
+          error,
+          { config }
         );
 
         // 如果不是主提供商且启用了后备，继续尝试下一个
@@ -236,6 +255,18 @@ export class LLMService implements OnModuleInit {
     }
 
     // 所有提供商都失败了
+    const providerStatus = Array.from(this.adapters.entries()).map(([name, adapter]) => ({
+      name,
+      available: adapter.isAvailable(),
+      initialized: (adapter as any).initialized
+    }));
+    
+    this.businessLogger.serviceError('所有LLM提供商都不可用', lastError, {
+      attemptedProviders: providers,
+      providerStatus,
+      config
+    });
+    
     throw new Error(
       `所有LLM提供商都不可用。最后错误: ${lastError?.message || "未知错误"}`,
     );
@@ -253,7 +284,22 @@ export class LLMService implements OnModuleInit {
 
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
       try {
-        return await adapter.generateWithDetails(prompt, config);
+        // 默认启用分段处理以防止长度限制错误
+        const configWithSegmentation = {
+          ...config,
+          enableSegmentation: config.enableSegmentation ?? true,
+          segmentationStrategy: config.segmentationStrategy ?? 'hybrid',
+          maxSegments: config.maxSegments ?? 5,
+          preserveContext: config.preserveContext ?? true
+        };
+
+        // 检查适配器是否支持分段处理
+        if (typeof (adapter as any).generateWithSegmentation === 'function') {
+          return await (adapter as any).generateWithSegmentation(prompt, configWithSegmentation);
+        } else {
+          // 降级到原始方法
+          return await adapter.generateWithDetails(prompt, config);
+        }
       } catch (error) {
         lastError = error;
         

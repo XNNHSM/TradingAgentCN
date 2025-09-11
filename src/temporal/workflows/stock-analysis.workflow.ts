@@ -15,7 +15,6 @@
 
 import * as workflow from '@temporalio/workflow';
 import type { MCPActivities } from './agents/mcp.activities';
-import type { PolicyAnalysisActivities, PolicyAnalysisActivitiesInput } from './agents/policy-analysis.activities';
 import type { AgentAnalysisActivities, AgentAnalysisResult } from './agents/agent-analysis.activities';
 import { TradingRecommendation } from '../../agents/interfaces/agent.interface';
 
@@ -59,9 +58,7 @@ export interface StockAnalysisResult {
     news: any;
   };
   
-  // 政策分析结果
-  policyAnalysis?: any;
-  
+    
   // 最终决策
   finalDecision: {
     overallScore: number;
@@ -95,16 +92,6 @@ const {
   },
 });
 
-// 配置政策分析Activities  
-const {
-  performPolicyAnalysis,
-} = workflow.proxyActivities<PolicyAnalysisActivities>({
-  startToCloseTimeout: '5m',
-  scheduleToCloseTimeout: '8m',
-  retry: {
-    maximumAttempts: 1, // 默认不重试
-  },
-});
 
 // 配置智能体分析Activities
 const {
@@ -494,6 +481,12 @@ function validateEssentialData(data: {
   realtimeData: any;
   financialData: any;
 }): void {
+  workflow.log.info('开始验证基础数据', {
+    basicInfo: !!data.basicInfo,
+    realtimeData: !!data.realtimeData,
+    financialData: !!data.financialData
+  });
+
   const essentialChecks = [
     { name: '基本信息', data: data.basicInfo, requiredFields: ['stock_code', 'stock_name'] },
     { name: '实时数据', data: data.realtimeData, requiredFields: ['price'] },
@@ -501,60 +494,50 @@ function validateEssentialData(data: {
   ];
 
   const missingData = essentialChecks.filter(check => {
-    if (!check.data || typeof check.data !== 'object') return true;
-    return check.requiredFields.some(field => !check.data[field]);
+    if (!check.data || typeof check.data !== 'object') {
+      workflow.log.warn(`${check.name}数据缺失或格式错误`, { 
+        数据类型: typeof check.data,
+        数据内容: check.data 
+      });
+      return true;
+    }
+    
+    const missingFields = check.requiredFields.filter(field => !check.data[field]);
+    if (missingFields.length > 0) {
+      workflow.log.warn(`${check.name}缺少必要字段`, { 
+        缺失字段: missingFields,
+        可用字段: Object.keys(check.data)
+      });
+      return true;
+    }
+    
+    return false;
   });
 
   if (missingData.length > 0) {
     const missingFields = missingData.map(check => check.name).join('、');
+    workflow.log.error('基础数据验证失败', {
+      缺失数据: missingData.map(check => ({
+        名称: check.name,
+        缺失字段: check.requiredFields.filter(field => !check.data?.[field])
+      })),
+      数据概览: {
+        基本信息: data.basicInfo ? Object.keys(data.basicInfo) : '无',
+        实时数据: data.realtimeData ? Object.keys(data.realtimeData) : '无',
+        财务数据: data.financialData ? Object.keys(data.financialData) : '无'
+      }
+    });
+    
     throw new workflow.ApplicationFailure(
       `基础数据获取失败，缺少关键数据：${missingFields}。无法继续执行股票分析。`,
       'EssentialDataMissingError',
       false
     );
   }
+  
+  workflow.log.info('基础数据验证通过');
 }
 
-/**
- * 安全执行政策分析
- */
-async function safePolicyAnalysis(
-  input: PolicyAnalysisActivitiesInput
-): Promise<any> {
-  try {
-    workflow.log.info('正在执行政策分析');
-    return await performPolicyAnalysis(input);
-  } catch (error) {
-    workflow.log.warn('政策分析失败，使用默认结果', { 
-      error: error.message 
-    });
-    
-    return [{
-      sessionId: input.sessionId,
-      analysisDate: input.analysisDate,
-      stockCode: input.stockCode,
-      stockName: input.stockName,
-      positiveImpacts: [],
-      negativeImpacts: [],
-      neutralImpacts: [],
-      overallSentiment: 'neutral',
-      newsRisk: 50,
-      newsSupport: 50,
-      favorableSectors: [],
-      unfavorableSectors: [],
-      hotConcepts: [],
-      newsRecommendation: '新闻分析数据获取异常，建议关注新闻动向，谨慎投资。',
-      keyRisks: ['新闻分析数据不足', '分析结果可能不准确'],
-      keyOpportunities: [],
-      analysisSource: '容错机制默认结果',
-      newsCount: 0,
-      confidenceLevel: 0.1,
-      processingTime: 0,
-      success: false,
-      errorMessage: error.message,
-    }];
-  }
-}
 
 /**
  * 股票分析工作流主函数
@@ -615,7 +598,6 @@ export async function stockAnalysisWorkflow(
     
     // 从第一阶段结果中获取MCP数据
     const mcpDataFromStage1 = (stage1Result.results[0] as any)?.mcpData || {};
-    const policyDataFromStage1 = (stage1Result.results[0] as any)?.policyData;
     
     // 从实时数据中提取当前价格
     const realtimeData = mcpDataFromStage1.realtimeData || {};
@@ -670,8 +652,7 @@ export async function stockAnalysisWorkflow(
       stage2ProfessionalAnalysis: stage2Result,
       stage3DecisionIntegration: stage3Result,
       mcpDataSummary: mcpDataFromStage1,
-      policyAnalysis: policyDataFromStage1,
-      finalDecision,
+            finalDecision,
       totalProcessingTime,
       timestamp: new Date(),
     },
@@ -752,8 +733,7 @@ export async function stockAnalysisWorkflow(
       stage2ProfessionalAnalysis: stage2Result,
       stage3DecisionIntegration: stage3Result,
       mcpDataSummary: mcpDataFromStage1,
-      policyAnalysis: policyDataFromStage1,
-      finalDecision,
+            finalDecision,
       totalProcessingTime,
       timestamp: new Date(),
     };
@@ -847,7 +827,8 @@ async function executeStage1DataCollection(
         { data: [], message: '财务数据获取失败' }
       ),
       safeCallMCP('getMarketOverview', getMarketOverview, 
-        {}, 
+        { symbol: input.stockCode.startsWith('SH') || input.stockCode.startsWith('SZ') ? input.stockCode : 
+              (input.stockCode.startsWith('6') || input.stockCode.startsWith('9') ? 'SH' + input.stockCode : 'SZ' + input.stockCode) }, 
         { market_trend: '未知', major_indices: [], message: '市场概况获取失败' }
       ),
       safeCallMCP('getStockNews', getStockNews, 
@@ -880,18 +861,7 @@ async function executeStage1DataCollection(
     financialData
   });
 
-  // 安全执行政策分析
-  workflow.log.info('执行政策分析（容错模式）');
-  const policyAnalysisInput: PolicyAnalysisActivitiesInput = {
-    stockCode: input.stockCode,
-    stockName: input.stockName || basicInfo.stock_name || input.stockCode,
-    stockIndustry: basicInfo.industry || undefined,
-    analysisDate: endDate,
-    sessionId: input.sessionId,
-    lookbackDays: 15,
-  };
-  const policyAnalysis = await safePolicyAnalysis(policyAnalysisInput);
-
+  
   // 第一阶段智能体分析：基础数据智能体(按需调用MCP服务) - 容错模式
   workflow.log.info('执行第一阶段智能体分析（容错模式）');
   
@@ -948,10 +918,10 @@ async function executeStage1DataCollection(
     ),
   ]);
 
-  // 将MCP数据和政策分析结果附加到结果中
+  // 将MCP数据附加到结果中
   const enhancedStage1Results = stage1Agents.map((agent, index) => ({
     ...agent,
-    ...(index === 0 ? { mcpData: mcpDataSummary, policyData: policyAnalysis } : {})
+    ...(index === 0 ? { mcpData: mcpDataSummary } : {})
   }));
 
   return {
