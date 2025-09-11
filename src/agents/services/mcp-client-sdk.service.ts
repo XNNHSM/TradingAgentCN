@@ -214,15 +214,6 @@ export class MCPClientSDKService {
         结果长度: Array.isArray(result.content) ? result.content.length : 'N/A'
       });
 
-      // 返回结果内容
-      this.logger.serviceInfo(`MCP响应详情`, {
-        完整响应: JSON.stringify(result, null, 2),
-        内容类型: typeof result.content,
-        是否为数组: Array.isArray(result.content),
-        数组长度: Array.isArray(result.content) ? result.content.length : 'N/A',
-        第一项内容: Array.isArray(result.content) && result.content.length > 0 ? JSON.stringify(result.content[0]) : 'N/A'
-      });
-
       if (Array.isArray(result.content) && result.content.length > 0) {
         // 取第一个内容项的文本
         const firstContent = result.content[0];
@@ -230,7 +221,6 @@ export class MCPClientSDKService {
           const textContent = firstContent.text;
           this.logger.serviceInfo(`MCP返回文本内容`, {
             文本长度: textContent.length,
-            文本预览: textContent.substring(0, 200),
             是否为空: !textContent || textContent.trim() === ''
           });
           
@@ -246,7 +236,6 @@ export class MCPClientSDKService {
       const jsonContent = JSON.stringify(result.content);
       this.logger.serviceInfo(`MCP返回JSON内容`, {
         JSON长度: jsonContent.length,
-        JSON预览: jsonContent.substring(0, 200),
         是否为空: !jsonContent || jsonContent.trim() === '' || jsonContent === '[]'
       });
       

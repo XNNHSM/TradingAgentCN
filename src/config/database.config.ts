@@ -20,7 +20,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       ),
       entities: [join(__dirname, "..", "**", "*.entity.{ts,js}")],
       synchronize: this.configService.get<string>("NODE_ENV") === "development",
-      logging: this.configService.get<string>("NODE_ENV") === "development",
+      logging: false,
       extra: {
         max: 10,
         connectionTimeoutMillis: 60000,
