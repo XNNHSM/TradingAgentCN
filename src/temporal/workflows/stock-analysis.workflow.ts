@@ -152,7 +152,7 @@ const {
 });
 
 // 配置消息发送Activity
-const { sendToAllProviders } = workflow.proxyActivities({
+const { sendToAllProviders, sendStockAnalysisReport } = workflow.proxyActivities({
   taskQueue: 'message-send',
   startToCloseTimeout: '2m',
   retry: {
@@ -161,88 +161,6 @@ const { sendToAllProviders } = workflow.proxyActivities({
 });
 
 // ===============================
-// 消息格式化函数
-// ===============================
-
-/**
- * 格式化分析报告内容
- */
-export function formatAnalysisReport(params: {
-  stockCode: string;
-  stockName: string;
-  finalDecision: any;
-  totalProcessingTime: number;
-  summary?: string; // 新增摘要参数
-  currentPrice?: number; // 新增当前价格参数
-}): string {
-  const { stockCode, stockName, finalDecision, totalProcessingTime, summary, currentPrice } = params;
-  
-  let content = `## ${stockName}（${stockCode}）分析报告\n\n`;
-  
-  // 添加当前价格信息
-  if (currentPrice) {
-    content += `**当前价格**: ¥${currentPrice.toFixed(2)}\n\n`;
-  }
-  
-  // 添加详细的分析摘要（改进为数据驱动的明确摘要）
-  if (summary) {
-    content += `### 📋 分析摘要\n\n`;
-    content += `${summary}\n\n`;
-  }
-  
-  // 添加投资决策摘要（新增的明确数据部分）
-  content += `### 💰 投资决策摘要\n\n`;
-  content += `| 指标 | 数值 | 评级 |\n`;
-  content += `|------|------|------|\n`;
-  content += `| **综合评分** | ${finalDecision.overallScore}/100 | ${getScoreGrade(finalDecision.overallScore)} |\n`;
-  content += `| **置信度** | ${Math.round(finalDecision.confidence * 100)}% | ${getConfidenceGrade(finalDecision.confidence)} |\n`;
-  content += `| **风险等级** | ${calculateRiskLevel(finalDecision)} | ${getRiskGrade(finalDecision)} |\n`;
-  
-  // 投资建议中文映射
-  const recommendationMap = {
-    [TradingRecommendation.BUY]: '🟢 买入',
-    [TradingRecommendation.HOLD]: '🟡 持有',
-    [TradingRecommendation.SELL]: '🔴 卖出'
-  };
-  const recommendationText = recommendationMap[finalDecision.recommendation] || finalDecision.recommendation;
-  content += `\n**最终建议**: ${recommendationText}\n\n`;
-  
-  // 将来预估（新增部分）
-  content += `### 📈 将来预估\n\n`;
-  content += generateFutureEstimation(finalDecision);
-  
-  // 交易策略（新增部分）
-  content += `### 🎯 交易策略\n\n`;
-  content += generateTradingStrategy(finalDecision, currentPrice);
-  
-  // 关键决策因素
-  if (finalDecision.keyDecisionFactors && finalDecision.keyDecisionFactors.length > 0) {
-    content += `### 🔍 关键决策因素\n\n`;
-    finalDecision.keyDecisionFactors.forEach((factor: string, index: number) => {
-      content += `${index + 1}. **${factor}**\n`;
-    });
-    content += '\n';
-  }
-  
-  // 风险评估
-  if (finalDecision.riskAssessment && finalDecision.riskAssessment.length > 0) {
-    content += `### ⚠️ 风险评估\n\n`;
-    finalDecision.riskAssessment.forEach((risk: string, index: number) => {
-      content += `${index + 1}. ${risk}\n`;
-    });
-    content += '\n';
-  }
-  
-  // 执行计划
-  content += `### 📋 执行计划\n\n`;
-  content += `**行动计划**: ${finalDecision.actionPlan || '根据分析结果制定投资策略'}\n\n`;
-  
-  content += `---\n`;
-  content += `*本报告由智能交易代理系统自动生成，仅供参考学习，不构成投资建议*\n`;
-  content += `*生成时间: ${new Date().toLocaleString()}*\n`;
-  
-  return content;
-}
 
 /**
  * 评分等级评定
@@ -690,22 +608,16 @@ export async function stockAnalysisWorkflow(
       try {
         workflow.log.info('开始发送股票分析结果消息');
         
-        const messageParams = {
-          messageType: 'stock-analysis',
-          title: `📈 ${extractedStockName}（${input.stockCode}）分析报告`,
-          content: formatAnalysisReport({
-            stockCode: input.stockCode,
-            stockName: extractedStockName,
-            finalDecision,
-            totalProcessingTime,
-            summary, // 传递分析摘要
-            currentPrice, // 添加当前价格
-          }),
+        // 使用统一的股票分析报告发送Activity，确保与API接口使用完全相同的消息模板
+        const sendResult = await sendStockAnalysisReport({
+          stockCode: input.stockCode,
+          stockName: extractedStockName,
+          finalDecision,
+          currentPrice,
+          summary,
           metadata: {
             sessionId: input.sessionId,
             workflowId: input.workflowId,
-            stockCode: input.stockCode,
-            stockName: extractedStockName,
             analysisCompletedAt: new Date().toISOString(),
             successfulAgentsCount: stage3Result.results.filter(r => r.success).length,
             totalAgentsCount: stage3Result.results.length,
@@ -713,10 +625,7 @@ export async function stockAnalysisWorkflow(
             recommendation: finalDecision.recommendation,
             summary, // 在元数据中也包含摘要
           },
-        };
-        
-        // 使用Activity发送消息，利用Temporal的重试机制
-        const sendResult = await sendToAllProviders(messageParams);
+        });
         
         workflow.log.info('股票分析结果消息发送完成', { 
           stockCode: input.stockCode,

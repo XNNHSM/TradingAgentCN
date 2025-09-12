@@ -10,8 +10,7 @@ import { AnalysisRecord } from "./entities/analysis-record.entity";
 import { CreateAnalysisDto } from "./dto/create-analysis.dto";
 import { Result } from "../../common/dto/result.dto";
 import { AgentsTemporalClientService } from "../../temporal/workers/agents/agents-temporal-client.service";
-import { MessageService } from "../../modules/message/message.service";
-import { MessageType } from "../../modules/message/dtos/message.dto";
+import { MessageTemporalClientService } from "../../temporal/workers/message/message-temporal-client.service";
 import { BusinessLogger } from "../../common/utils/business-logger.util";
 
 /**
@@ -26,7 +25,7 @@ export class AnalysisService {
     @InjectRepository(AnalysisRecord)
     private readonly analysisRepository: Repository<AnalysisRecord>,
     @Optional() private readonly agentsTemporalClient?: AgentsTemporalClientService,
-    private readonly messageService?: MessageService,
+    @Optional() private readonly messageTemporalClient?: MessageTemporalClientService,
   ) {
     this.logger.log(`AnalysisService initialized - agentsTemporalClient: ${this.agentsTemporalClient ? 'available' : 'NOT available'}`);
   }
@@ -201,158 +200,80 @@ export class AnalysisService {
   }
 
   /**
-   * 发送已有分析记录的消息
+   * 发送已有分析记录的消息 - 启动消息发送工作流
    */
   private async sendExistingAnalysisMessage(
     analysisRecord: AnalysisRecord
-  ): Promise<Result<{ message: string; existingAnalysis: boolean }>> {
+  ): Promise<Result<{ workflowId?: string; message: string; existingAnalysis: boolean }>> {
     try {
-      if (!this.messageService) {
-        return Result.error('消息服务不可用，无法发送分析结果');
+      // 检查消息发送Temporal客户端是否可用
+      if (!this.messageTemporalClient) {
+        return Result.error('消息发送Temporal服务暂时不可用，无法启动消息发送任务');
       }
 
-      // 格式化分析结果消息
-      const messageContent = this.formatAnalysisMessage(analysisRecord);
-      
-      // 发送消息到所有配置的提供者
-      const sendResult = await this.messageService.sendMessage({
-        messageType: MessageType.MARKDOWN,
-        title: `📈 ${analysisRecord.stockName || analysisRecord.stockCode} 分析报告`,
-        content: messageContent,
+      // 启动消息发送工作流
+      const workflowHandle = await this.messageTemporalClient.startSendMessageWorkflow({
+        analysisRecordId: analysisRecord.id,
+        sessionId: `send_message_${Date.now()}`,
         metadata: {
           source: 'api-analysis-existing',
-          analysisRecordId: analysisRecord.id,
-          stockCode: analysisRecord.stockCode,
-          stockName: analysisRecord.stockName,
           analysisType: analysisRecord.analysisType,
           averageScore: analysisRecord.averageScore,
           finalRecommendation: analysisRecord.finalRecommendation,
-          sentAt: new Date().toISOString(),
+          requestedAt: new Date().toISOString(),
         },
       });
 
-      const successCount = sendResult.filter(r => r.success).length;
-      const totalCount = sendResult.length;
-
-      this.businessLogger.serviceInfo('已有分析记录消息发送成功', {
+      this.businessLogger.serviceInfo('已有分析记录消息发送工作流已启动', {
         stockCode: analysisRecord.stockCode,
-        successCount,
-        totalCount,
-        averageScore: analysisRecord.averageScore,
-        finalRecommendation: analysisRecord.finalRecommendation,
+        recordId: analysisRecord.id,
+        workflowId: workflowHandle.workflowId,
       });
 
       const result = {
-        message: `股票 ${analysisRecord.stockCode} 的已有分析报告已发送到消息渠道 (${successCount}/${totalCount})`,
+        workflowId: workflowHandle.workflowId,
+        message: `股票 ${analysisRecord.stockCode} 的已有分析报告消息发送工作流已启动`,
         existingAnalysis: true
       };
 
-      return Result.success(result, "已有分析报告已发送");
+      return Result.success(result, "消息发送工作流已启动");
     } catch (error) {
-      this.businessLogger.serviceError('发送已有分析记录消息失败', error, {
+      this.businessLogger.serviceError('启动消息发送工作流失败', error, {
         stockCode: analysisRecord.stockCode,
         recordId: analysisRecord.id,
       });
-      throw new BadRequestException(`发送已有分析记录消息失败: ${error.message}`);
+      throw new BadRequestException(`启动消息发送工作流失败: ${error.message}`);
     }
   }
 
+  
   /**
-   * 格式化分析消息内容
+   * 根据ID查找分析记录
    */
-  private formatAnalysisMessage(record: AnalysisRecord): string {
-    const date = new Date(record.createdAt).toLocaleDateString('zh-CN');
-    
-    let content = `## 📈 ${record.stockName || record.stockCode} 分析报告\\n\\n`;
-    content += `**分析日期**: ${date}\\n\\n`;
-    
-    if (record.averageScore !== undefined) {
-      content += `**综合评分**: ${record.averageScore}/100 (${this.getScoreGrade(record.averageScore)})\\n\\n`;
-    }
-    
-    if (record.finalRecommendation) {
-      const recommendationEmoji = this.getRecommendationEmoji(record.finalRecommendation);
-      content += `**投资建议**: ${recommendationEmoji} ${this.getRecommendationText(record.finalRecommendation)}\\n\\n`;
-    }
-    
-    if (record.confidence !== undefined) {
-      content += `**置信度**: ${(record.confidence * 100).toFixed(1)}%\\n\\n`;
-    }
-    
-    if (record.summary) {
-      content += `### 📋 分析摘要\\n${record.summary}\\n\\n`;
-    }
-    
-    if (record.keyInsights && record.keyInsights.length > 0) {
-      content += `### 🔍 关键洞察\\n`;
-      record.keyInsights.forEach((insight, index) => {
-        content += `${index + 1}. ${insight}\\n`;
+  async findById(id: number): Promise<AnalysisRecord | null> {
+    try {
+      this.businessLogger.serviceInfo('根据ID查找分析记录', { id });
+      
+      const analysisRecord = await this.analysisRepository.findOne({
+        where: { id },
       });
-      content += '\\n';
-    }
-    
-    if (record.majorRisks && record.majorRisks.length > 0) {
-      content += `### ⚠️ 主要风险\\n`;
-      record.majorRisks.forEach((risk, index) => {
-        content += `${index + 1}. ${risk}\\n`;
-      });
-      content += '\\n';
-    }
-    
-    content += `---\\n`;
-    content += `*本报告由智能交易代理系统生成，仅供参考学习，不构成投资建议*\\n`;
-    content += `*分析时间: ${new Date(record.createdAt).toLocaleString('zh-CN')}*`;
-    
-    return content;
-  }
 
-  /**
-   * 获取建议表情符号
-   */
-  private getRecommendationEmoji(recommendation?: string): string {
-    switch (recommendation) {
-      case 'BUY': return '🟢';
-      case 'HOLD': return '🟡';
-      case 'SELL': return '🔴';
-      default: return '⚪';
+      if (analysisRecord) {
+        this.businessLogger.serviceInfo('找到分析记录', {
+          id,
+          stockCode: analysisRecord.stockCode,
+          stockName: analysisRecord.stockName,
+          status: analysisRecord.status,
+        });
+      } else {
+        this.businessLogger.serviceInfo('未找到分析记录', { id });
+      }
+
+      return analysisRecord;
+    } catch (error) {
+      this.businessLogger.serviceError('查找分析记录失败', error, { id });
+      throw error;
     }
   }
 
-  /**
-   * 获取建议文本
-   */
-  private getRecommendationText(recommendation?: string): string {
-    switch (recommendation) {
-      case 'BUY': return '买入';
-      case 'HOLD': return '持有';
-      case 'SELL': return '卖出';
-      default: return '无建议';
-    }
   }
-
-  /**
-   * 获取评分等级
-   */
-  private getScoreGrade(score: number): string {
-    if (score >= 80) return '优秀';
-    if (score >= 70) return '良好';
-    if (score >= 60) return '中等';
-    if (score >= 50) return '一般';
-    return '较差';
-  }
-
-  /**
-   * 构建时间范围
-   */
-  private buildTimeRange(
-    startDate?: string,
-    endDate?: string,
-  ): { startDate: Date; endDate: Date } {
-    const end = endDate ? new Date(endDate) : new Date();
-    const start = startDate
-      ? new Date(startDate)
-      : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000); // 默认30天前
-
-    return { startDate: start, endDate: end };
-  }
-}

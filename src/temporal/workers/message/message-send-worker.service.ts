@@ -29,10 +29,10 @@ export class MessageSendWorkerService implements OnModuleInit {
       // 注册消息发送 Activities
       this.messageSendActivitiesRegistration.onModuleInit();
 
-      // 创建消息发送 Worker
+      // 创建消息发送 Worker，使用单个工作流文件
       await this.temporalWorkerManager.createWorker({
         taskQueue: 'message-send',
-        workflowsPath: require.resolve('../../workflows/message/message-send.workflow'),
+        workflowsPath: require.resolve('../../workflows/message/send-message.workflow'),
         activities: MessageSendActivitiesRegistration.getActivities(),
       });
 

@@ -26,6 +26,7 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
 // 消息发送Worker服务
 import { MessageSendWorkerService } from './workers/message/message-send-worker.service';
 import { MessageSendActivitiesRegistration } from './workflows/message/message-send-activities.registration';
+import { MessageTemporalClientService } from './workers/message/message-temporal-client.service';
 
 // 调度器服务
 import { DailyStockAnalysisSchedulerService } from './schedulers/daily-stock-analysis-scheduler.service';
@@ -60,6 +61,7 @@ import { TemporalSchedulersController } from './schedulers/temporal-schedulers.c
     // 消息发送Worker服务
     MessageSendWorkerService,
     MessageSendActivitiesRegistration,
+    MessageTemporalClientService,
     
     // 调度器服务
     DailyStockAnalysisSchedulerService,
@@ -84,6 +86,7 @@ import { TemporalSchedulersController } from './schedulers/temporal-schedulers.c
     // 导出消息发送Worker服务
     MessageSendWorkerService,
     MessageSendActivitiesRegistration,
+    MessageTemporalClientService,
     
     // 导出调度器服务
     DailyStockAnalysisSchedulerService,

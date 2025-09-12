@@ -34,6 +34,14 @@ export class MessageSendActivitiesRegistration implements OnModuleInit {
       sendToProvider: async (params) => {
         return await messageSendActivitiesInstance.sendToProvider(params);
       },
+
+      getAnalysisRecord: async (analysisRecordId: number) => {
+        return await messageSendActivitiesInstance.getAnalysisRecord(analysisRecordId);
+      },
+
+      sendStockAnalysisReport: async (params) => {
+        return await messageSendActivitiesInstance.sendStockAnalysisReport(params);
+      },
     };
 
     // 将 Activities 注册到全局，供 Temporal Worker 使用
