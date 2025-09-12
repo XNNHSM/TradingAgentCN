@@ -30,18 +30,30 @@ export class AnalysisController {
   })
   @ApiResponse({
     status: 201,
-    description: "分析工作流已启动",
+    description: "分析工作流已启动或已有分析报告已发送",
     schema: {
       type: 'object',
       properties: {
         code: { type: 'number', example: 0 },
         data: {
-          type: 'object',
-          properties: {
-            workflowId: { type: 'string', example: 'stock-analysis-000001-2024-08-26' },
-            sessionId: { type: 'string', example: 'analysis_session_1724654321000' },
-            message: { type: 'string', example: '股票 000001 的增强版分析工作流已启动，正在执行三阶段智能体分析' }
-          }
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                workflowId: { type: 'string', example: 'stock-analysis-000001-2024-08-26' },
+                sessionId: { type: 'string', example: 'analysis_session_1724654321000' },
+                message: { type: 'string', example: '股票 000001 的分析工作流已启动，正在执行三阶段智能体分析' },
+                existingAnalysis: { type: 'boolean', example: false }
+              }
+            },
+            {
+              type: 'object',
+              properties: {
+                message: { type: 'string', example: '股票 000001 的已有分析报告已发送到消息渠道 (2/2)' },
+                existingAnalysis: { type: 'boolean', example: true }
+              }
+            }
+          ]
         },
         message: { type: 'string', example: '分析工作流已启动' },
         timestamp: { type: 'string', example: '2024-08-26T10:30:00.000Z' }
@@ -52,7 +64,7 @@ export class AnalysisController {
   @ApiResponse({ status: 500, description: "服务器内部错误" })
   async analyzeStock(
     @Body() body: { stockCode: string; stockName?: string },
-  ): Promise<Result<{ workflowId: string; sessionId: string; message: string }>> {
+  ): Promise<Result<{ workflowId?: string; sessionId?: string; message: string; existingAnalysis?: boolean }>> {
     const dto: CreateAnalysisDto = {
       stockCode: body.stockCode,
       stockName: body.stockName,
@@ -70,19 +82,32 @@ export class AnalysisController {
   })
   @ApiResponse({
     status: 201,
-    description: "分析工作流已启动",
+    description: "分析工作流已启动或已有分析报告已发送",
     schema: {
       type: 'object',
       properties: {
         code: { type: 'number', example: 0 },
         data: {
-          type: 'object',
-          properties: {
-            workflowId: { type: 'string', example: 'stock-analysis-000001-2024-08-26' },
-            sessionId: { type: 'string', example: 'analysis_session_1724654321000' },
-            message: { type: 'string', example: '股票 000001 的分析工作流已启动' },
-            analysisType: { type: 'string', example: 'comprehensive' }
-          }
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                workflowId: { type: 'string', example: 'stock-analysis-000001-2024-08-26' },
+                sessionId: { type: 'string', example: 'analysis_session_1724654321000' },
+                message: { type: 'string', example: '股票 000001 的分析工作流已启动' },
+                analysisType: { type: 'string', example: 'comprehensive' },
+                existingAnalysis: { type: 'boolean', example: false }
+              }
+            },
+            {
+              type: 'object',
+              properties: {
+                message: { type: 'string', example: '股票 000001 的已有分析报告已发送到消息渠道 (2/2)' },
+                analysisType: { type: 'string', example: 'comprehensive' },
+                existingAnalysis: { type: 'boolean', example: true }
+              }
+            }
+          ]
         },
         message: { type: 'string', example: '分析工作流已启动' },
         timestamp: { type: 'string', example: '2024-08-26T10:30:00.000Z' }
@@ -91,7 +116,7 @@ export class AnalysisController {
   })
   async analyzeStockEnhanced(
     @Body() body: { stockCode: string; stockName?: string },
-  ): Promise<Result<{ workflowId: string; sessionId: string; message: string; analysisType: string }>> {
+  ): Promise<Result<{ workflowId?: string; sessionId?: string; message: string; analysisType?: string; existingAnalysis?: boolean }>> {
     const dto: CreateAnalysisDto = {
       stockCode: body.stockCode,
       stockName: body.stockName,

@@ -11,6 +11,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { WatchlistModule } from "./modules/watchlist/watchlist.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
 import { MessageModule } from "./modules/message/message.module";
+import { TemporalModule } from "./temporal/temporal.module";
 
 @Module({
   imports: [
@@ -33,6 +34,9 @@ import { MessageModule } from "./modules/message/message.module";
       useClass: RedisConfig,
       isGlobal: true,
     }),
+
+    // Temporal模块（全局模块，需要在业务模块之前导入）
+    TemporalModule,
 
     // 业务模块
     HealthModule,

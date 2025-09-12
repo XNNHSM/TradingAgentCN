@@ -391,6 +391,20 @@ ENABLE_CACHE=false  # 开发阶段禁用缓存
 INTELLIGENT_ANALYSIS_SCHEDULER_ENABLED=true  # 智能分析调度器开关
 NODE_ENV=development
 
+# 每日股票分析调度器配置
+DAILY_STOCK_ANALYSIS_SCHEDULER_ENABLED=true  # 每日股票分析调度器开关
+DAILY_STOCK_ANALYSIS_SCHEDULER_HOUR=2       # 调度执行小时（0-23）
+DAILY_STOCK_ANALYSIS_SCHEDULER_MINUTE=0     # 调度执行分钟（0-59）
+DAILY_STOCK_ANALYSIS_SCHEDULER_TIMEZONE=Asia/Shanghai  # 调度器时区
+
+# 每日股票分析消息推送调度器配置
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_ENABLED=true  # 每日股票分析消息推送调度器开关
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_HOUR=9       # 消息推送小时（0-23）
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_MINUTE=0     # 消息推送分钟（0-59）
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_TIMEZONE=Asia/Shanghai  # 消息推送时区
+DAILY_STOCK_ANALYSIS_MESSAGE_LOOKBACK_DAYS=1  # 查找多少天内的分析结果
+DAILY_STOCK_ANALYSIS_MESSAGE_MAX_STOCKS=10  # 单条消息最多包含多少只股票
+
 # 消息模块配置
 MESSAGE_DINGTALK_ENABLED=false
 MESSAGE_WECHAT_ENABLED=false
@@ -569,6 +583,130 @@ const sendResult = await sendToAllProviders(messageParams);
 2. 实现 `formatWebhookMessage()` 方法
 3. 实现 `validateConfig()` 方法
 4. 在 `MessageService` 中注册新的提供者
+
+---
+
+## ⏰ 每日股票分析调度器
+
+### 功能特性 ⭐
+- **定时执行**: 每天凌晨2点自动启动所有自选股的股票分析
+- **批量处理**: 并行启动多只股票的分析工作流，提高效率
+- **消息控制**: 调度器触发的分析默认不发送消息，避免凌晨打扰
+- **状态监控**: 提供调度器状态查询和手动触发功能
+- **容错机制**: 单只股票分析失败不影响其他股票的分析
+
+### 调度器架构
+```
+调度器服务 → 获取自选股列表 → 并行启动股票分析工作流 → 记录执行结果
+```
+
+### 核心组件
+- **DailyStockAnalysisSchedulerService**: 主要调度器服务，负责定时执行和状态管理
+- **TemporalSchedulersController**: 提供HTTP接口用于状态查询和手动触发
+- **配置管理**: 通过环境变量控制调度器行为
+
+### API接口
+```typescript
+# 股票分析调度器
+GET /api/v1/temporal/schedulers/daily-stock-analysis/status    # 获取调度器状态
+POST /api/v1/temporal/schedulers/daily-stock-analysis/trigger  # 手动触发分析
+POST /api/v1/temporal/schedulers/daily-stock-analysis/start    # 启动调度器
+POST /api/v1/temporal/schedulers/daily-stock-analysis/stop     # 停止调度器
+
+# 消息推送调度器
+GET /api/v1/temporal/schedulers/daily-stock-analysis-message/status    # 获取消息调度器状态
+POST /api/v1/temporal/schedulers/daily-stock-analysis-message/trigger  # 手动触发消息推送
+POST /api/v1/temporal/schedulers/daily-stock-analysis-message/start    # 启动消息调度器
+POST /api/v1/temporal/schedulers/daily-stock-analysis-message/stop     # 停止消息调度器
+```
+
+### 环境变量配置
+```bash
+# 启用/禁用调度器
+DAILY_STOCK_ANALYSIS_SCHEDULER_ENABLED=true
+
+# 设置执行时间（24小时制）
+DAILY_STOCK_ANALYSIS_SCHEDULER_HOUR=2
+DAILY_STOCK_ANALYSIS_SCHEDULER_MINUTE=0
+
+# 设置时区
+DAILY_STOCK_ANALYSIS_SCHEDULER_TIMEZONE=Asia/Shanghai
+```
+
+### 工作流集成
+调度器触发的股票分析工作流会设置特殊标记：
+```typescript
+{
+  enableMessagePush: false,  // 不发送消息，避免凌晨打扰
+  isScheduledRun: true,      // 标记为调度器触发
+  metadata: {
+    source: 'daily-scheduler',
+    scheduledAt: new Date().toISOString()
+  }
+}
+```
+
+### 监控和日志
+- **启动日志**: 记录调度器启动时间和配置
+- **执行日志**: 记录每只股票的分析启动状态
+- **错误处理**: 单只股票失败不影响整体流程
+- **结果统计**: 记录成功和失败的分析数量
+
+## 📮 每日股票分析消息推送调度器
+
+### 功能特性 ⭐
+- **定时推送**: 每天上午9点自动推送已完成的股票分析结果
+- **数据汇总**: 汇总指定时间范围内的所有股票分析数据
+- **智能分组**: 自动将分析结果分组，避免单条消息过长
+- **格式化展示**: 提供美观的Markdown格式消息展示
+- **统计分析**: 包含买入/持有/卖出建议统计和重点推荐
+
+### 调度器架构
+```
+消息调度器 → 查询已完成分析记录 → 分组处理 → 格式化消息 → 推送到消息通道
+```
+
+### 核心组件
+- **DailyStockAnalysisMessageSchedulerService**: 消息推送调度器服务
+- **分析数据查询**: 基于AnalysisRecord实体查询已完成的分析
+- **消息格式化**: 生成包含统计信息的Markdown格式消息
+- **消息发送**: 通过MessageService发送到所有配置的消息通道
+
+### 消息内容结构
+- **总体概览**: 股票总数、平均评分、建议分布、置信度统计
+- **重点推荐**: 高评分买入建议的股票推荐
+- **详细结果**: 每只股票的具体分析和建议
+- **时间范围**: 明确的分析数据时间范围
+
+### 环境变量配置
+```bash
+# 启用/禁用消息推送调度器
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_ENABLED=true
+
+# 设置推送时间（上午9点）
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_HOUR=9
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_MINUTE=0
+
+# 设置时区
+DAILY_STOCK_ANALYSIS_MESSAGE_SCHEDULER_TIMEZONE=Asia/Shanghai
+
+# 设置数据查找范围（查找昨天的分析结果）
+DAILY_STOCK_ANALYSIS_MESSAGE_LOOKBACK_DAYS=1
+
+# 设置单条消息最多包含的股票数量
+DAILY_STOCK_ANALYSIS_MESSAGE_MAX_STOCKS=10
+```
+
+### 配合工作流程
+消息推送调度器与股票分析调度器配合工作：
+1. **凌晨2点**: 股票分析调度器启动，分析所有自选股（不发送消息）
+2. **上午9点**: 消息推送调度器启动，汇总分析结果并发送消息
+
+### 消息发送策略
+- **并行发送**: 同时发送到所有配置的消息通道
+- **分组处理**: 股票数量过多时自动分组发送
+- **容错处理**: 单个消息通道失败不影响其他通道
+- **结果记录**: 记录每个消息通道的发送结果
 
 ---
 

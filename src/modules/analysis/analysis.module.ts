@@ -3,6 +3,7 @@ import { forwardRef } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AgentsModule } from "../../agents/agents.module";
 import { TemporalModule } from "../../temporal/temporal.module";
+import { MessageModule } from "../message/message.module";
 import { AnalysisController } from "./analysis.controller";
 import { AnalysisService } from "./analysis.service";
 import { AnalysisRecord } from "./entities/analysis-record.entity";
@@ -14,7 +15,8 @@ import { AnalysisRecord } from "./entities/analysis-record.entity";
   imports: [
     TypeOrmModule.forFeature([AnalysisRecord]), 
     TemporalModule,
-    forwardRef(() => AgentsModule)
+    forwardRef(() => AgentsModule),
+    forwardRef(() => MessageModule)
   ],
   controllers: [AnalysisController],
   providers: [AnalysisService],

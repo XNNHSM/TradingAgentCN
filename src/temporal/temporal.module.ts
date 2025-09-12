@@ -3,9 +3,13 @@
  * 提供Temporal所有功能的模块化封装
  */
 
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { MessageModule } from '../modules/message/message.module';
+import { WatchlistModule } from '../modules/watchlist/watchlist.module';
+import { AnalysisModule } from '../modules/analysis/analysis.module';
+import { AnalysisRecord } from '../modules/analysis/entities/analysis-record.entity';
 
 // 管理器
 import { TemporalConnectionManager } from './managers/connection.manager';
@@ -23,6 +27,11 @@ import { AgentsTemporalClientService } from './workers/agents/agents-temporal-cl
 import { MessageSendWorkerService } from './workers/message/message-send-worker.service';
 import { MessageSendActivitiesRegistration } from './workflows/message/message-send-activities.registration';
 
+// 调度器服务
+import { DailyStockAnalysisSchedulerService } from './schedulers/daily-stock-analysis-scheduler.service';
+import { DailyStockAnalysisMessageSchedulerService } from './schedulers/daily-stock-analysis-message-scheduler.service';
+import { TemporalSchedulersController } from './schedulers/temporal-schedulers.controller';
+
 /**
  * Temporal统一封装模块
  * 标记为全局模块，整个应用都可以使用
@@ -31,7 +40,10 @@ import { MessageSendActivitiesRegistration } from './workflows/message/message-s
 @Module({
   imports: [
     ConfigModule, // 需要配置服务
+    TypeOrmModule.forFeature([AnalysisRecord]), // 需要分析记录实体
     MessageModule, // 需要消息模块
+    WatchlistModule, // 需要自选股模块
+    forwardRef(() => AnalysisModule), // 需要分析模块（解决循环依赖）
   ],
   providers: [
     // 基础管理器
@@ -48,6 +60,13 @@ import { MessageSendActivitiesRegistration } from './workflows/message/message-s
     // 消息发送Worker服务
     MessageSendWorkerService,
     MessageSendActivitiesRegistration,
+    
+    // 调度器服务
+    DailyStockAnalysisSchedulerService,
+    DailyStockAnalysisMessageSchedulerService,
+    
+    // 调度器控制器
+    TemporalSchedulersController,
   ],
   exports: [
     // 主要导出统一管理器
@@ -65,6 +84,9 @@ import { MessageSendActivitiesRegistration } from './workflows/message/message-s
     // 导出消息发送Worker服务
     MessageSendWorkerService,
     MessageSendActivitiesRegistration,
+    
+    // 导出调度器服务
+    DailyStockAnalysisSchedulerService,
   ],
 })
 export class TemporalModule {

@@ -25,6 +25,9 @@ export interface StockAnalysisInput {
   sessionId: string;
   workflowId?: string; // 可选，由服务端传入
   metadata: Record<string, any>;
+  // 新增控制消息推送的选项
+  enableMessagePush?: boolean; // 是否启用消息推送，默认为true
+  isScheduledRun?: boolean; // 是否为调度器触发，默认为false
 }
 
 // 阶段分析结果
@@ -543,7 +546,7 @@ function validateEssentialData(data: {
  * 股票分析工作流主函数
  */
 export async function stockAnalysisWorkflow(
-  input: StockAnalysisInput
+  input: StockAnalysisInput & { isScheduledRun?: boolean; enableMessagePush?: boolean }
 ): Promise<StockAnalysisResult> {
   const startTime = Date.now();
   let analysisRecordId: string;
@@ -680,49 +683,61 @@ export async function stockAnalysisWorkflow(
     });
 
     // 发送分析结果到配置的消息通道（使用Activity）
-    try {
-      workflow.log.info('开始发送股票分析结果消息');
-      
-      const messageParams = {
-        messageType: 'stock-analysis',
-        title: `📈 ${extractedStockName}（${input.stockCode}）分析报告`,
-        content: formatAnalysisReport({
+    // 检查是否启用消息推送（调度器触发默认不推送）
+    const enableMessagePush = input.enableMessagePush !== false && !input.isScheduledRun;
+    
+    if (enableMessagePush) {
+      try {
+        workflow.log.info('开始发送股票分析结果消息');
+        
+        const messageParams = {
+          messageType: 'stock-analysis',
+          title: `📈 ${extractedStockName}（${input.stockCode}）分析报告`,
+          content: formatAnalysisReport({
+            stockCode: input.stockCode,
+            stockName: extractedStockName,
+            finalDecision,
+            totalProcessingTime,
+            summary, // 传递分析摘要
+            currentPrice, // 添加当前价格
+          }),
+          metadata: {
+            sessionId: input.sessionId,
+            workflowId: input.workflowId,
+            stockCode: input.stockCode,
+            stockName: extractedStockName,
+            analysisCompletedAt: new Date().toISOString(),
+            successfulAgentsCount: stage3Result.results.filter(r => r.success).length,
+            totalAgentsCount: stage3Result.results.length,
+            finalScore: finalDecision.overallScore,
+            recommendation: finalDecision.recommendation,
+            summary, // 在元数据中也包含摘要
+          },
+        };
+        
+        // 使用Activity发送消息，利用Temporal的重试机制
+        const sendResult = await sendToAllProviders(messageParams);
+        
+        workflow.log.info('股票分析结果消息发送完成', { 
           stockCode: input.stockCode,
-          stockName: extractedStockName,
-          finalDecision,
-          totalProcessingTime,
-          summary, // 传递分析摘要
-          currentPrice, // 添加当前价格
-        }),
-        metadata: {
-          sessionId: input.sessionId,
-          workflowId: input.workflowId,
+          extractedStockName,
+          successCount: sendResult.filter(r => r.success).length,
+          totalCount: sendResult.length
+        });
+      } catch (messageError) {
+        workflow.log.warn('发送股票分析结果消息失败', {
           stockCode: input.stockCode,
-          stockName: extractedStockName,
-          analysisCompletedAt: new Date().toISOString(),
-          successfulAgentsCount: stage3Result.results.filter(r => r.success).length,
-          totalAgentsCount: stage3Result.results.length,
-          finalScore: finalDecision.overallScore,
-          recommendation: finalDecision.recommendation,
-          summary, // 在元数据中也包含摘要
-        },
-      };
-      
-      // 使用Activity发送消息，利用Temporal的重试机制
-      const sendResult = await sendToAllProviders(messageParams);
-      
-      workflow.log.info('股票分析结果消息发送完成', { 
+          error: messageError.message,
+        });
+        // 消息发送失败不影响工作流结果
+      }
+    } else {
+      workflow.log.info('跳过消息推送', {
         stockCode: input.stockCode,
-        extractedStockName,
-        successCount: sendResult.filter(r => r.success).length,
-        totalCount: sendResult.length
+        enableMessagePush: input.enableMessagePush,
+        isScheduledRun: input.isScheduledRun,
+        reason: input.isScheduledRun ? '调度器触发，避免凌晨打扰' : '消息推送已禁用',
       });
-    } catch (messageError) {
-      workflow.log.warn('发送股票分析结果消息失败', {
-        stockCode: input.stockCode,
-        error: messageError.message,
-      });
-      // 消息发送失败不影响工作流结果
     }
 
     return {
