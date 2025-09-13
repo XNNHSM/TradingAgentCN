@@ -25,6 +25,8 @@
   },
   "dependencies": {
     "@langchain/community": "^0.0.20",
+    "@langchain/core": "^0.3.75",
+    "@langchain/langgraph": "^0.4.9",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "@nestjs-modules/ioredis": "^2.0.2",
     "@nestjs/axios": "^3.1.3",

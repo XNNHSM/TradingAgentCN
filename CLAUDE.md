@@ -11,12 +11,18 @@
 - **数据源**: 阿里云百炼MCP协议 (qtf_mcp股票数据服务)
 - **MCP客户端**: 基于 @modelcontextprotocol/sdk 的统一调用架构
 - **智能体**: 分层LLM配置 (qwen-turbo/plus/max)
-- **工作流**: Temporal分布式协调引擎
+- **工作流引擎**: 
+  - **Temporal**: 分布式协调引擎（生产环境）
+  - **LangGraphJS**: 智能体工作流编排（开发中）
 - **架构**: 单体应用 (NestJS应用即Temporal Worker)
 
 ### 系统架构
 ```
+# 传统架构（生产环境）
 API接口层 → NestJS服务层 → Temporal工作流引擎 → 统一智能体服务 → MCP客户端 → 阿里云百炼MCP → 股票数据
+
+# 新架构（开发中）
+API接口层 → NestJS服务层 → LangGraphJS工作流引擎 → 智能体节点 → MCP客户端 → 阿里云百炼MCP → 股票数据
 ```
 
 ### 核心组件
@@ -303,7 +309,49 @@ const result = await this.mcpClient.callTool('get_stock_basic_info', {
 └── UnifiedOrchestratorAgent: 综合所有结果生成最终投资建议
 ```
 
-### LLM调用执行记录规范 ⭐
+## 🚀 LangGraphJS 架构（开发中）
+
+### 架构概述 ⭐
+LangGraphJS 是新一代智能体工作流编排引擎，专为复杂的 AI 应用设计。我们正在将其集成到项目中，以提升智能体协作效率和开发体验。
+
+### 核心优势
+- **声明式工作流**: 使用图结构定义智能体执行流程，更直观易维护
+- **自动状态管理**: 无需手动传递状态，系统自动处理上下文共享
+- **智能并发**: 基于依赖关系的最优并发执行
+- **动态路由**: 基于中间结果的条件分支和错误恢复
+- **可视化调试**: 执行路径可视化，便于问题定位和优化
+
+### 架构设计
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   API Gateway   │    │   LangGraphJS   │    │   State Store   │
+│                 │◄──►│   Engine        │◄──►│                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   NestJS        │    │   Agent Nodes   │    │   MCP Client    │
+│   Services      │◄──►│                 │◄──►│   SDK           │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### 核心组件
+- **LangGraphAgentAdapter**: 将现有 BaseAgent 转换为 LangGraphJS 节点
+- **AnalysisState**: 统一的状态管理接口
+- **StockAnalysisGraph**: 股票分析工作流图定义
+- **ErrorRecoveryNode**: 智能错误恢复机制
+
+### 迁移策略
+1. **阶段1**: 基础设施搭建和适配器开发 ✅
+2. **阶段2**: 核心工作流重构（进行中）
+3. **阶段3**: 高级特性实现（动态路由、监控等）
+
+### 兼容性保证
+- **向后兼容**: 保持现有 API 接口不变
+- **渐进迁移**: 新旧架构并存，逐步切换
+- **混合模式**: 支持传统 Temporal Activity 和 LangGraphJS 节点混合使用
+
+## 📊 LLM调用执行记录规范 ⭐
 
 **核心设计**: `AgentExecutionRecord` 统一存储所有LLM调用记录，不再按agent类型水平分表
 
@@ -421,6 +469,13 @@ MESSAGE_WECHAT_ENABLED=false
 - src/modules/analysis/analysis.controller.ts    # 股票分析API
 - src/agents/unified/unified-orchestrator.agent.ts # 统一协调器
 
+LangGraphJS架构（开发中）：
+- src/agents/langgraph/analysis-state.interface.ts     # 状态管理接口
+- src/agents/langgraph/agent.adapter.ts               # 智能体适配器
+- src/agents/langgraph/stock-analysis.graph.ts         # 股票分析工作流图
+- src/agents/langgraph/nodes/                          # 工作流节点实现
+- src/agents/langgraph/error-handling/                 # 错误处理机制
+
 工具组件：
 - src/common/utils/business-logger.util.ts    # 业务日志
 - src/common/utils/date-time.util.ts          # 日期工具
@@ -453,6 +508,8 @@ LogCategory.AGENT_INFO      # 智能体信息
 
 ## 🚀 快速开始
 
+### 基础环境设置
+
 1. **环境准备**: 
    ```bash
    npm install
@@ -474,6 +531,29 @@ LogCategory.AGENT_INFO      # 智能体信息
    - 测试接口: `POST /api/v1/analysis/analyze`
 
 4. **运行测试**: `npm test`
+
+### LangGraphJS 开发环境
+
+**依赖安装**:
+```bash
+# LangGraphJS 已作为核心依赖安装
+npm install @langchain/langgraph @langchain/core
+```
+
+**开发模式启动**:
+```bash
+# 启动 LangGraphJS 开发模式（启用调试功能）
+LANGGRAPHJS_DEBUG=true npm run start:dev
+```
+
+**架构切换**:
+```bash
+# 使用传统 Temporal 工作流（默认）
+WORKFLOW_ENGINE=temporal npm run start:dev
+
+# 使用 LangGraphJS 工作流（开发中）
+WORKFLOW_ENGINE=langgraph npm run start:dev
+```
 
 ## 📨 消息模块架构
 

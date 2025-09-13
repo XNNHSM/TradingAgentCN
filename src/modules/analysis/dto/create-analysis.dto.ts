@@ -5,11 +5,22 @@ import {
   IsDateString,
   Length,
   Matches,
+  IsEnum,
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 /**
+ * 任务优先级枚举
+ */
+export enum AnalysisPriority {
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
+}
+
+/**
  * 创建股票分析请求DTO
+ * 支持混合工作流配置和高级分析选项
  */
 export class CreateAnalysisDto {
   @ApiProperty({
@@ -51,8 +62,40 @@ export class CreateAnalysisDto {
   endDate?: string;
 
   @ApiProperty({
+    description: "任务优先级",
+    example: AnalysisPriority.MEDIUM,
+    enum: AnalysisPriority,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(AnalysisPriority)
+  priority?: AnalysisPriority;
+
+  @ApiProperty({
+    description: "是否需要实时性分析",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  realtimeRequired?: boolean;
+
+  @ApiProperty({
+    description: "强制使用的执行模式",
+    example: "hybrid",
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  executionMode?: string;
+
+  @ApiProperty({
     description: "扩展参数",
-    example: { includeNews: true, includeTechnical: true },
+    example: { 
+      includeNews: true, 
+      includeTechnical: true,
+      analysisDepth: 'detailed',
+      customParameters: {}
+    },
     required: false,
   })
   @IsOptional()

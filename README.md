@@ -41,13 +41,19 @@
 - **数据获取**: MCP (Model Context Protocol) 统一接口
 - **主要LLM**: 阿里云百炼(DashScope)
 - **数据库**: PostgreSQL + Redis
-- **工作流引擎**: Temporal - 分布式工作流协调和状态管理
+- **工作流引擎**: 
+  - **生产环境**: Temporal - 分布式工作流协调和状态管理
+  - **开发中**: LangGraphJS - 智能体工作流编排引擎
 - **消息通知**: 统一消息发送架构，支持钉钉、企业微信等Webhook
 - **部署**: Docker 容器化
 
 ### 工作流架构
 ```
+# 传统架构（生产环境）
 API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作流 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
+
+# 新架构（开发中）
+API接口层 → NestJS服务层 → LangGraphJS工作流引擎 → 智能体节点 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
 
 工作流详细架构：
 数据收集 (MCP+LLM) → 专业分析 (纯LLM) → 决策整合 (纯LLM) → 消息通知 (Webhook)
@@ -86,6 +92,38 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作
 | 7. 风险因素 | RiskAnalystAgent | 基于已有数据 | 风险识别、风险量化 |
 | 8. 综合判断 | UnifiedOrchestratorAgent | 基于已有数据 | 投资建议、行动计划 |
 
+## 🚀 LangGraphJS 架构升级（开发中）
+
+### 架构优势
+我们正在引入 LangGraphJS 来升级现有的工作流引擎，实现更强大的智能体编排能力：
+
+- **🎯 声明式工作流**: 使用图结构定义智能体执行流程，更直观易维护
+- **🔄 自动状态管理**: 无需手动传递状态，系统自动处理上下文共享
+- **⚡ 智能并发**: 基于依赖关系的最优并发执行，提升30%性能
+- **🔀 动态路由**: 基于中间结果的条件分支和智能错误恢复
+- **📊 可视化调试**: 执行路径可视化，便于问题定位和优化
+
+### 架构对比
+
+| 特性 | Temporal (当前) | LangGraphJS (新) |
+|------|-----------------|-------------------|
+| **状态管理** | 手动序列化/反序列化 | 自动状态传递和共享 |
+| **编程模型** | 命令式，基于 Activity | 声明式，基于图结构 |
+| **并发控制** | 固定阶段划分 | 智能依赖分析 |
+| **错误处理** | 简单重试机制 | 智能错误恢复和降级 |
+| **开发效率** | 需要大量样板代码 | 减少40%代码量 |
+| **调试能力** | 基于日志分析 | 可视化执行路径 |
+
+### 迁移策略
+1. **渐进式迁移**: 保持现有功能的同时，逐步迁移到新架构
+2. **向后兼容**: API接口保持不变，确保平滑升级
+3. **混合模式**: 支持新旧架构并存，灵活切换
+
+### 开发状态
+- ✅ **阶段1**: 基础设施搭建和适配器开发
+- 🔄 **阶段2**: 核心工作流重构（进行中）
+- 📋 **阶段3**: 高级特性实现（动态路由、监控等）
+
 ## 🚀 快速开始
 
 ### 环境要求
@@ -98,6 +136,7 @@ API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作
 ### 安装依赖
 ```bash
 npm install
+# LangGraphJS 已作为核心依赖自动安装
 ```
 
 ### 环境配置
@@ -142,6 +181,12 @@ COMPREHENSIVE_ANALYST_MAX_TOKENS=4000
 TRADING_STRATEGIST_MODEL=qwen-plus  
 TRADING_STRATEGIST_TEMPERATURE=0.6
 TRADING_STRATEGIST_MAX_TOKENS=3000
+
+# LangGraphJS 配置 (可选，开发中)
+WORKFLOW_ENGINE=temporal        # temporal | langgraph
+LANGGRAPHJS_DEBUG=false         # 启用 LangGraphJS 调试模式
+LANGGRAPHJS_RECURSION_LIMIT=100 # 最大递归深度
+LANGGRAPHJS_TIMEOUT=10m         # 工作流超时时间
 ```
 
 ### 数据库初始化

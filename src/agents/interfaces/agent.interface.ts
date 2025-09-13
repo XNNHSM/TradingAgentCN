@@ -43,6 +43,7 @@ export enum AgentType {
   
   // 🆕 第三层: 决策协调智能体
   UNIFIED_ORCHESTRATOR = "unified_orchestrator", // 统一协调器（智能体协调+决策整合）
+  RISK_ANALYST = "risk_analyst", // 风险分析师（风险评估+风险提示）
 }
 
 /**
@@ -64,6 +65,9 @@ export interface AgentContext {
 
   /** 股票名称 */
   stockName?: string;
+
+  /** 会话ID */
+  sessionId?: string;
 
   /** 分析时间范围 */
   timeRange?: {
@@ -99,6 +103,9 @@ export interface AgentResult {
 
   /** 分析结果 */
   analysis: string;
+
+  /** 是否成功 */
+  success?: boolean;
 
   /** 评分 (0-100) */
   score?: number;
