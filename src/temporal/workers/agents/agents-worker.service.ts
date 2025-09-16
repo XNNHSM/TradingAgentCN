@@ -13,6 +13,7 @@ import { createActivities } from '../../core/worker/worker';
 import { LLMService } from '../../../agents/services/llm.service';
 import { MCPClientSDKService } from '../../../agents/services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../../../agents/services/agent-execution-record.service';
+import { WorkflowStateService } from '../../../agents/services/workflow-state.service';
 import { AnalysisService } from '../../../modules/analysis/analysis.service';
 
 @Injectable()
@@ -29,6 +30,7 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly mcpClientService: MCPClientSDKService,
     private readonly executionRecordService?: AgentExecutionRecordService,
     private readonly analysisService?: AnalysisService,
+    private readonly workflowStateService?: WorkflowStateService,
   ) {
     this.environment = this.configService.get('NODE_ENV', 'dev');
     this.taskQueue = 'stock-analysis';
@@ -58,13 +60,14 @@ export class AgentsWorkerService implements OnModuleInit, OnModuleDestroy {
    */
   async startWorkers(): Promise<void> {
     try {
-      // 创建所有活动实现（包括MCP、智能体分析活动和分析记录活动）
+      // 创建所有活动实现（包括MCP、智能体分析活动、分析记录活动和工作流状态管理活动）
       const activities = createActivities(
-        this.configService, 
-        this.llmService, 
+        this.configService,
+        this.llmService,
         this.mcpClientService,
         this.executionRecordService,
-        this.analysisService
+        this.analysisService,
+        this.workflowStateService
       );
 
       // 定义Worker配置 - 直接指向股票分析工作流

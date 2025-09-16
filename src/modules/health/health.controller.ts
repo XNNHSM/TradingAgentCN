@@ -31,16 +31,4 @@ export class HealthController {
     const dbStatus = await this.healthService.checkDatabase();
     return Result.success(dbStatus, "数据库连接正常");
   }
-
-  @Post("redis")
-  @ApiOperation({ summary: "Redis缓存检查" })
-  @ApiResponse({
-    status: 200,
-    description: "Redis连接状态",
-    type: Result,
-  })
-  async checkRedis(): Promise<Result> {
-    const redisStatus = await this.healthService.checkRedis();
-    return Result.success(redisStatus, "Redis连接正常");
-  }
 }

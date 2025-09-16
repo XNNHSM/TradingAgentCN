@@ -1,20 +1,14 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { Injectable } from "@nestjs/common";
 import { DataSource } from "typeorm";
-import { Cache } from "cache-manager";
 
 @Injectable()
 export class HealthService {
   constructor(
     private readonly dataSource: DataSource,
-    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   async getHealthInfo() {
-    const [dbStatus, redisStatus] = await Promise.all([
-      this.checkDatabase(),
-      this.checkRedis(),
-    ]);
+    const dbStatus = await this.checkDatabase();
 
     return {
       status: "ok",
@@ -24,7 +18,6 @@ export class HealthService {
       version: process.env.npm_package_version || "1.0.0",
       services: {
         database: dbStatus,
-        redis: redisStatus,
       },
       memory: {
         used:
@@ -46,34 +39,6 @@ export class HealthService {
         responseTime: Date.now(),
         connection: "active",
       };
-    } catch (error) {
-      return {
-        status: "unhealthy",
-        error: error.message,
-        connection: "failed",
-      };
-    }
-  }
-
-  async checkRedis() {
-    try {
-      // 检查Redis连接
-      const testKey = "health_check_test";
-      const testValue = Date.now().toString();
-
-      await this.cacheManager.set(testKey, testValue, 1000); // 1秒过期
-      const retrievedValue = await this.cacheManager.get(testKey);
-
-      if (retrievedValue === testValue) {
-        await this.cacheManager.del(testKey);
-        return {
-          status: "healthy",
-          responseTime: Date.now(),
-          connection: "active",
-        };
-      } else {
-        throw new Error("Redis value mismatch");
-      }
     } catch (error) {
       return {
         status: "unhealthy",

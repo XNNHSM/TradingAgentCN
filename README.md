@@ -40,8 +40,8 @@
 - **智能体**: LangChain.js + 阿里云百炼MCP协议
 - **数据获取**: MCP (Model Context Protocol) 统一接口
 - **主要LLM**: 阿里云百炼(DashScope)
-- **数据库**: PostgreSQL + Redis
-- **工作流引擎**: 
+- **数据库**: PostgreSQL
+- **工作流引擎**:
   - **生产环境**: Temporal - 分布式工作流协调和状态管理
   - **开发中**: LangGraphJS - 智能体工作流编排引擎
 - **消息通知**: 统一消息发送架构，支持钉钉、企业微信等Webhook
@@ -50,10 +50,10 @@
 ### 工作流架构
 ```
 # 传统架构（生产环境）
-API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作流 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
+API接口层 → NestJS服务层 → Temporal工作流引擎 → 智能体工作流 → MCP协议层 → 阿里云百炼数据服务
 
 # 新架构（开发中）
-API接口层 → NestJS服务层 → LangGraphJS工作流引擎 → 智能体节点 → MCP协议层 → 阿里云百炼数据服务 → 存储缓存层
+API接口层 → NestJS服务层 → LangGraphJS工作流引擎 → 智能体节点 → MCP协议层 → 阿里云百炼数据服务
 
 工作流详细架构：
 数据收集 (MCP+LLM) → 专业分析 (纯LLM) → 决策整合 (纯LLM) → 消息通知 (Webhook)
@@ -129,7 +129,6 @@ API接口层 → NestJS服务层 → LangGraphJS工作流引擎 → 智能体节
 ### 环境要求
 - Node.js 18+
 - PostgreSQL 15+
-- Redis 7.0+
 - Temporal Server (通过Docker)
 - npm 或 yarn
 
@@ -145,7 +144,7 @@ npm install
 cp .env.example .env
 ```
 
-2. 编辑 `.env` 文件，配置数据库和Redis连接信息：
+2. 编辑 `.env` 文件，配置数据库连接信息：
 ```bash
 # 数据库配置 (PostgreSQL)
 DB_HOST=localhost
@@ -153,10 +152,6 @@ DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=test_123!
 DB_DATABASE=trading_agent
-
-# Redis配置
-REDIS_HOST=localhost
-REDIS_PORT=6379
 
 # 阿里云百炼API配置 (必需)
 DASHSCOPE_API_KEY=your_dashscope_api_key
@@ -257,7 +252,6 @@ npm test -- --testPathPattern="mcp-integration.spec.ts"
 #### 健康检查接口
 - 系统健康状态
 - 数据库连接检查
-- Redis连接检查
 
 #### Temporal工作流接口
 - 工作流状态查询
@@ -316,11 +310,10 @@ src/
 - **错误重试**: 通过活动重试策略处理临时性错误
 - **监控追踪**: 所有工作流执行状态可通过Web UI实时监控
 
-### 缓存策略  
-- 开发阶段缓存功能暂时禁用 (ENABLE_CACHE=false)
-- Redis仅作为缓存层，所有数据必须落盘到PostgreSQL
-- 缓存键命名规范: `模块:方法:参数`  
-- 所有缓存必须设置TTL过期时间
+### 数据存储策略
+- 所有业务数据存储在PostgreSQL中
+- 使用软删除，不进行物理删除
+- 缓存功能已移除，直接使用数据库查询
 
 ## 🐳 Docker 部署
 
@@ -344,9 +337,6 @@ cp .env.example .env
 POSTGRES_PASSWORD=mySecurePassword123
 POSTGRES_DB=trading_agent
 
-# Redis 配置
-REDIS_PASSWORD=myRedisPassword
-
 # API 密钥
 DASHSCOPE_API_KEY=your_actual_api_key
 ```
@@ -365,21 +355,14 @@ docker-compose up -d
 # 修改数据库密码
 POSTGRES_PASSWORD=newPassword docker-compose up -d
 
-# 使用Redis密码
-REDIS_PASSWORD=redisPass docker-compose up -d
-
 # 自定义端口
 # 应用端口修改为8080
 APP_PORT=8080 docker-compose up -d
 
 # 数据库服务端口
-POSTGRES_PORT=5433 REDIS_PORT=6380 docker-compose up -d
+POSTGRES_PORT=5433 docker-compose up -d
 ```
 
-**启动Redis管理界面**:
-```bash
-docker-compose --profile redis-ui up -d
-```
 
 **启动Temporal工作流服务**:
 ```bash
@@ -403,7 +386,6 @@ docker run -d \
   --name trading-agent-cn \
   -p 3000:3000 \
   -e DB_HOST=postgres \
-  -e REDIS_HOST=redis \
   -e DASHSCOPE_API_KEY=your_api_key \
   trading-agent-cn
 ```
@@ -419,10 +401,6 @@ docker run -d \
 | `POSTGRES_DB` | `trading_agent` | 数据库名 |
 | `APP_PORT` | `3000` | 应用对外服务端口（主机端口） |
 | `PORT` | `3000` | 应用内部端口（容器端口） |
-| `REDIS_VERSION` | `7-alpine` | Redis版本 |
-| `REDIS_PORT` | `6379` | Redis端口 |
-| `REDIS_PASSWORD` | `""` | Redis密码（空为无密码） |
-| `REDIS_COMMANDER_PORT` | `8081` | Redis管理界面端口 |
 | `TEMPORAL_VERSION` | `1.22` | Temporal Server版本 |
 | `TEMPORAL_UI_PORT` | `8088` | Temporal Web UI端口 |
 | `TEMPORAL_HOST_PORT` | `7233` | Temporal Server端口 |

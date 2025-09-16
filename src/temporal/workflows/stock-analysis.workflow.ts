@@ -16,6 +16,7 @@
 import * as workflow from '@temporalio/workflow';
 import type { MCPActivities } from './agents/mcp.activities';
 import type { AgentAnalysisActivities, AgentAnalysisResult } from './agents/agent-analysis.activities';
+import type { WorkflowStateActivities } from './agents/workflow-state.activities.interface';
 import { TradingRecommendation } from '../../agents/interfaces/agent.interface';
 
 // 工作流输入类型
@@ -157,6 +158,19 @@ const { sendToAllProviders, sendStockAnalysisReport } = workflow.proxyActivities
   startToCloseTimeout: '2m',
   retry: {
     maximumAttempts: 1, // 默认不重试
+  },
+});
+
+// 配置工作流状态管理Activity
+const {
+  registerWorkflowStart,
+  markWorkflowCompleted,
+  isWorkflowCompleted,
+} = workflow.proxyActivities<WorkflowStateActivities>({
+  startToCloseTimeout: '10s',
+  scheduleToCloseTimeout: '30s',
+  retry: {
+    maximumAttempts: 1,
   },
 });
 
@@ -494,6 +508,17 @@ export async function stockAnalysisWorkflow(
     
     workflow.log.info(`分析记录已创建: ${analysisRecordId}`);
 
+    // 注册工作流开始
+    await registerWorkflowStart({
+      sessionId: input.sessionId,
+      workflowId: input.workflowId,
+      metadata: {
+        stockCode: input.stockCode,
+        stockName: input.stockName,
+        startTime: new Date().toISOString(),
+      },
+    });
+
     // =================
     // 第一阶段：数据收集阶段 (对应标准流程1-2步)
     // =================
@@ -600,6 +625,20 @@ export async function stockAnalysisWorkflow(
       extractedStockName,
     });
 
+    // Mark workflow as completed to trigger cleanup of any ongoing chunk processing
+    await markWorkflowCompleted({
+      sessionId: input.sessionId,
+      status: 'completed',
+      metadata: {
+        stockCode: input.stockCode,
+        stockName: extractedStockName,
+        endTime: new Date().toISOString(),
+        processingTime: `${totalProcessingTime}ms`,
+        finalScore: finalDecision.overallScore,
+        recommendation: finalDecision.recommendation,
+      },
+    });
+
     // 发送分析结果到配置的消息通道（使用Activity）
     // 检查是否启用消息推送（调度器触发默认不推送）
     const enableMessagePush = input.enableMessagePush !== false && !input.isScheduledRun;
@@ -690,7 +729,26 @@ export async function stockAnalysisWorkflow(
         originalError: error.message,
       });
     }
-    
+
+    // Mark workflow as failed to trigger cleanup of any ongoing chunk processing
+    try {
+      await markWorkflowCompleted({
+        sessionId: input.sessionId,
+        status: 'failed',
+        metadata: {
+          stockCode: input.stockCode,
+          stockName: input.stockName,
+          endTime: new Date().toISOString(),
+          error: error.message,
+        },
+      });
+    } catch (workflowStateError) {
+      workflow.log.warn('标记工作流失败状态时出错', {
+        error: workflowStateError.message,
+      });
+      // 继续抛出原始错误
+    }
+
     throw new workflow.ApplicationFailure(
       `股票分析失败: ${error.message}`,
       'EnhancedStockAnalysisError',

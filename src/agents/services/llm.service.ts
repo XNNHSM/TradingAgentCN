@@ -8,6 +8,7 @@ import {BusinessLogger, LogCategory} from "../../common/utils/business-logger.ut
 import {ConfigService} from "@nestjs/config";
 import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo,} from "./llm-adapters/base-llm-adapter";
 import {DashScopeAdapter} from "./llm-adapters/dashscope-adapter";
+import {WorkflowStateService} from "./workflow-state.service";
 
 // 重新导出类型以保持兼容性
 export { LLMConfig, LLMMessage, LLMResponse, ModelInfo } from "./llm-adapters/base-llm-adapter";
@@ -57,6 +58,7 @@ export class LLMService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly dashScopeAdapter: DashScopeAdapter,
+    private readonly workflowStateService: WorkflowStateService,
   ) {
     this.loadConfiguration();
   }
@@ -97,6 +99,12 @@ export class LLMService implements OnModuleInit {
    * 初始化所有适配器
    */
   private async initializeAdapters(): Promise<void> {
+    // 为 DashScopeAdapter 设置 WorkflowStateService
+    if (this.dashScopeAdapter instanceof DashScopeAdapter) {
+      // 这里我们直接使用实例，不需要重新创建
+      // WorkflowStateService 已经通过构造函数注入到 DashScopeAdapter 中
+    }
+
     const adapters = [this.dashScopeAdapter];
     // 后续可以添加其他适配器：openaiAdapter, geminiAdapter等
 

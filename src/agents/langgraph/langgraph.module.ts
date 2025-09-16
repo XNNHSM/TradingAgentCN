@@ -11,6 +11,7 @@ import { LLMService } from '../services/llm.service';
 import { DashScopeAdapter } from '../services/llm-adapters/dashscope-adapter';
 import { MCPClientSDKService } from '../services/mcp-client-sdk.service';
 import { AgentExecutionRecordService } from '../services/agent-execution-record.service';
+import { WorkflowStateService } from '../services/workflow-state.service';
 import { LangGraphServiceManager } from './langgraph.service';
 
 /**
@@ -74,6 +75,7 @@ export class LangGraphModule {
         LLMService,
         MCPClientSDKService,
         AgentExecutionRecordService,
+        WorkflowStateService,
         LangGraphServiceManager,
       ],
       exports: [LangGraphServiceManager],
@@ -113,6 +115,7 @@ export class LangGraphModule {
         LLMService,
         MCPClientSDKService,
         AgentExecutionRecordService,
+        WorkflowStateService,
         LangGraphServiceManager,
       ],
       exports: [LangGraphServiceManager],
@@ -134,6 +137,7 @@ export class LangGraphModule {
         LLMService,
         MCPClientSDKService,
         AgentExecutionRecordService,
+        WorkflowStateService,
         LangGraphServiceManager,
       ],
       exports: [LangGraphServiceManager],

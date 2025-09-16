@@ -7,11 +7,11 @@
 **TradingAgentCN** 是基于MCP协议的智能交易决策系统，专门针对中国A股市场设计。
 
 ### 核心技术栈
-- **后端**: NestJS + TypeScript + TypeORM + PostgreSQL + Redis
+- **后端**: NestJS + TypeScript + TypeORM + PostgreSQL
 - **数据源**: 阿里云百炼MCP协议 (qtf_mcp股票数据服务)
 - **MCP客户端**: 基于 @modelcontextprotocol/sdk 的统一调用架构
 - **智能体**: 分层LLM配置 (qwen-turbo/plus/max)
-- **工作流引擎**: 
+- **工作流引擎**:
   - **Temporal**: 分布式协调引擎（生产环境）
   - **LangGraphJS**: 智能体工作流编排（开发中）
 - **架构**: 单体应用 (NestJS应用即Temporal Worker)
@@ -216,7 +216,6 @@ export class AnalysisModule {}
 
 ### 存储策略
 - **PostgreSQL**: 所有业务数据主要存储
-- **Redis缓存**: 开发阶段暂时禁用 (`ENABLE_CACHE=false`)
 - **软删除**: 所有实体使用 `deletedAt` 字段
 
 ### 数据规范
@@ -376,6 +375,202 @@ LangGraphJS 是新一代智能体工作流编排引擎，专为复杂的 AI 应�
 - **状态管理**: status字段追踪调用状态(pending/success/failed)
 - **元数据扩展**: metadata字段存储额外的业务上下文信息
 
+## 🚨 LLM分段处理问题解决方案 ⭐
+
+### 问题描述
+在股票分析工作流中，当 `UnifiedOrchestratorAgent` 处理大量数据时（如32607 tokens），会触发分段处理机制。但存在以下问题：
+- 工作流在 `UnifiedOrchestratorAgent` 超时后继续执行并完成
+- 分段处理仍在后台继续运行，造成资源浪费
+- 缺乏取消机制和状态检查
+
+### 解决方案架构
+
+#### 1. 工作流状态感知机制 ⭐
+```typescript
+// 添加工作流状态检查接口
+interface WorkflowStateService {
+  isWorkflowCompleted(sessionId: string): boolean;
+  cancelSegmentation(sessionId: string): void;
+  getSegmentationProgress(sessionId: string): SegmentationProgress;
+}
+
+// 分段处理取消令牌
+class SegmentationCancellationToken {
+  private cancelled = false;
+  private sessionId: string;
+
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+  }
+
+  cancel() {
+    this.cancelled = true;
+    // 通知工作流管理器
+    WorkflowStateManager.cancelSegmentation(this.sessionId);
+  }
+
+  isCancelled() {
+    return this.cancelled || WorkflowStateManager.isWorkflowCompleted(this.sessionId);
+  }
+}
+```
+
+#### 2. 分段处理优化策略 ⭐
+
+**并发控制**：
+- 最大并发数：3个片段
+- 动态调整：根据系统负载自动调整
+- 内存管理：限制每个片段的大小
+
+**进度跟踪**：
+```typescript
+interface SegmentationProgress {
+  sessionId: string;
+  currentChunk: number;
+  totalChunks: number;
+  processedTokens: number;
+  estimatedRemainingTime: number;
+  startTime: Date;
+  lastUpdateTime: Date;
+  status: 'running' | 'completed' | 'cancelled' | 'failed';
+}
+```
+
+#### 3. 超时处理策略 ⭐
+
+**多层超时机制**：
+```
+工作流超时 (30m) → Activity超时 (10m) → LLM调用超时 (2m) → 分段处理超时 (30s)
+```
+
+**渐进式超时**：
+- 第一片段：30秒
+- 后续片段：20秒
+- 总体限制：Activity超时前完成
+
+**优雅降级**：
+- 超时时返回已处理的片段结果
+- 标记未完成的部分
+- 提供重试机制
+
+#### 4. 实现要点 ⭐
+
+**DashScopeAdapter 改造**：
+```typescript
+async processChunkedPrompt(prompt, model, startTime, config, sessionId?: string) {
+  const cancellationToken = new SegmentationCancellationToken(sessionId);
+
+  try {
+    const results = [];
+    const chunks = await this.intelligentChunking(prompt, model);
+
+    // 并发处理
+    const semaphore = new Semaphore(3);
+    const promises = chunks.map(async (chunk, index) => {
+      if (cancellationToken.isCancelled()) {
+        throw new Error('Segmentation cancelled');
+      }
+
+      await semaphore.acquire();
+      try {
+        const result = await this.processChunkWithTimeout(
+          chunk,
+          model,
+          30000, // 30秒超时
+          cancellationToken
+        );
+
+        // 更新进度
+        this.updateProgress(sessionId, {
+          currentChunk: index + 1,
+          totalChunks: chunks.length,
+          processedTokens: result.tokens
+        });
+
+        return result;
+      } finally {
+        semaphore.release();
+      }
+    });
+
+    return await Promise.all(promises);
+  } catch (error) {
+    if (cancellationToken.isCancelled()) {
+      this.logger.log('分段处理已取消', { sessionId });
+      return this.generateFallbackResponse();
+    }
+    throw error;
+  }
+}
+```
+
+**工作流状态检查**：
+```typescript
+// 在 BaseAgent 中添加工作流状态检查
+export abstract class BaseAgent {
+  protected sessionId: string;
+  protected workflowStateService: WorkflowStateService;
+
+  protected checkWorkflowState() {
+    if (this.workflowStateService.isWorkflowCompleted(this.sessionId)) {
+      this.logger.log('工作流已完成，停止处理');
+      throw new WorkflowCompletedError();
+    }
+  }
+}
+```
+
+#### 5. 配置管理 ⭐
+
+**环境变量配置**：
+```bash
+# 分段处理配置
+LLM_SEGMENTATION_MAX_CONCURRENCY=3
+LLM_SEGMENTATION_CHUNK_TIMEOUT=30
+LLM_SEGMENTATION_TOTAL_TIMEOUT=300
+LLM_SEGMENTATION_ENABLE_CANCELLATION=true
+
+# 工作流状态检查
+WORKFLOW_STATE_CHECK_INTERVAL=5000
+WORKFLOW_STATE_CACHE_TTL=60000
+```
+
+**监控指标**：
+- 分段处理成功率
+- 平均处理时间
+- 取消率
+- 资源使用情况
+
+#### 6. 错误处理和恢复 ⭐
+
+**分段处理失败**：
+- 单个片段失败不影响其他片段
+- 失败片段标记为跳过
+- 提供部分结果
+
+**网络超时**：
+- 自动重试机制
+- 指数退避策略
+- 降级到基础模型
+
+**工作流已完成**：
+- 立即停止所有处理
+- 清理资源
+- 记录取消原因
+
+### 部署和测试
+
+**测试用例**：
+1. 正常分段处理流程
+2. 工作流完成时的取消机制
+3. 超时处理验证
+4. 并发控制测试
+
+**监控和告警**：
+- 分段处理耗时监控
+- 取消率异常告警
+- 资源使用量监控
+
 ## 🔧 开发规范
 
 ### 日期时间格式 ⭐
@@ -424,7 +619,6 @@ businessLogger.businessError("操作", error, context);
 ```bash
 # 数据库
 DATABASE_URL=postgresql://user:pass@localhost/db
-REDIS_URL=redis://localhost:6379
 
 # MCP服务配置
 MCP_API_KEY=your_mcp_api_key        # MCP专用API密钥
@@ -435,7 +629,6 @@ TEMPORAL_HOST=localhost:7233
 TEMPORAL_WORKER_ENABLED=true
 
 # 功能开关
-ENABLE_CACHE=false  # 开发阶段禁用缓存
 INTELLIGENT_ANALYSIS_SCHEDULER_ENABLED=true  # 智能分析调度器开关
 NODE_ENV=development
 
@@ -518,7 +711,7 @@ LogCategory.AGENT_INFO      # 智能体信息
 
 2. **启动服务**:
    ```bash
-   # 启动PostgreSQL、Redis、Temporal
+   # 启动PostgreSQL、Temporal
    docker-compose up -d
    
    # 启动应用

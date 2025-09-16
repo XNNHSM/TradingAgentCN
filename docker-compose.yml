@@ -14,11 +14,6 @@ services:
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-test_123!}
       DB_DATABASE: ${DB_DATABASE:-trading_agent}
-      # Redis配置 - 支持外部和内部Redis
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDIS_DB: ${REDIS_DB:-0}
       # Temporal配置 - 支持外部和内部Temporal
       TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
       TEMPORAL_PORT: ${TEMPORAL_PORT:-7233}
@@ -34,9 +29,6 @@ services:
       # JWT Configuration
       JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      # Cache Configuration
-      CACHE_TTL: ${CACHE_TTL:-300}
-      CACHE_MAX_ITEMS: ${CACHE_MAX_ITEMS:-1000}
       # LLM Configuration
       LLM_PRIMARY_PROVIDER: ${LLM_PRIMARY_PROVIDER:-dashscope}
       LLM_DEFAULT_TIMEOUT: ${LLM_DEFAULT_TIMEOUT:-30}
@@ -89,58 +81,7 @@ services:
       - internal-services
       - postgres
 
-  # Redis 缓存服务 - 内部Docker服务
-  redis:
-    image: redis:${REDIS_VERSION:-7-alpine}
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-    command: >
-      sh -c '
-        if [ -n "$$REDIS_PASSWORD" ]; then
-          redis-server --requirepass "$$REDIS_PASSWORD"
-        else
-          redis-server
-        fi
-      '
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: >
-        sh -c '
-          if [ -n "$$REDIS_PASSWORD" ]; then
-            redis-cli -a "$$REDIS_PASSWORD" ping
-          else
-            redis-cli ping
-          fi
-        '
-      interval: ${REDIS_HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${REDIS_HEALTHCHECK_TIMEOUT:-3s}
-      retries: ${REDIS_HEALTHCHECK_RETRIES:-5}
-    networks:
-      - trading-network
-    profiles:
-      - internal-services
-      - redis
-
-  # 可选：Redis管理界面
-  redis-commander:
-    image: rediscommander/redis-commander:${REDIS_COMMANDER_VERSION:-latest}
-    ports:
-      - "${REDIS_COMMANDER_PORT:-8081}:8081"
-    environment:
-      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:-}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    depends_on:
-      - redis
-    restart: unless-stopped
-    networks:
-      - trading-network
-    profiles:
-      - redis-ui
-
+  
   # Temporal服务 - 分布式工作流引擎 (使用共享PostgreSQL)
   temporal:
     image: temporalio/auto-setup:${TEMPORAL_VERSION:-1.22}
@@ -202,7 +143,6 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
 
 networks:
   trading-network:

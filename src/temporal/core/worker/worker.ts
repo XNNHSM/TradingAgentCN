@@ -8,25 +8,29 @@ import {ConfigService} from '@nestjs/config';
 import {LLMService} from '../../../agents/services/llm.service';
 import {MCPClientSDKService} from '../../../agents/services/mcp-client-sdk.service';
 import {AgentExecutionRecordService} from '../../../agents/services/agent-execution-record.service';
+import {WorkflowStateService} from '../../../agents/services/workflow-state.service';
 import type {MCPActivities} from '../../workflows/agents/mcp.activities';
 import {createMCPActivities} from '../../workflows/agents/mcp.activities';
 import type {AgentAnalysisActivities} from '../../workflows/agents/agent-analysis.activities';
 import {createAgentAnalysisActivities} from '../../workflows/agents/agent-analysis.activities';
 import type {AnalysisRecordActivities} from '../../workflows/agents/analysis-record.activities';
 import {createAnalysisRecordActivities} from '../../workflows/agents/analysis-record.activities';
+import type {WorkflowStateActivities} from '../../workflows/agents/workflow-state.activities.interface';
+import {createWorkflowStateActivities} from '../../workflows/agents/workflow-state.activities';
 import {AnalysisService} from '../../../modules/analysis/analysis.service';
 
 /**
  * 创建所有活动实现
- * 包含MCP数据获取活动、政策分析活动、智能体分析活动和分析记录活动
+ * 包含MCP数据获取活动、政策分析活动、智能体分析活动、分析记录活动和工作流状态管理活动
  */
 export function createActivities(
   configService: ConfigService,
   llmService?: LLMService,
   mcpClientService?: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService,
-  analysisService?: AnalysisService
-): MCPActivities & AgentAnalysisActivities & AnalysisRecordActivities {
+  analysisService?: AnalysisService,
+  workflowStateService?: WorkflowStateService
+): MCPActivities & AgentAnalysisActivities & AnalysisRecordActivities & WorkflowStateActivities {
   // 创建MCP Activities
   const mcpActivities = createMCPActivities(configService);
   
@@ -69,11 +73,55 @@ export function createActivities(
     };
   }
 
+  // 创建工作流状态管理Activities
+  let workflowStateActivities: WorkflowStateActivities;
+  if (workflowStateService) {
+    workflowStateActivities = createWorkflowStateActivities(workflowStateService);
+  } else {
+    console.warn('WorkflowStateService未提供，工作流状态管理活动将使用默认实现');
+    // 创建默认的空实现
+    workflowStateActivities = {
+      registerWorkflowStart: async () => {
+        console.log('WorkflowStateService未配置，无法注册工作流开始');
+      },
+      markWorkflowCompleted: async () => {
+        console.log('WorkflowStateService未配置，无法标记工作流完成');
+      },
+      isWorkflowCompleted: async () => {
+        console.log('WorkflowStateService未配置，无法检查工作流状态');
+        return false;
+      },
+      getWorkflowState: async () => {
+        console.log('WorkflowStateService未配置，无法获取工作流状态');
+        return null;
+      },
+      cancelSegmentation: async () => {
+        console.log('WorkflowStateService未配置，无法取消分段处理');
+      },
+      getSegmentationProgress: async () => {
+        console.log('WorkflowStateService未配置，无法获取分段处理进度');
+        return null;
+      },
+      getActiveSegmentations: async () => {
+        console.log('WorkflowStateService未配置，无法获取活跃分段处理');
+        return [];
+      },
+      cleanupExpiredWorkflows: async () => {
+        console.log('WorkflowStateService未配置，无法清理过期工作流');
+      },
+      getStatistics: async () => {
+        console.log('WorkflowStateService未配置，无法获取统计信息');
+        return {};
+      },
+    };
+  }
+
   // 合并所有活动
   return {
     ...mcpActivities,
     ...agentActivities,
     ...analysisRecordActivities,
+    ...workflowStateActivities,
   };
 }
 
@@ -86,10 +134,11 @@ export async function createTemporalWorker(
   llmService?: LLMService,
   mcpClientService?: MCPClientSDKService,
   executionRecordService?: AgentExecutionRecordService,
-  analysisService?: AnalysisService
+  analysisService?: AnalysisService,
+  workflowStateService?: WorkflowStateService
 ): Promise<Worker> {
   // 创建所有活动实现
-  const activities = createActivities(configService, llmService, mcpClientService, executionRecordService, analysisService);
+  const activities = createActivities(configService, llmService, mcpClientService, executionRecordService, analysisService, workflowStateService);
 
   // 使用简化的业务功能名称 taskQueue
   const taskQueue = 'stock-analysis';

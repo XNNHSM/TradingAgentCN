@@ -2,12 +2,9 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
-  Inject,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { CACHE_MANAGER } from "@nestjs/cache-manager";
-import { Cache } from "cache-manager";
 
 import { Watchlist } from "./entities/watchlist.entity";
 import { CreateWatchlistDto } from "./dto/create-watchlist.dto";
@@ -17,14 +14,9 @@ import { PaginatedResult } from "@/common/dto/result.dto";
 
 @Injectable()
 export class WatchlistService {
-  private readonly CACHE_PREFIX = "watchlist:";
-  private readonly CACHE_TTL = 300; // 5分钟缓存
-
   constructor(
     @InjectRepository(Watchlist)
     private readonly watchlistRepository: Repository<Watchlist>,
-    @Inject(CACHE_MANAGER)
-    private readonly cacheManager: Cache,
   ) {}
 
   /**
@@ -32,14 +24,6 @@ export class WatchlistService {
    */
   async findAll(dto: GetWatchlistDto): Promise<PaginatedResult<Watchlist>> {
     const { page, limit } = dto;
-    const cacheKey = `${this.CACHE_PREFIX}list:${page}:${limit}`;
-
-    // 尝试从缓存获取
-    const cached =
-      await this.cacheManager.get<PaginatedResult<Watchlist>>(cacheKey);
-    if (cached) {
-      return cached;
-    }
 
     // 从数据库查询
     const [items, total] = await this.watchlistRepository.findAndCount({
@@ -48,37 +32,17 @@ export class WatchlistService {
       take: limit,
     });
 
-    const result = new PaginatedResult(items, total, page, limit);
-
-    // 缓存结果
-    await this.cacheManager.set(cacheKey, result, this.CACHE_TTL);
-
-    return result;
+    return new PaginatedResult(items, total, page, limit);
   }
 
   /**
    * 根据股票代码查找自选股
    */
   async findByStockCode(stockCode: string): Promise<Watchlist | null> {
-    const cacheKey = `${this.CACHE_PREFIX}${stockCode}`;
-
-    // 尝试从缓存获取
-    const cached = await this.cacheManager.get<Watchlist>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
     // 从数据库查询
-    const watchlist = await this.watchlistRepository.findOne({
+    return await this.watchlistRepository.findOne({
       where: { stockCode },
     });
-
-    if (watchlist) {
-      // 缓存结果
-      await this.cacheManager.set(cacheKey, watchlist, this.CACHE_TTL);
-    }
-
-    return watchlist;
   }
 
   /**
@@ -108,12 +72,7 @@ export class WatchlistService {
 
     // 创建新记录
     const watchlist = this.watchlistRepository.create(dto);
-    const saved = await this.watchlistRepository.save(watchlist);
-
-    // 清除相关缓存
-    await this.clearCache();
-
-    return saved;
+    return await this.watchlistRepository.save(watchlist);
   }
 
   /**
@@ -135,14 +94,9 @@ export class WatchlistService {
       updateData,
     );
 
-    const updated = await this.watchlistRepository.findOne({
+    return await this.watchlistRepository.findOne({
       where: { stockCode: dto.stockCode },
     });
-
-    // 清除相关缓存
-    await this.clearCache(dto.stockCode);
-
-    return updated;
   }
 
   /**
@@ -156,10 +110,6 @@ export class WatchlistService {
 
     // 软删除
     const result = await this.watchlistRepository.softDelete({ stockCode });
-
-    // 清除相关缓存
-    await this.clearCache(stockCode);
-
     return result.affected > 0;
   }
 
@@ -189,24 +139,4 @@ export class WatchlistService {
     return "UNKNOWN";
   }
 
-  /**
-   * 清除相关缓存
-   */
-  private async clearCache(stockCode?: string): Promise<void> {
-    const keys = [];
-
-    if (stockCode) {
-      keys.push(`${this.CACHE_PREFIX}${stockCode}`);
-    }
-
-    // 清除列表缓存（需要清除所有分页的缓存）
-    // 这里简化处理，实际生产环境可以使用模式匹配删除
-    for (let page = 1; page <= 10; page++) {
-      for (let limit = 10; limit <= 100; limit += 10) {
-        keys.push(`${this.CACHE_PREFIX}list:${page}:${limit}`);
-      }
-    }
-
-    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
   }
-}

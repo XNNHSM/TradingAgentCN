@@ -6,6 +6,9 @@
 import {Injectable} from "@nestjs/common";
 import {ConfigService} from "@nestjs/config";
 import {BaseLLMAdapter, LLMConfig, LLMMessage, LLMResponse, ModelInfo, TokenUsage, ToolCall, ProviderLengthLimits, ChunkManagementResult, ChunkInfo} from "./base-llm-adapter";
+import { WorkflowStateService, SegmentationCancellationToken } from "../workflow-state.service";
+import { Semaphore } from "../../../common/utils/semaphore.util";
+import { BusinessLogger, LogCategory } from "../../../common/utils/business-logger.util";
 
 /**
  * DashScope API请求体接口
@@ -144,9 +147,18 @@ export class DashScopeAdapter extends BaseLLMAdapter {
   private apiKey: string;
   private baseUrl: string;
   private defaultModel: string;
+  private readonly businessLogger = new BusinessLogger(DashScopeAdapter.name);
+  private workflowStateService: WorkflowStateService;
 
-  constructor(private readonly configService: ConfigService) {
+  // 配置参数
+  private maxConcurrency: number = 3;
+  private chunkTimeout: number = 30000; // 30秒
+  private totalTimeout: number = 300000; // 5分钟
+  private enableCancellation: boolean = true;
+
+  constructor(private readonly configService: ConfigService, workflowStateService?: WorkflowStateService) {
     super("dashscope");
+    this.workflowStateService = workflowStateService;
   }
 
   async initialize(): Promise<void> {
@@ -162,10 +174,16 @@ export class DashScopeAdapter extends BaseLLMAdapter {
       "qwen-plus",
     );
 
+    // 从配置文件读取分段处理参数
+    this.maxConcurrency = this.configService.get<number>("LLM_SEGMENTATION_MAX_CONCURRENCY", 3);
+    this.chunkTimeout = this.configService.get<number>("LLM_SEGMENTATION_CHUNK_TIMEOUT", 30000);
+    this.totalTimeout = this.configService.get<number>("LLM_SEGMENTATION_TOTAL_TIMEOUT", 300000);
+    this.enableCancellation = this.configService.get<boolean>("LLM_SEGMENTATION_ENABLE_CANCELLATION", true);
+
     if (!this.apiKey) {
-      this.logger.warn("DASHSCOPE_API_KEY 未配置，DashScope适配器将不可用");
+      this.businessLogger.warn(LogCategory.SERVICE_INFO, "DASHSCOPE_API_KEY 未配置，DashScope适配器将不可用");
     } else {
-      this.logger.log("DashScope适配器初始化完成");
+      this.businessLogger.serviceInfo("DashScope适配器初始化完成");
     }
 
     this.initialized = true;
@@ -199,20 +217,20 @@ export class DashScopeAdapter extends BaseLLMAdapter {
     // 检查是否需要分片处理
     const model = config?.model || this.defaultModel;
     if (this.needsChunking(prompt, model)) {
-      this.logger.log(`检测到长文本内容，开始分片处理，模型: ${model}`);
-      return await this.processChunkedPrompt(prompt, model, startTime, config);
+      this.businessLogger.serviceInfo(`检测到长文本内容，开始分片处理，模型: ${model}`);
+      return await this.processChunkedPrompt(prompt, model, startTime, config, config?.metadata?.sessionId);
     }
 
     try {
       const requestBody = this.buildRequestBody(messages, config);
-      
+
       this.logger.debug(
         `调用DashScope API: ${requestBody.model}, 消息数: ${messages.length}`,
       );
 
       const response = await this.callDashScopeAPI(requestBody, config);
       const llmResponse = this.parseResponse(response, requestBody.model);
-      
+
       const duration = Date.now() - startTime;
       this.logApiCall(messages, config, llmResponse, undefined, duration);
 
@@ -547,7 +565,7 @@ export class DashScopeAdapter extends BaseLLMAdapter {
    */
   protected registerDefaultStrategies(): void {
     // 可以在这里注册特定的内容管理策略
-    this.logger.log("DashScope适配器注册了默认内容管理策略");
+    // Logger call removed to prevent initialization issues
   }
 
   /**
@@ -578,7 +596,8 @@ export class DashScopeAdapter extends BaseLLMAdapter {
     prompt: string | LLMMessage[],
     model: string,
     startTime: number,
-    config?: LLMConfig
+    config?: LLMConfig,
+    sessionId?: string
   ): Promise<LLMResponse> {
     if (typeof prompt !== 'string') {
       throw new Error('分片处理仅支持字符串内容');
@@ -586,40 +605,173 @@ export class DashScopeAdapter extends BaseLLMAdapter {
 
     const lengthLimits = this.getProviderLengthLimits(model);
     const chunkingResult = this.intelligentChunking(prompt, model, config);
-    
-    this.logger.log(`文本分片完成：共 ${chunkingResult.totalChunks} 个片段，平均长度 ${chunkingResult.averageChunkLength.toFixed(0)} 字符`);
 
-    const responses: string[] = [];
-    
-    // 逐个处理每个片段
-    for (let i = 0; i < chunkingResult.chunks.length; i++) {
-      const chunk = chunkingResult.chunks[i];
-      
-      this.logger.debug(`处理第 ${i + 1}/${chunkingResult.totalChunks} 个片段`);
-      
-      // 创建当前片段的提示
-      const chunkMessages = this.createChunkedMessages(chunk, chunkingResult);
-      
-      try {
-        const requestBody = this.buildRequestBody(chunkMessages, config);
-        const response = await this.callDashScopeAPI(requestBody, config);
-        const llmResponse = this.parseResponse(response, requestBody.model);
-        
-        responses.push(llmResponse.content);
-      } catch (error) {
-        this.logger.error(`处理第 ${i + 1} 个片段时出错: ${error.message}`);
-        // 如果某个片段失败，使用空字符串继续
-        responses.push('');
-      }
+    this.businessLogger.serviceInfo(`文本分片完成：共 ${chunkingResult.totalChunks} 个片段，平均长度 ${chunkingResult.averageChunkLength.toFixed(0)} 字符`);
+
+    // 创建取消令牌
+    let cancellationToken: SegmentationCancellationToken | null = null;
+    if (this.enableCancellation && this.workflowStateService && sessionId) {
+      cancellationToken = new SegmentationCancellationToken(sessionId, this.workflowStateService);
+
+      // 注册分段处理开始
+      this.workflowStateService.registerSegmentationStart(
+        sessionId,
+        chunkingResult.totalChunks,
+        0, // 暂时使用0，因为estimatedTotalTokens不存在
+        config?.metadata?.workflowId
+      );
     }
 
-    // 合并所有片段的响应
-    const finalResponse = await this.processChunkedResponse(responses, chunkingResult);
-    
-    const duration = Date.now() - startTime;
-    this.logApiCall([{ role: "user", content: prompt }], config, finalResponse, undefined, duration);
+    const responses: string[] = [];
+    let processedTokens = 0;
 
-    return finalResponse;
+    try {
+      // 检查总体超时
+      const totalTimeTimeout = setTimeout(() => {
+        if (cancellationToken) {
+          cancellationToken.cancel();
+        }
+      }, this.totalTimeout);
+
+      // 使用信号量控制并发
+      const semaphore = new Semaphore(this.maxConcurrency);
+
+      const promises = chunkingResult.chunks.map(async (chunk, index) => {
+        // 检查是否已取消
+        if (cancellationToken?.isCancelled()) {
+          throw new Error('Segmentation cancelled');
+        }
+
+        await semaphore.acquire();
+
+        try {
+          const result = await this.processChunkWithTimeout(
+            chunk,
+            chunkingResult,
+            index,
+            model,
+            config,
+            cancellationToken
+          );
+
+          processedTokens += result.tokens;
+          responses[index] = result.content;
+
+          // 更新进度
+          if (cancellationToken && this.workflowStateService && sessionId) {
+            this.workflowStateService.updateSegmentationProgress(
+              sessionId,
+              index + 1,
+              processedTokens
+            );
+          }
+
+          return result;
+        } finally {
+          semaphore.release();
+        }
+      });
+
+      // 等待所有片段处理完成
+      await Promise.all(promises);
+      clearTimeout(totalTimeTimeout);
+
+      // 检查是否被取消
+      if (cancellationToken?.isCancelled()) {
+        this.businessLogger.serviceInfo('分段处理已取消', { sessionId });
+        return this.generateFallbackResponse();
+      }
+
+      // 合并所有片段的响应
+      const finalResponse = await this.processChunkedResponse(responses, chunkingResult);
+
+      const duration = Date.now() - startTime;
+      this.logApiCall([{ role: "user", content: prompt }], config, finalResponse, undefined, duration);
+
+      return finalResponse;
+
+    } catch (error) {
+      if (cancellationToken?.isCancelled()) {
+        this.businessLogger.serviceInfo('分段处理已取消，返回备用响应', { sessionId, error: error.message });
+        return this.generateFallbackResponse();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 带超时的片段处理
+   */
+  private async processChunkWithTimeout(
+    chunk: ChunkInfo,
+    chunkingResult: ChunkManagementResult,
+    index: number,
+    model: string,
+    config?: LLMConfig,
+    cancellationToken?: SegmentationCancellationToken
+  ): Promise<{ content: string; tokens: number }> {
+    this.logger.debug(`处理第 ${index + 1}/${chunkingResult.totalChunks} 个片段`);
+
+    // 创建当前片段的提示
+    const chunkMessages = this.createChunkedMessages(chunk, chunkingResult);
+
+    // 为片段处理添加超时
+    const chunkPromise = new Promise<{ content: string; tokens: number }>(async (resolve, reject) => {
+      try {
+        const requestBody = this.buildRequestBody(chunkMessages, config);
+
+        // 添加片段超时配置
+        const chunkConfig = {
+          ...config,
+          timeout: this.chunkTimeout,
+          metadata: {
+            ...config?.metadata,
+            chunkIndex: index,
+            totalChunks: chunkingResult.totalChunks
+          }
+        };
+
+        const response = await this.callDashScopeAPI(requestBody, chunkConfig);
+        const llmResponse = this.parseResponse(response, requestBody.model);
+
+        resolve({
+          content: llmResponse.content,
+          tokens: llmResponse.usage?.outputTokens || 0
+        });
+      } catch (error) {
+        this.businessLogger.businessError('处理片段', error, { chunkIndex: index + 1 });
+        // 返回空内容而不是抛出错误，让其他片段继续处理
+        resolve({
+          content: '',
+          tokens: 0
+        });
+      }
+    });
+
+    // 设置超时
+    const timeoutPromise = new Promise<{ content: string; tokens: number }>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Chunk processing timeout: ${this.chunkTimeout}ms`));
+      }, this.chunkTimeout);
+    });
+
+    return Promise.race([chunkPromise, timeoutPromise]);
+  }
+
+  /**
+   * 生成备用响应
+   */
+  private generateFallbackResponse(): LLMResponse {
+    return {
+      content: '由于处理超时或工作流已完成，返回部分分析结果。请重新运行分析以获取完整结果。',
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0
+      },
+      model: this.defaultModel,
+      finishReason: 'length'
+    };
   }
 
   /**

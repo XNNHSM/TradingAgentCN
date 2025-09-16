@@ -18,6 +18,7 @@ import {MCPClientSDKService} from './services/mcp-client-sdk.service';
 import {MCPClientFallbackService} from './services/mcp-client-fallback.service';
 import {LLMService} from './services/llm.service';
 import {DashScopeAdapter} from './services/llm-adapters/dashscope-adapter';
+import {WorkflowStateService} from './services/workflow-state.service';
 
 // 智能体模块专属Temporal服务 - 从统一Temporal模块导入
 
@@ -58,11 +59,12 @@ import {AgentExecutionRecorderInterceptor} from './interceptors/agent-execution-
   providers: [
     // LLM适配器
     DashScopeAdapter,
-    
+
     // 核心服务
     MCPClientSDKService,
     MCPClientFallbackService,
     LLMService,
+    WorkflowStateService,
     
     // 智能体模块专属Temporal Worker服务
     AgentsWorkerService,
